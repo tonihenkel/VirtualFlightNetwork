@@ -1,0 +1,17 @@
+# Visual Studio
+.vs/
+x64/
+Debug/
+Release/
+
+# Build-Dateien
+*.obj
+*.pdb
+*.ilk
+*.ipch
+*.xpl
+
+# Konfigurationen mit Zugangsdaten
+htdocs/execute/config.php
+config.txt
+.env
