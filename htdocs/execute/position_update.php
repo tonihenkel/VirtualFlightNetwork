@@ -354,6 +354,48 @@ try {
             "user_id" =>
                 (int)$session["user_id"]
         ]);
+
+        $aircraftStatsStmt = $pdo->prepare(
+            "INSERT INTO pilot_aircraft_stats
+            (
+                user_id,
+                aircraft_icao,
+                total_seconds,
+                total_miles,
+                last_used
+            )
+            VALUES
+            (
+                :user_id,
+                :aircraft_icao,
+                :seconds,
+                :distance,
+                NOW()
+            )
+            ON DUPLICATE KEY UPDATE
+
+                total_seconds =
+                    total_seconds + VALUES(total_seconds),
+
+                total_miles =
+                    total_miles + VALUES(total_miles),
+
+                last_used = NOW()"
+        );
+
+        $aircraftStatsStmt->execute([
+            "user_id" =>
+                (int)$session["user_id"],
+
+            "aircraft_icao" =>
+                $aircraft_icao,
+
+            "seconds" =>
+                $seconds,
+
+            "distance" =>
+                $distanceNm
+        ]);
     }
 
 

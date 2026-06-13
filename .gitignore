@@ -12,6 +12,5 @@ Release/
 *.xpl
 
 # Konfigurationen mit Zugangsdaten
-htdocs/execute/config.php
 config.txt
 .env

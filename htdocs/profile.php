@@ -26,15 +26,6 @@ if (!isset($showRatings)) {
     $showRatings = true;
 }
 
-function profileText(string $de, string $en): string
-{
-    global $currentLanguage;
-
-    return ($currentLanguage === 'de')
-        ? $de
-        : $en;
-}
-
 function h($value): string
 {
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
@@ -52,7 +43,6 @@ function formatFlightTime(int $seconds): string
 
     return $hours . ':' . str_pad((string)$minutes, 2, '0', STR_PAD_LEFT) . ' h';
 }
-
 
 $profileUserId =
     isset($_GET['id'])
@@ -153,6 +143,30 @@ if ($division) {
         $division['name'];
 }
 
+$favouriteAircraft = '----';
+
+$favouriteAircraftStmt = $pdo->prepare(
+    "SELECT aircraft_icao
+     FROM pilot_aircraft_stats
+     WHERE user_id = :user_id
+     ORDER BY total_seconds DESC
+     LIMIT 1"
+);
+
+$favouriteAircraftStmt->execute([
+    'user_id' => $profileUserId
+]);
+
+$favouriteAircraftData =
+    $favouriteAircraftStmt->fetch(PDO::FETCH_ASSOC);
+
+if ($favouriteAircraftData) {
+
+    $favouriteAircraft =
+        $favouriteAircraftData['aircraft_icao'];
+
+}
+
 $onlineStmt = $pdo->prepare(
     "SELECT id
      FROM user_sessions
@@ -212,7 +226,7 @@ $memberSince =
 <html lang="<?php echo h($currentLanguage); ?>">
 <head>
     <meta charset="UTF-8">
-    <title><?php echo h(profileText('Profil', 'Profile')); ?> - <?php echo h($projectName); ?></title>
+    <title><?php echo htmlspecialchars(t('profile_title')); ?> - <?php echo h($projectName); ?></title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <style>
@@ -372,6 +386,16 @@ $memberSince =
             color: #c9d7ea;
             line-height: 1.9;
             font-size: 15px;
+        }
+
+        .profile-country-flag {
+            width: 22px;
+            height: 15px;
+            object-fit: cover;
+            border-radius: 2px;
+            vertical-align: middle;
+            margin-right: 6px;
+            box-shadow: 0 0 0 1px rgba(255,255,255,0.25);
         }
 
         .rating-summary {
@@ -670,20 +694,20 @@ $memberSince =
 <main class="profile-shell">
 
     <div class="breadcrumb">
-        HOME &nbsp;›&nbsp; <?php echo h(profileText('PROFIL', 'PROFILE')); ?> &nbsp;›&nbsp;
+        HOME &nbsp;›&nbsp; <?php echo htmlspecialchars(t('profile_title')); ?> &nbsp;›&nbsp;
         <span><?php echo h(strtoupper($displayName)); ?></span>
     </div>
 
     <div class="profile-layout">
 
         <aside class="profile-sidebar">
-            <a class="side-link active" href="#">👤 <?php echo h(profileText('Profil Übersicht', 'Profile Overview')); ?></a>
-            <a class="side-link" href="#">✈ <?php echo h(profileText('Pilot', 'Pilot')); ?></a>
-            <a class="side-link" href="#">🗼 <?php echo h(profileText('ATC', 'ATC')); ?></a>
-            <a class="side-link" href="#">🛡 <?php echo h(profileText('Ratings & Abzeichen', 'Ratings & Badges')); ?></a>
-            <a class="side-link" href="#">🏆 <?php echo h(profileText('Auszeichnungen', 'Awards')); ?></a>
-            <a class="side-link" href="#">🕘 <?php echo h(profileText('Aktivitäten', 'Activities')); ?></a>
-            <a class="side-link" href="#">⚙ <?php echo h(profileText('Einstellungen', 'Settings')); ?></a>
+            <a class="side-link active" href="#">👤 <?php echo htmlspecialchars(t('profile_overview')); ?></a>
+            <a class="side-link" href="#">✈ <?php echo htmlspecialchars(t('profile_pilot')); ?></a>
+            <a class="side-link" href="#">🗼 <?php echo htmlspecialchars(t('profile_atc')); ?></a>
+            <a class="side-link" href="#">🛡 <?php echo htmlspecialchars(t('profile_ratings_badges')); ?></a>
+            <a class="side-link" href="#">🏆 <?php echo htmlspecialchars(t('profile_awards')); ?></a>
+            <a class="side-link" href="#">🕘 <?php echo htmlspecialchars(t('profile_activities')); ?></a>
+            <a class="side-link" href="#">⚙ <?php echo htmlspecialchars(t('profile_settings')); ?></a>
             <?php
                 $pilotCountStmt = $pdo->query(
                     "SELECT COUNT(*)
@@ -729,7 +753,7 @@ $memberSince =
 
                         <div class="profile-meta">
                             VFN-ID: <?php echo h($vfnId); ?><br>
-                            <?php echo h(profileText('Mitglied seit', 'Member since')); ?>: <?php echo h($memberSince); ?><br>
+                            <?php echo htmlspecialchars(t('profile_member_since')); ?>: <?php echo h($memberSince); ?><br>
                             <img
                                 src="images/flags/<?php echo strtolower($countryCode); ?>.png"
                                 class="profile-country-flag"
@@ -763,7 +787,7 @@ $memberSince =
 
                         <?php if ($specialRating): ?>
                             <div class="rating-summary-item">
-                                <div class="rating-summary-title"><?php echo h(profileText('Sonderrang', 'Special Rank')); ?></div>
+                                <div class="rating-summary-title"><?php echo htmlspecialchars(t('profile_special_rank')); ?></div>
                                     <img class="rating-summary-img" src="<?php echo h($specialRating['image']); ?>" alt="<?php echo h($specialRating['code']); ?>">
                                     <div class="rating-summary-name"><?php echo h($specialRating['name']); ?></div>
                             </div>
@@ -774,28 +798,32 @@ $memberSince =
 
             <div class="content-grid">
                 <div class="card">
-                    <div class="card-title"><?php echo h(profileText('Statistiken', 'Statistics')); ?></div>
+                    <div class="card-title"><?php echo htmlspecialchars(t('profile_statistics')); ?></div>
                     <div class="card-body">
                         <div class="stats-columns">
                             <div>
                                 <div class="stats-section-title">Pilot</div>
-                                <div class="stat-row"><span>✈ <?php echo h(profileText('Flugstunden', 'Flight hours')); ?></span><strong><?php echo h(formatFlightTime($totalFlightSeconds)); ?></strong></div>
-                                <div class="stat-row"><span>↗ <?php echo h(profileText('Zurückgelegte Distanz', 'Distance flown')); ?></span><strong><?php echo h(number_format($totalFlightMiles, 1, ',', '.')); ?> NM</strong></div>
-                                <div class="stat-row"><span>🛬 <?php echo h(profileText('Landungen', 'Landings')); ?></span><strong>----</strong></div>
+                                <div class="stat-row"><span>✈ <?php echo htmlspecialchars(t('profile_flight_hours')); ?></span><strong><?php echo h(formatFlightTime($totalFlightSeconds)); ?></strong></div>
+                                <div class="stat-row"><span>↗ <?php echo htmlspecialchars(t('profile_distance_flown')); ?></span><strong><?php echo h(number_format($totalFlightMiles, 1, ',', '.')); ?> NM</strong></div>
+                                <div class="stat-row"><span>🛬 <?php echo htmlspecialchars(t('profile_landings')); ?></span><strong>----</strong></div>
+                                <div class="stat-row">
+                                    <span>🛧 <?php echo htmlspecialchars(t('profile_favourite_aircraft')); ?></span>
+                                    <strong><?php echo h($favouriteAircraft); ?></strong>
+                                </div>
                             </div>
 
                             <div>
                                 <div class="stats-section-title atc">ATC</div>
-                                <div class="stat-row"><span>🗼 <?php echo h(profileText('Controllerstunden', 'Controller hours')); ?></span><strong>----</strong></div>
-                                <div class="stat-row"><span>📋 <?php echo h(profileText('ATC Sessions', 'ATC sessions')); ?></span><strong>----</strong></div>
-                                <div class="stat-row"><span>📍 <?php echo h(profileText('Lieblingsposition', 'Favorite position')); ?></span><strong>----</strong></div>
+                                <div class="stat-row"><span>🗼 <?php echo htmlspecialchars(t('profile_controller_hours')); ?></span><strong>----</strong></div>
+                                <div class="stat-row"><span>📋 <?php echo htmlspecialchars(t('profile_atc_sessions')); ?></span><strong>----</strong></div>
+                                <div class="stat-row"><span>📍 <?php echo htmlspecialchars(t('profile_favorite_position')); ?></span><strong>----</strong></div>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <div class="card">
-                    <div class="card-title">ATC Rating <?php echo h(profileText('Verlauf', 'Progress')); ?></div>
+                    <div class="card-title">ATC Rating <?php echo htmlspecialchars(t('profile_progress')); ?></div>
                     <div class="card-body">
                         <div class="rating-track">
                             <?php for ($i = 0; $i <= 9; $i++): ?>
@@ -811,8 +839,8 @@ $memberSince =
                         <div class="current-rating-box">
                             <img src="<?php echo h($atcRating['image']); ?>">
                             <div>
-                                <div class="current-rating-title"><?php echo h(profileText('Aktuelles Rating', 'Current Rating')); ?>: <?php echo h($atcRating['name']); ?></div>
-                                <div class="current-rating-meta"><?php echo h(profileText('Geprüft von', 'Checked by')); ?>: VFN Staff ✅</div>
+                                <div class="current-rating-title"><?php echo htmlspecialchars(t('profile_current_rating')); ?>: <?php echo h($atcRating['name']); ?></div>
+                                <div class="current-rating-meta"><?php echo htmlspecialchars(t('profile_checked_by')); ?>: VFN Staff ✅</div>
                             </div>
                         </div>
                     </div>
@@ -821,12 +849,12 @@ $memberSince =
 
             <div class="content-grid-bottom">
                 <div class="card">
-                    <div class="card-title"><?php echo h(profileText('Letzte Aktivitäten', 'Latest Activities')); ?></div>
+                    <div class="card-title"><?php echo htmlspecialchars(t('profile_latest_activities')); ?></div>
                     <div class="card-body">
                         <div class="activity-list">
                             <div class="activity-row">
                                 <div class="activity-icon">✈</div>
-                                <div class="activity-main"><strong><?php echo h(profileText('Letzter Flug', 'Last flight')); ?></strong><?php echo h(profileText('Keine Daten vorhanden', 'No data available')); ?></div>
+                                <div class="activity-main"><strong><?php echo htmlspecialchars(t('profile_last_flight')); ?></strong><?php echo htmlspecialchars(t('profile_no_data')); ?></div>
                                 <div class="activity-time">----</div>
                             </div>
                             <div class="activity-row">
@@ -839,7 +867,7 @@ $memberSince =
                 </div>
 
                 <div class="card">
-                    <div class="card-title">Pilot Rating <?php echo h(profileText('Verlauf', 'Progress')); ?></div>
+                    <div class="card-title">Pilot Rating <?php echo htmlspecialchars(t('profile_progress')); ?></div>
                     <div class="card-body">
                         <div class="rating-track">
                             <?php for ($i = 0; $i <= 9; $i++): ?>
@@ -855,19 +883,19 @@ $memberSince =
                         <div class="current-rating-box">
                             <img src="<?php echo h($pilotRating['image']); ?>">
                             <div>
-                                <div class="current-rating-title"><?php echo h(profileText('Aktuelles Rating', 'Current Rating')); ?>: <?php echo h($pilotRating['name']); ?></div>
-                                <div class="current-rating-meta"><?php echo h(profileText('Geprüft von', 'Checked by')); ?>: VFN Staff ✅</div>
+                                <div class="current-rating-title"><?php echo htmlspecialchars(t('profile_current_rating')); ?>: <?php echo h($pilotRating['name']); ?></div>
+                                <div class="current-rating-meta"><?php echo htmlspecialchars(t('profile_checked_by')); ?>: VFN Staff ✅</div>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <div class="card">
-                    <div class="card-title"><?php echo h(profileText('Auszeichnungen', 'Awards')); ?></div>
+                    <div class="card-title"><?php echo htmlspecialchars(t('profile_awards')); ?></div>
                     <div class="card-body">
                         <div class="awards">
-                            <div><div class="award-icon">100</div><div class="award-title">100 <?php echo h(profileText('Flugstunden', 'Flight hours')); ?></div></div>
-                            <div><div class="award-icon">🎓</div><div class="award-title"><?php echo h(profileText('Erste Prüfung', 'First exam')); ?></div></div>
+                            <div><div class="award-icon">100</div><div class="award-title">100 <?php echo htmlspecialchars(t('profile_flight_hours')); ?></div></div>
+                            <div><div class="award-icon">🎓</div><div class="award-title"><?php echo htmlspecialchars(t('profile_first_exam')); ?></div></div>
                             <div><div class="award-icon">✈</div><div class="award-title">Event</div></div>
                             <div><div class="award-icon">VFN</div><div class="award-title">Member</div></div>
                         </div>
@@ -879,15 +907,15 @@ $memberSince =
                 <div class="training-empty">
                     <div class="training-icon">☑</div>
                     <div>
-                        <strong><?php echo h(profileText('Keine aktive Ausbildung', 'No active training')); ?></strong><br>
-                        <span><?php echo h(profileText('Du nimmst derzeit an keiner Ausbildung teil.', 'You are currently not taking part in any training.')); ?></span>
+                        <strong><?php echo htmlspecialchars(t('profile_no_active_training')); ?></strong><br>
+                        <span><?php echo htmlspecialchars(t('profile_no_training_text')); ?></span>
                     </div>
                 </div>
 
                 <div class="role-grid">
                     <div class="role-item"><strong>Mentor</strong>----</div>
-                    <div class="role-item"><strong><?php echo h(profileText('Prüfer', 'Examiner')); ?></strong>----</div>
-                    <div class="role-item"><strong>Division</strong>Deutschland</div>
+                    <div class="role-item"><strong><?php echo htmlspecialchars(t('profile_examiner')); ?></strong>----</div>
+                    <div class="role-item"><strong>Division</strong><?php echo h($divisionName); ?></div>
                     <div class="role-item"><strong>Staff Rolle</strong><?php echo $specialRating ? h($specialRating['name']) : '----'; ?></div>
                 </div>
             </div>

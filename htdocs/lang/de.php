@@ -410,4 +410,96 @@ return [
     'register_division_invalid' =>
         'Bitte wähle eine gültige Division aus.',
 
+    /*
+        Profile
+    */
+
+    'profile_title' =>
+        'Profil',
+
+    'profile_overview' =>
+        'Profil Übersicht',
+
+    'profile_member_since' =>
+        'Mitglied seit',
+
+    'profile_statistics' =>
+        'Statistiken',
+
+    'profile_flight_hours' =>
+        'Flugstunden',
+
+    'profile_distance_flown' =>
+        'Zurückgelegte Distanz',
+
+    'profile_landings' =>
+        'Landungen',
+
+    'profile_current_rating' =>
+        'Aktuelles Rating',
+
+    'profile_progress' =>
+        'Verlauf',
+
+    'profile_special_rank' =>
+        'Sonderrang',
+
+    'profile_latest_activities' =>
+        'Letzte Aktivitäten',
+
+    'profile_last_flight' =>
+        'Letzter Flug',
+
+    'profile_no_data' =>
+        'Keine Daten vorhanden',
+
+    'profile_awards' =>
+        'Auszeichnungen',
+
+    'profile_first_exam' =>
+        'Erste Prüfung',
+
+    'profile_no_active_training' =>
+        'Keine aktive Ausbildung',
+
+    'profile_no_training_text' =>
+        'Du nimmst derzeit an keiner Ausbildung teil.',
+
+    'profile_examiner' =>
+        'Prüfer',
+
+    'profile_pilot' =>
+        'Pilot',
+
+    'profile_atc' =>
+        'ATC',
+
+    'profile_ratings_badges' =>
+        'Ratings & Abzeichen',
+
+    'profile_activities' =>
+        'Aktivitäten',
+
+    'profile_settings' =>
+        'Einstellungen',
+
+    'profile_controller_hours' =>
+        'Controllerstunden',
+
+    'profile_atc_sessions' =>
+        'ATC-Sessions',
+
+    'profile_favorite_position' =>
+        'Lieblingsposition',
+
+    'profile_checked_by' =>
+        'Geprüft von',
+
+    'profile_last_flight' =>
+        'Letzter Flug',
+
+    'profile_favourite_aircraft' =>
+        'Lieblingsflugzeug',
+
+
 ];

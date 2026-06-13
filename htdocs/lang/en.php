@@ -410,4 +410,96 @@
         'register_division_invalid' =>
             'Bitte wähle eine gültige Division aus.',
 
+        /*
+            Profile
+        */
+
+        'profile_title' =>
+            'Profile',
+
+        'profile_overview' =>
+            'Profile Overview',
+
+        'profile_member_since' =>
+            'Member since',
+
+        'profile_statistics' =>
+            'Statistics',
+
+        'profile_flight_hours' =>
+            'Flight hours',
+
+        'profile_distance_flown' =>
+            'Distance flown',
+
+        'profile_landings' =>
+            'Landings',
+
+        'profile_current_rating' =>
+            'Current Rating',
+
+        'profile_progress' =>
+            'Progress',
+
+        'profile_special_rank' =>
+            'Special Rank',
+
+        'profile_latest_activities' =>
+            'Latest Activities',
+
+        'profile_last_flight' =>
+            'Last Flight',
+
+        'profile_no_data' =>
+            'No data available',
+
+        'profile_awards' =>
+            'Awards',
+
+        'profile_first_exam' =>
+            'First Exam',
+
+        'profile_no_active_training' =>
+            'No active training',
+
+
+        'profile_no_training_text' =>
+            'You are currently not taking part in any training.',
+
+        'profile_examiner' =>
+            'Examiner',
+
+        'profile_pilot' =>
+            'Pilot',
+
+        'profile_atc' =>
+            'ATC',
+
+        'profile_ratings_badges' =>
+            'Ratings & Badges',
+
+        'profile_activities' =>
+            'Activities',
+
+        'profile_settings' =>
+            'Settings',
+
+        'profile_controller_hours' =>
+            'Controller hours',
+
+        'profile_atc_sessions' =>
+            'ATC sessions',
+
+        'profile_favorite_position' =>
+            'Favorite position',
+
+        'profile_checked_by' =>
+            'Checked by',
+
+        'profile_last_flight' =>
+            'Last Fligt',
+
+        'profile_favourite_aircraft' =>
+            'Favourite Aircraft',
+
     ];

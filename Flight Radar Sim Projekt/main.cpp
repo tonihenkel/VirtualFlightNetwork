@@ -24,6 +24,7 @@
 
 static std::string gPluginDirectory;
 static std::string gConfigPath;
+static XPLMDataRef gVerticalSpeed = nullptr;
 static std::string gLanguageDirectory;
 static std::string gCurrentLanguage = "en";
 
