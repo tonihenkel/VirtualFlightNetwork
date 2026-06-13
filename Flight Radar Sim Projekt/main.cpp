@@ -142,6 +142,7 @@ static XPLMDataRef gCom3 = nullptr;
 static XPLMDataRef gTransponder = nullptr;
 
 static XPLMDataRef gVerticalSpeed = nullptr;
+static XPLMDataRef gOnGround = nullptr;
 
 
 void UpdateFlightplanWindowState();
@@ -1883,6 +1884,9 @@ void SendPositionUpdate()
     float verticalSpeed =
         XPLMGetDataf(gVerticalSpeed);
 
+    int onGround =
+        gOnGround ? XPLMGetDatai(gOnGround) : 0;
+
     int com1 =
         gCom1 ? XPLMGetDatai(gCom1) : 0;
 
@@ -1910,6 +1914,7 @@ void SendPositionUpdate()
         "&pitch=" + UrlEncode(FloatToString(pitch)) +
         "&roll=" + UrlEncode(FloatToString(roll)) +
         "&vertical_speed=" + UrlEncode(FloatToString(verticalSpeed)) +
+        "&on_ground=" + UrlEncode(IntToString(onGround)) +
         "&com1=" + UrlEncode(FormatComFrequency(com1)) +
         "&com2=" + UrlEncode(FormatComFrequency(com2)) +
         "&com3=" + UrlEncode(FormatComFrequency(com3)) +
@@ -3415,6 +3420,11 @@ PLUGIN_API int XPluginStart(
     gVerticalSpeed =
         XPLMFindDataRef(
             "sim/flightmodel/position/vh_ind_fpm"
+        );
+
+    gOnGround =
+        XPLMFindDataRef(
+            "sim/flightmodel/failures/onground_any"
         );
 
     /*

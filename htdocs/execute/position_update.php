@@ -23,6 +23,11 @@ $airspeed = $_POST["airspeed"] ?? null;
 $pitch = $_POST["pitch"] ?? null;
 $roll = $_POST["roll"] ?? null;
 $vertical_speed = $_POST["vertical_speed"] ?? null;
+$onGround =
+    (int)($_POST["on_ground"] ?? 0);
+
+$onGround =
+    $onGround === 1 ? 1 : 0;
 
 $com1 = $_POST["com1"] ?? 0;
 $com2 = $_POST["com2"] ?? 0;
@@ -102,7 +107,11 @@ try {
     );
 
     $stmt = $pdo->prepare(
-        "SELECT s.user_id, u.username
+        "SELECT
+            s.user_id,
+            s.was_airborne,
+            s.last_vertical_speed,
+            u.username
          FROM user_sessions s
          INNER JOIN users u ON u.id = s.user_id
          WHERE s.token = :token
@@ -396,6 +405,133 @@ try {
             "distance" =>
                 $distanceNm
         ]);
+
+        $wasAirborne =
+            (int)($session["was_airborne"] ?? 0);
+
+        $lastVerticalSpeed =
+            (int)($session["last_vertical_speed"] ?? 0);
+
+        $currentVerticalSpeed =
+            (int)round((float)$vertical_speed);
+
+        $currentAirspeed =
+            (float)$airspeed;
+
+        $isAirborneNow =
+            $onGround === 0 &&
+            $currentAirspeed >= 40;
+
+        $isLandingNow =
+            $onGround === 1 &&
+            $wasAirborne === 1;
+
+        if ($isLandingNow) {
+
+            $landingRateFpm =
+                abs($lastVerticalSpeed);
+
+            $landingStmt = $pdo->prepare(
+                "INSERT INTO pilot_landings
+                (
+                    user_id,
+                    aircraft_icao,
+                    landing_rate_fpm,
+                    latitude,
+                    longitude,
+                    created_at
+                )
+                VALUES
+                (
+                    :user_id,
+                    :aircraft_icao,
+                    :landing_rate_fpm,
+                    :latitude,
+                    :longitude,
+                    NOW()
+                )"
+            );
+
+            $landingStmt->execute([
+                "user_id" =>
+                    (int)$session["user_id"],
+
+                "aircraft_icao" =>
+                    $aircraft_icao,
+
+                "landing_rate_fpm" =>
+                    $landingRateFpm,
+
+                "latitude" =>
+                    (float)$latitude,
+
+                "longitude" =>
+                    (float)$longitude
+            ]);
+
+            $landingCounterStmt = $pdo->prepare(
+                "UPDATE users
+                 SET total_landings =
+                     total_landings + 1
+                 WHERE id = :user_id"
+            );
+
+            $landingCounterStmt->execute([
+                "user_id" =>
+                    (int)$session["user_id"]
+            ]);
+
+            $sessionStateStmt = $pdo->prepare(
+                "UPDATE user_sessions
+                 SET
+                    was_airborne = 0,
+                    last_vertical_speed = :vertical_speed
+                 WHERE token = :token
+                 LIMIT 1"
+            );
+
+            $sessionStateStmt->execute([
+                "vertical_speed" =>
+                    $currentVerticalSpeed,
+
+                "token" =>
+                    $token
+            ]);
+
+        } elseif ($isAirborneNow) {
+
+            $sessionStateStmt = $pdo->prepare(
+                "UPDATE user_sessions
+                 SET
+                    was_airborne = 1,
+                    last_vertical_speed = :vertical_speed
+                 WHERE token = :token
+                 LIMIT 1"
+            );
+
+            $sessionStateStmt->execute([
+                "vertical_speed" =>
+                    $currentVerticalSpeed,
+
+                "token" =>
+                    $token
+            ]);
+
+        } elseif ($onGround === 1) {
+
+            $sessionStateStmt = $pdo->prepare(
+                "UPDATE user_sessions
+                 SET
+                    was_airborne = 0
+                 WHERE token = :token
+                 LIMIT 1"
+            );
+
+            $sessionStateStmt->execute([
+                "token" =>
+                    $token
+            ]);
+        }
     }
 
 
