@@ -24,7 +24,6 @@
 
 static std::string gPluginDirectory;
 static std::string gConfigPath;
-static XPLMDataRef gVerticalSpeed = nullptr;
 static std::string gLanguageDirectory;
 static std::string gCurrentLanguage = "en";
 
@@ -141,6 +140,8 @@ static XPLMDataRef gCom2 = nullptr;
 static XPLMDataRef gCom3 = nullptr;
 
 static XPLMDataRef gTransponder = nullptr;
+
+static XPLMDataRef gVerticalSpeed = nullptr;
 
 
 void UpdateFlightplanWindowState();
