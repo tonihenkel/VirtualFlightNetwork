@@ -259,81 +259,35 @@ try {
         Nicht jede Sekunde, sondern nur wenn der letzte Punkt
         mindestens 5 Sekunden alt ist oder sich die Position geaendert hat.
     */
-    $trackStmt = $pdo->prepare(
-        "SELECT id, latitude, longitude, created_at
-         FROM pilot_tracks
-         WHERE session_token = :session_token
-            OR callsign = :callsign
-         ORDER BY id DESC
-         LIMIT 1"
+    $insertTrackStmt = $pdo->prepare(
+        "INSERT INTO pilot_tracks
+        (
+            session_token,
+            callsign,
+            latitude,
+            longitude,
+            altitude,
+            heading
+        )
+        VALUES
+        (
+            :session_token,
+            :callsign,
+            :latitude,
+            :longitude,
+            :altitude,
+            :heading
+        )"
     );
 
-    $trackStmt->execute([
+    $insertTrackStmt->execute([
         "session_token" => $token,
-        "callsign" => $callsign
+        "callsign" => $callsign,
+        "latitude" => (float)$latitude,
+        "longitude" => (float)$longitude,
+        "altitude" => (float)$altitude,
+        "heading" => (float)$heading
     ]);
-
-    $lastTrack =
-        $trackStmt->fetch(PDO::FETCH_ASSOC);
-
-    $shouldInsertTrack = true;
-
-    if ($lastTrack) {
-        $lastCreated =
-            strtotime($lastTrack["created_at"]);
-
-        $now =
-            time();
-
-        if (($now - $lastCreated) < 5) {
-            $shouldInsertTrack = false;
-        }
-
-        $lastLat =
-            (float)$lastTrack["latitude"];
-
-        $lastLon =
-            (float)$lastTrack["longitude"];
-
-        if (
-            abs($lastLat - (float)$latitude) < 0.00001 &&
-            abs($lastLon - (float)$longitude) < 0.00001
-        ) {
-            $shouldInsertTrack = false;
-        }
-    }
-
-    if ($shouldInsertTrack) {
-        $insertTrackStmt = $pdo->prepare(
-            "INSERT INTO pilot_tracks
-            (
-                session_token,
-                callsign,
-                latitude,
-                longitude,
-                altitude,
-                heading
-            )
-            VALUES
-            (
-                :session_token,
-                :callsign,
-                :latitude,
-                :longitude,
-                :altitude,
-                :heading
-            )"
-        );
-
-        $insertTrackStmt->execute([
-            "session_token" => $token,
-            "callsign" => $callsign,
-            "latitude" => (float)$latitude,
-            "longitude" => (float)$longitude,
-            "altitude" => (float)$altitude,
-            "heading" => (float)$heading
-        ]);
-    }
 
     /*
         Flugzeit, Distanz und Flugzeug-Statistik.
