@@ -141,7 +141,6 @@ static XPLMDataRef gCom3 = nullptr;
 
 static XPLMDataRef gTransponder = nullptr;
 
-static XPLMDataRef gVerticalSpeed = nullptr;
 static XPLMDataRef gOnGround = nullptr;
 
 
