@@ -154,6 +154,26 @@ $favouriteAircraftStmt = $pdo->prepare(
      LIMIT 1"
 );
 
+$lastFlight = null;
+
+$lastFlightStmt = $pdo->prepare(
+    "SELECT
+        aircraft_icao,
+        landing_rate_fpm,
+        created_at
+     FROM pilot_landings
+     WHERE user_id = :user_id
+     ORDER BY created_at DESC
+     LIMIT 1"
+);
+
+$lastFlightStmt->execute([
+    'user_id' => $profileUserId
+]);
+
+$lastFlight =
+    $lastFlightStmt->fetch(PDO::FETCH_ASSOC);
+
 $totalLandings =
     (int)($profileUser['total_landings'] ?? 0);
 
@@ -861,7 +881,42 @@ $memberSince =
                         <div class="activity-list">
                             <div class="activity-row">
                                 <div class="activity-icon">✈</div>
-                                <div class="activity-main"><strong><?php echo htmlspecialchars(t('profile_last_flight')); ?></strong><?php echo htmlspecialchars(t('profile_no_data')); ?></div>
+                                <div class="activity-main">
+
+                                    <strong>
+                                        <?php echo htmlspecialchars(t('profile_last_flight')); ?>
+                                    </strong>
+
+                                    <?php if ($lastFlight): ?>
+
+                                        <?php echo h($lastFlight['aircraft_icao']); ?>
+                                        ·
+                                        <?php echo h($lastFlight['landing_rate_fpm']); ?> fpm
+
+                                    <?php else: ?>
+
+                                        <?php echo htmlspecialchars(t('profile_no_data')); ?>
+
+                                    <?php endif; ?>
+
+                                </div>
+
+                                <div class="activity-time">
+
+                                    <?php if ($lastFlight): ?>
+
+                                        <?php echo date(
+                                            'd.m.Y H:i',
+                                            strtotime($lastFlight['created_at'])
+                                        ); ?>
+
+                                    <?php else: ?>
+
+                                        ----
+
+                                    <?php endif; ?>
+
+                                </div>
                                 <div class="activity-time">----</div>
                             </div>
                             <div class="activity-row">
