@@ -78,7 +78,8 @@ try {
             rating_atc,
             rating_special,
             total_flight_seconds,
-            total_flight_miles
+            total_flight_miles,
+            total_landings
          FROM users
          WHERE id = :id
          LIMIT 1"
@@ -152,6 +153,9 @@ $favouriteAircraftStmt = $pdo->prepare(
      ORDER BY total_seconds DESC
      LIMIT 1"
 );
+
+$totalLandings =
+    (int)($profileUser['total_landings'] ?? 0);
 
 $favouriteAircraftStmt->execute([
     'user_id' => $profileUserId
@@ -805,7 +809,10 @@ $memberSince =
                                 <div class="stats-section-title">Pilot</div>
                                 <div class="stat-row"><span>✈ <?php echo htmlspecialchars(t('profile_flight_hours')); ?></span><strong><?php echo h(formatFlightTime($totalFlightSeconds)); ?></strong></div>
                                 <div class="stat-row"><span>↗ <?php echo htmlspecialchars(t('profile_distance_flown')); ?></span><strong><?php echo h(number_format($totalFlightMiles, 1, ',', '.')); ?> NM</strong></div>
-                                <div class="stat-row"><span>🛬 <?php echo htmlspecialchars(t('profile_landings')); ?></span><strong>----</strong></div>
+                                <div class="stat-row">
+                                    <span>🛬 <?php echo htmlspecialchars(t('profile_landings')); ?></span>
+                                    <strong><?php echo h(number_format($totalLandings, 0, ',', '.')); ?></strong>
+                                </div>
                                 <div class="stat-row">
                                     <span>🛧 <?php echo htmlspecialchars(t('profile_favourite_aircraft')); ?></span>
                                     <strong><?php echo h($favouriteAircraft); ?></strong>
@@ -894,10 +901,7 @@ $memberSince =
                     <div class="card-title"><?php echo htmlspecialchars(t('profile_awards')); ?></div>
                     <div class="card-body">
                         <div class="awards">
-                            <div><div class="award-icon">100</div><div class="award-title">100 <?php echo htmlspecialchars(t('profile_flight_hours')); ?></div></div>
-                            <div><div class="award-icon">🎓</div><div class="award-title"><?php echo htmlspecialchars(t('profile_first_exam')); ?></div></div>
-                            <div><div class="award-icon">✈</div><div class="award-title">Event</div></div>
-                            <div><div class="award-icon">VFN</div><div class="award-title">Member</div></div>
+                            <div><?php echo htmlspecialchars(t('profile_no_data')); ?></div>
                         </div>
                     </div>
                 </div>
