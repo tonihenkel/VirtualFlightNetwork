@@ -23,6 +23,7 @@ $airspeed = $_POST["airspeed"] ?? null;
 $pitch = $_POST["pitch"] ?? null;
 $roll = $_POST["roll"] ?? null;
 $vertical_speed = $_POST["vertical_speed"] ?? null;
+
 $onGround =
     (int)($_POST["on_ground"] ?? 0);
 
@@ -54,8 +55,6 @@ if ($callsign === "") {
     ]);
     exit;
 }
-
-
 
 function calculateDistanceNm(
     float $lat1,
@@ -133,6 +132,10 @@ try {
         exit;
     }
 
+    /*
+        Vorherige Position vor dem Update lesen.
+        Diese Daten werden fuer Distanz / Flugzeit benoetigt.
+    */
     $previousPosition = null;
 
     $positionStmt = $pdo->prepare(
@@ -253,50 +256,93 @@ try {
 
     /*
         Trackpunkt speichern.
-
-        Wichtig:
-        Wir speichern wieder bei jedem Positionsupdate einen Trackpunkt.
-        Dadurch wird die Flugroute wieder zuverlässig aufgezeichnet.
-        Die Map lädt später nur neue Punkte nach.
+        Nicht jede Sekunde, sondern nur wenn der letzte Punkt
+        mindestens 5 Sekunden alt ist oder sich die Position geaendert hat.
     */
-    $insertTrackStmt = $pdo->prepare(
-        "INSERT INTO pilot_tracks
-        (
-            session_token,
-            callsign,
-            latitude,
-            longitude,
-            altitude,
-            heading
-        )
-        VALUES
-        (
-            :session_token,
-            :callsign,
-            :latitude,
-            :longitude,
-            :altitude,
-            :heading
-        )"
+    $trackStmt = $pdo->prepare(
+        "SELECT id, latitude, longitude, created_at
+         FROM pilot_tracks
+         WHERE session_token = :session_token
+            OR callsign = :callsign
+         ORDER BY id DESC
+         LIMIT 1"
     );
 
-    $insertTrackStmt->execute([
+    $trackStmt->execute([
         "session_token" => $token,
-        "callsign" => $callsign,
-        "latitude" => (float)$latitude,
-        "longitude" => (float)$longitude,
-        "altitude" => (float)$altitude,
-        "heading" => (float)$heading
+        "callsign" => $callsign
     ]);
 
+    $lastTrack =
+        $trackStmt->fetch(PDO::FETCH_ASSOC);
 
-    /* !!! */
+    $shouldInsertTrack = true;
 
+    if ($lastTrack) {
+        $lastCreated =
+            strtotime($lastTrack["created_at"]);
+
+        $now =
+            time();
+
+        if (($now - $lastCreated) < 5) {
+            $shouldInsertTrack = false;
+        }
+
+        $lastLat =
+            (float)$lastTrack["latitude"];
+
+        $lastLon =
+            (float)$lastTrack["longitude"];
+
+        if (
+            abs($lastLat - (float)$latitude) < 0.00001 &&
+            abs($lastLon - (float)$longitude) < 0.00001
+        ) {
+            $shouldInsertTrack = false;
+        }
+    }
+
+    if ($shouldInsertTrack) {
+        $insertTrackStmt = $pdo->prepare(
+            "INSERT INTO pilot_tracks
+            (
+                session_token,
+                callsign,
+                latitude,
+                longitude,
+                altitude,
+                heading
+            )
+            VALUES
+            (
+                :session_token,
+                :callsign,
+                :latitude,
+                :longitude,
+                :altitude,
+                :heading
+            )"
+        );
+
+        $insertTrackStmt->execute([
+            "session_token" => $token,
+            "callsign" => $callsign,
+            "latitude" => (float)$latitude,
+            "longitude" => (float)$longitude,
+            "altitude" => (float)$altitude,
+            "heading" => (float)$heading
+        ]);
+    }
+
+    /*
+        Flugzeit, Distanz und Flugzeug-Statistik.
+        Gezaehlt wird nur ab 30 kt und nur mit vorhandener Vorposition.
+    */
     if (
         (float)$airspeed >= 30 &&
         $previousPosition
-    )
-    {
+    ) {
         $distanceNm =
             calculateDistanceNm(
                 (float)$previousPosition["latitude"],
@@ -306,36 +352,27 @@ try {
             );
 
         /*
-            Schutz gegen Teleports
+            Schutz gegen Teleports.
+            Spruenge ueber 5 NM pro Update werden nicht gewertet.
         */
-        if ($distanceNm > 5)
-        {
+        if ($distanceNm > 5) {
             $distanceNm = 0;
         }
 
         $seconds = 1;
 
-        if (
-            !empty(
-                $previousPosition["last_update"]
-            )
-        )
-        {
+        if (!empty($previousPosition["last_update"])) {
             $lastUpdate =
-                strtotime(
-                    $previousPosition["last_update"]
-                );
+                strtotime($previousPosition["last_update"]);
 
-            if ($lastUpdate !== false)
-            {
+            if ($lastUpdate !== false) {
                 $seconds =
                     time() - $lastUpdate;
 
                 if (
                     $seconds < 1 ||
                     $seconds > 10
-                )
-                {
+                ) {
                     $seconds = 1;
                 }
             }
@@ -405,29 +442,59 @@ try {
             "distance" =>
                 $distanceNm
         ]);
+    }
 
-        $wasAirborne =
-            (int)($session["was_airborne"] ?? 0);
+    /*
+        Landing Detection
 
-        $lastVerticalSpeed =
-            (int)($session["last_vertical_speed"] ?? 0);
+        Dieser Block steht absichtlich ausserhalb der Flugzeit-/Speed-30-Logik.
+        Beim Aufsetzen kann die Groundspeed bereits unter 30 kt liegen.
 
-        $currentVerticalSpeed =
-            (int)round((float)$vertical_speed);
+        Eine Landung wird nur beim Statuswechsel erkannt:
+            was_airborne = 1
+            on_ground = 1
 
-        $currentAirspeed =
-            (float)$airspeed;
+        Eine 30-Sekunden-Sperre verhindert doppelte Landungen,
+        falls mehrere Positionsupdates direkt nach dem Touchdown eintreffen.
+    */
+    $wasAirborne =
+        (int)($session["was_airborne"] ?? 0);
 
-        $isAirborneNow =
-            $onGround === 0 &&
-            $currentAirspeed >= 40;
+    $lastVerticalSpeed =
+        (int)($session["last_vertical_speed"] ?? 0);
 
-        $isLandingNow =
-            $onGround === 1 &&
-            $wasAirborne === 1;
+    $currentVerticalSpeed =
+        (int)round((float)$vertical_speed);
 
-        if ($isLandingNow) {
+    $currentAirspeed =
+        (float)$airspeed;
 
+    $isAirborneNow =
+        $onGround === 0 &&
+        $currentAirspeed >= 40;
+
+    $isLandingNow =
+        $onGround === 1 &&
+        $wasAirborne === 1;
+
+    if ($isLandingNow) {
+        $recentLandingStmt = $pdo->prepare(
+            "SELECT id
+             FROM pilot_landings
+             WHERE user_id = :user_id
+               AND created_at >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
+             LIMIT 1"
+        );
+
+        $recentLandingStmt->execute([
+            "user_id" =>
+                (int)$session["user_id"]
+        ]);
+
+        $recentLanding =
+            $recentLandingStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$recentLanding) {
             $landingRateFpm =
                 abs($lastVerticalSpeed);
 
@@ -480,80 +547,75 @@ try {
                 "user_id" =>
                     (int)$session["user_id"]
             ]);
-
-            $sessionStateStmt = $pdo->prepare(
-                "UPDATE user_sessions
-                 SET
-                    was_airborne = 0,
-                    last_vertical_speed = :vertical_speed
-                 WHERE token = :token
-                 LIMIT 1"
-            );
-
-            $sessionStateStmt->execute([
-                "vertical_speed" =>
-                    $currentVerticalSpeed,
-
-                "token" =>
-                    $token
-            ]);
-
-        } elseif ($isAirborneNow) {
-
-            $sessionStateStmt = $pdo->prepare(
-                "UPDATE user_sessions
-                 SET
-                    was_airborne = 1,
-                    last_vertical_speed = :vertical_speed
-                 WHERE token = :token
-                 LIMIT 1"
-            );
-
-            $sessionStateStmt->execute([
-                "vertical_speed" =>
-                    $currentVerticalSpeed,
-
-                "token" =>
-                    $token
-            ]);
-
-        } elseif ($onGround === 1) {
-
-            $sessionStateStmt = $pdo->prepare(
-                "UPDATE user_sessions
-                 SET
-                    was_airborne = 0
-                 WHERE token = :token
-                 LIMIT 1"
-            );
-
-            $sessionStateStmt->execute([
-                "token" =>
-                    $token
-            ]);
         }
+
+        $sessionStateStmt = $pdo->prepare(
+            "UPDATE user_sessions
+             SET
+                was_airborne = 0,
+                last_vertical_speed = :vertical_speed
+             WHERE token = :token
+             LIMIT 1"
+        );
+
+        $sessionStateStmt->execute([
+            "vertical_speed" =>
+                $currentVerticalSpeed,
+
+            "token" =>
+                $token
+        ]);
+
+    } elseif ($isAirborneNow) {
+        $sessionStateStmt = $pdo->prepare(
+            "UPDATE user_sessions
+             SET
+                was_airborne = 1,
+                last_vertical_speed = :vertical_speed
+             WHERE token = :token
+             LIMIT 1"
+        );
+
+        $sessionStateStmt->execute([
+            "vertical_speed" =>
+                $currentVerticalSpeed,
+
+            "token" =>
+                $token
+        ]);
+
+    } elseif ($onGround === 1) {
+        $sessionStateStmt = $pdo->prepare(
+            "UPDATE user_sessions
+             SET
+                was_airborne = 0,
+                last_vertical_speed = :vertical_speed
+             WHERE token = :token
+             LIMIT 1"
+        );
+
+        $sessionStateStmt->execute([
+            "vertical_speed" =>
+                $currentVerticalSpeed,
+
+            "token" =>
+                $token
+        ]);
     }
-
-
-
-    /* !!! */
-
-
 
     echo json_encode([
         "success" => true,
         "message" => "Position aktualisiert.",
         "aircraft_icao" => $aircraft_icao,
         "aircraft_category" => $aircraft_category,
-        "transponder" => $transponder
+        "transponder" => $transponder,
+        "on_ground" => $onGround
     ]);
+
 } catch (Exception $e) {
     echo json_encode([
         "success" => false,
         "message" => "Serverfehler.",
         "error" => $e->getMessage()
     ]);
-
-
 }
-
