@@ -23,7 +23,7 @@ if (!isset($showRatings)) {
 <head>
     <meta charset="UTF-8">
     <title><?php echo htmlspecialchars($projectName); ?></title>
-
+    <link rel="icon" type="image/x-icon" href="favicon.ico"> 
     <link
         rel="stylesheet"
         href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"

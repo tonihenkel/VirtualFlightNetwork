@@ -251,9 +251,7 @@ $memberSince =
 <head>
     <meta charset="UTF-8">
     <title><?php echo htmlspecialchars(t('profile_title')); ?> - <?php echo h($projectName); ?></title>
-    <link rel="icon" type="image/x-icon" href="favicon.ico">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 
     <style>
         * { box-sizing: border-box; }
@@ -461,7 +459,7 @@ $memberSince =
 
         .content-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-columns: 1.05fr 1.9fr;
             gap: 14px;
             margin-bottom: 14px;
         }
@@ -680,8 +678,8 @@ $memberSince =
         @media (max-width: 1150px) {
             .profile-layout,
             .hero-card,
-            .profile-row-three,
-            .profile-row-full,
+            .content-grid,
+            .content-grid-bottom,
             .training-card {
                 grid-template-columns: 1fr;
             }
@@ -822,21 +820,6 @@ $memberSince =
                 <?php endif; ?>
             </div>
 
-
-
-
-
-
-
-
-        <!-- ## START ## -->
-
-
-
-
-
-
-
             <div class="content-grid">
                 <div class="card">
                     <div class="card-title"><?php echo htmlspecialchars(t('profile_statistics')); ?></div>
@@ -866,6 +849,32 @@ $memberSince =
                     </div>
                 </div>
 
+                <div class="card">
+                    <div class="card-title">ATC Rating <?php echo htmlspecialchars(t('profile_progress')); ?></div>
+                    <div class="card-body">
+                        <div class="rating-track">
+                            <?php for ($i = 0; $i <= 9; $i++): ?>
+                                <?php $rating = getAtcRating($i); ?>
+                                <div class="track-rating <?php echo $i > $atcRatingValue ? 'locked' : ''; ?>">
+                                    <img src="<?php echo h($rating['image']); ?>" title="<?php echo h($rating['code'] . ' - ' . $rating['name']); ?>">
+                                    <?php echo h($rating['code']); ?>
+                                </div>
+                                <?php if ($i < 9): ?><div class="track-arrow">→</div><?php endif; ?>
+                            <?php endfor; ?>
+                        </div>
+
+                        <div class="current-rating-box">
+                            <img src="<?php echo h($atcRating['image']); ?>">
+                            <div>
+                                <div class="current-rating-title"><?php echo htmlspecialchars(t('profile_current_rating')); ?>: <?php echo h($atcRating['name']); ?></div>
+                                <div class="current-rating-meta"><?php echo htmlspecialchars(t('profile_checked_by')); ?>: VFN Staff ✅</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="content-grid-bottom">
                 <div class="card">
                     <div class="card-title"><?php echo htmlspecialchars(t('profile_latest_activities')); ?></div>
                     <div class="card-body">
@@ -908,7 +917,7 @@ $memberSince =
                                     <?php endif; ?>
 
                                 </div>
-
+                                <div class="activity-time">----</div>
                             </div>
                             <div class="activity-row">
                                 <div class="activity-icon">🏆</div>
@@ -918,24 +927,6 @@ $memberSince =
                         </div>
                     </div>
                 </div>
-
-
-
-                <div class="card">
-                    <div class="card-title"><?php echo htmlspecialchars(t('profile_awards')); ?></div>
-                    <div class="card-body">
-                        <div class="awards">
-                            <div><?php echo htmlspecialchars(t('profile_no_data')); ?></div>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-
-
-
-            <div class="content-grid-bottom">
-
 
                 <div class="card">
                     <div class="card-title">Pilot Rating <?php echo htmlspecialchars(t('profile_progress')); ?></div>
@@ -961,55 +952,15 @@ $memberSince =
                     </div>
                 </div>
 
-            </div>
-
-
-
-
-
-            <div class="content-grid-bottom">
-
                 <div class="card">
-                    <div class="card-title">ATC Rating <?php echo htmlspecialchars(t('profile_progress')); ?></div>
+                    <div class="card-title"><?php echo htmlspecialchars(t('profile_awards')); ?></div>
                     <div class="card-body">
-                        <div class="rating-track">
-                            <?php for ($i = 0; $i <= 9; $i++): ?>
-                                <?php $rating = getAtcRating($i); ?>
-                                <div class="track-rating <?php echo $i > $atcRatingValue ? 'locked' : ''; ?>">
-                                    <img src="<?php echo h($rating['image']); ?>" title="<?php echo h($rating['code'] . ' - ' . $rating['name']); ?>">
-                                    <?php echo h($rating['code']); ?>
-                                </div>
-                                <?php if ($i < 9): ?><div class="track-arrow">→</div><?php endif; ?>
-                            <?php endfor; ?>
-                        </div>
-
-                        <div class="current-rating-box">
-                            <img src="<?php echo h($atcRating['image']); ?>">
-                            <div>
-                                <div class="current-rating-title"><?php echo htmlspecialchars(t('profile_current_rating')); ?>: <?php echo h($atcRating['name']); ?></div>
-                                <div class="current-rating-meta"><?php echo htmlspecialchars(t('profile_checked_by')); ?>: VFN Staff ✅</div>
-                            </div>
+                        <div class="awards">
+                            <div><?php echo htmlspecialchars(t('profile_no_data')); ?></div>
                         </div>
                     </div>
                 </div>
             </div>
-
-
-
-
-
-
-
-
-
-
-            <!-- ## ENDE ## -->
-
-
-
-
-
-
 
             <div class="card training-card">
                 <div class="training-empty">
