@@ -31,6 +31,7 @@ static std::map<std::string, std::string> gText;
 
 static bool gDebugEnabled = false;
 
+
 /*
 static const std::string gServerAddress =
 "https://virtualflightnetwork.com";
@@ -39,6 +40,7 @@ static const std::string gServerAddress =
 
 static const std::string gServerAddress =
 "http://127.0.0.1";
+
 
 
 static const std::string gLoginUrl =
