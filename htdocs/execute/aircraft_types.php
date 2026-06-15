@@ -73,7 +73,7 @@ function getAircraftCategory(string $icao): string
         "F15", "F15C", "F15E",
         "F16", "F16C", "F16D",
         "F18", "F18E", "F18F",
-        "F22", "F35", "F117",
+        "F22", "F35", "F117", "N-2394V",
 
         "EUFI", "TYPH", "RAFA", "GRIP", "TOR",
         "MIR2", "MIR4",
