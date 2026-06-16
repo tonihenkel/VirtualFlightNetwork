@@ -711,6 +711,11 @@ $memberSince =
         .online-dot.offline {
             background: #777;
         }
+
+        .full-width-row {
+            margin-bottom: 14px;
+        }
+
     </style>
 </head>
 <body>
@@ -734,7 +739,9 @@ $memberSince =
             <a class="side-link" href="#">🗼 <?php echo htmlspecialchars(t('profile_atc')); ?></a>
             <a class="side-link" href="#">🛡 <?php echo htmlspecialchars(t('profile_ratings_badges')); ?></a>
             <a class="side-link" href="#">🏆 <?php echo htmlspecialchars(t('profile_awards')); ?></a>
+            -->
             <a class="side-link" href="#">🕘 <?php echo htmlspecialchars(t('profile_activities')); ?></a>
+            <!--
             <a class="side-link" href="#">⚙ <?php echo htmlspecialchars(t('profile_settings')); ?></a>
             -->
             <?php
@@ -776,7 +783,7 @@ $memberSince =
                         <div class="profile-name">
                             <?php echo h($displayName); ?>
                             <span class="status-badge <?php echo $isNetworkOnline ? '' : 'offline'; ?>">
-                                <?php echo $isNetworkOnline ? 'ONLINE' : 'OFFLINE'; ?>
+                                <?php echo $isNetworkOnline ? htmlspecialchars(t('profile_online')) : htmlspecialchars(t('profile_offline')); ?>
                             </span>
                         </div>
 
@@ -937,7 +944,7 @@ $memberSince =
 
 
 
-            <div class="content-grid-bottom">
+            <div class="full-width-row">
 
 
                 <div class="card">
@@ -970,7 +977,7 @@ $memberSince =
 
 
 
-            <div class="content-grid-bottom">
+            <div class="full-width-row">
 
                 <div class="card">
                     <div class="card-title"><?php echo htmlspecialchars(t('profile_atc_rating')); ?> <?php echo htmlspecialchars(t('profile_progress')); ?></div>
@@ -1009,26 +1016,24 @@ $memberSince =
 
             <!-- ## ENDE ## -->
 
+            <div class="full-width-row">
 
 
-
-
-
-
-            <div class="card training-card">
-                <div class="training-empty">
-                    <div class="training-icon">☑</div>
-                    <div>
-                        <strong><?php echo htmlspecialchars(t('profile_no_active_training')); ?></strong><br>
-                        <span><?php echo htmlspecialchars(t('profile_no_training_text')); ?></span>
+                <div class="card training-card">
+                    <div class="training-empty">
+                        <div class="training-icon">☑</div>
+                        <div>
+                            <strong><?php echo htmlspecialchars(t('profile_no_active_training')); ?></strong><br>
+                            <span><?php echo htmlspecialchars(t('profile_no_training_text')); ?></span>
+                        </div>
                     </div>
-                </div>
 
-                <div class="role-grid">
-                    <div class="role-item"><strong><?php echo htmlspecialchars(t('profile_mentor')); ?></strong>----</div>
-                    <div class="role-item"><strong><?php echo htmlspecialchars(t('profile_examiner')); ?></strong>----</div>
-                    <div class="role-item"><strong><?php echo htmlspecialchars(t('profile_division')); ?></strong><?php echo h($divisionName); ?></div>
-                    <div class="role-item"><strong><?php echo htmlspecialchars(t('profile_staff_role')); ?></strong><?php echo $specialRating ? h($specialRating['name']) : '----'; ?></div>
+                    <div class="role-grid">
+                        <div class="role-item"><strong><?php echo htmlspecialchars(t('profile_mentor')); ?></strong>----</div>
+                        <div class="role-item"><strong><?php echo htmlspecialchars(t('profile_examiner')); ?></strong>----</div>
+                        <div class="role-item"><strong><?php echo htmlspecialchars(t('profile_division')); ?></strong><?php echo h($divisionName); ?></div>
+                        <div class="role-item"><strong><?php echo htmlspecialchars(t('profile_staff_role')); ?></strong><?php echo $specialRating ? h($specialRating['name']) : '----'; ?></div>
+                    </div>
                 </div>
             </div>
 
