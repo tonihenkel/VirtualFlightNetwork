@@ -501,5 +501,49 @@ return [
     'profile_favourite_aircraft' =>
         'Lieblingsflugzeug',
 
+    'user_not_found' =>
+        'Benutzer wurde nicht gefunden',
+
+    'profile_atc_rating' =>
+    'ATC Rating',
+
+    'profile_pilot_rating' =>
+        'Piloten Rating',
+
+    'profile_special_rating' =>
+        'Spezial Rating',
+
+    'profile_rating_update' =>
+        'Rating Update',
+
+    'profile_mentor' =>
+        'Mentor',
+
+    'profile_examiner' =>
+        'Prüfer',
+
+    'profile_division' =>
+        'Division',
+
+    'profile_staff_role' =>
+        'Staff Rolle',
+
+    'profile_online' =>
+        'ONLINE',
+
+    'profile_offline' =>
+        'OFFLINE',
+
+    'profile_vfn_staff' =>
+        'VFN Staff',
+
+    'profile_task_home' =>
+        'HOME',
+
+    'profile_unknown' =>
+        'Unbekannt',
+
+    'profile_unknown_divison' =>
+        'Unbekannte Division',
 
 ];

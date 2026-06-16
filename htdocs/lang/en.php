@@ -502,4 +502,49 @@
         'profile_favourite_aircraft' =>
             'Favourite Aircraft',
 
+        'user_not_found' =>
+            'User not found',
+
+        'profile_atc_rating' =>
+            'ATC Rating',
+
+        'profile_pilot_rating' =>
+            'Pilot Rating',
+
+        'profile_special_rating' =>
+            'Special Rating',
+
+        'profile_rating_update' =>
+            'Rating Update',
+
+        'profile_mentor' =>
+            'Mentor',
+
+        'profile_examiner' =>
+            'Examiner',
+
+        'profile_division' =>
+            'Division',
+
+        'profile_staff_role' =>
+            'Staff Role',
+
+        'profile_online' =>
+            'ONLINE',
+
+        'profile_offline' =>
+            'OFFLINE',
+
+        'profile_vfn_staff' =>
+            'VFN Staff',
+
+        'profile_task_home' =>
+            'HOME',
+
+        'profile_unknown' =>
+            'unknown',
+
+        'profile_unknown_divison' =>
+            'Unknown Division',
+
     ];
