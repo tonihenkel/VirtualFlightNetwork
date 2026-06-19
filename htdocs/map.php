@@ -23,7 +23,7 @@ if (!isset($showRatings)) {
 <head>
     <meta charset="UTF-8">
     <title><?php echo htmlspecialchars($projectName); ?></title>
-    <link rel="icon" type="image/x-icon" href="favicon.ico"> 
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link
         rel="stylesheet"
         href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -712,14 +712,15 @@ if ($statusMessage !== '') {
         }
     ).setView(
         [51.0, 10.0],
-        6
+        5
     );
 
     L.tileLayer(
         'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
         {
-            maxZoom: 18,
-            attribution: '&copy; OpenStreetMap'
+            maxZoom: 22,
+            minzoom: 1,
+            attribution: '&copy; Virtual Flightnetwork'
         }
     ).addTo(map);
 

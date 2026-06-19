@@ -22,6 +22,7 @@ $_GET['lang'] =
     $verifyLanguage;
 
 require_once 'execute/config.php';
+require_once 'includes/activity_log.php';
 require_once 'includes/language.php';
 
 function redirectBack(string $type, string $message): void
@@ -124,6 +125,15 @@ try {
     $stmt->execute([
         'id' => $user['id']
     ]);
+
+    logActivity(
+        $pdo,
+        (int)$user['id'],
+        'email_verified',
+        'activity_email_verified',
+        '',
+        0
+    );
 
     redirectBack(
         'success',

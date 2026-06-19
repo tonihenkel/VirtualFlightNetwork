@@ -547,4 +547,38 @@
         'profile_unknown_divison' =>
             'Unknown Division',
 
+        /*
+        Aktivitäten
+        */
+
+        'activity_registration' =>
+            'Account Created',
+
+        'activity_email_verified' =>
+            'Email Verified',
+
+        'activity_password_changed' =>
+            'Password Changed',
+
+        'activity_division_changed' =>
+            'Division Changed',
+
+        'activity_country_changed' =>
+            'Country Changed',
+
+        'activity_exam_passed' =>
+            'Exam Passed',
+
+        'activity_rating_updated' =>
+            'Rating Updated',
+
+        'activity_first_flight' =>
+            'First Flight',
+
+        'activity_system' =>
+            'System',
+
+        'activity_award_unlocked' =>
+            'Award Unlocked',
+
     ];

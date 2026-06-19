@@ -2,6 +2,7 @@
 session_start();
 
 require_once 'execute/config.php';
+require_once 'includes/activity_log.php';
 require_once 'execute/send_mail.php';
 
 $registerLanguage =
@@ -223,6 +224,18 @@ try {
         'password_hash' => $passwordHash,
         'email_verify_token' => $verifyToken
     ]);
+
+    $userId =
+        (int)$pdo->lastInsertId();
+
+    logActivity(
+        $pdo,
+        $userId,
+        'registration',
+        'activity_registration',
+        '',
+        0
+    );
 
     $verifyUrl =
         getBaseUrl()

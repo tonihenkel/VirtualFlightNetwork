@@ -546,4 +546,38 @@ return [
     'profile_unknown_divison' =>
         'Unbekannte Division',
 
+    /*
+        Aktivitäten
+    */
+
+    'activity_registration' =>
+        'Konto erstellt',
+
+    'activity_email_verified' =>
+        'E-Mail bestätigt',
+
+    'activity_password_changed' =>
+        'Passwort geändert',
+
+    'activity_division_changed' =>
+        'Division geändert',
+
+    'activity_country_changed' =>
+        'Herkunftsland geändert',
+
+    'activity_exam_passed' =>
+        'Prüfung bestanden',
+
+    'activity_rating_updated' =>
+        'Rating aktualisiert',
+
+    'activity_first_flight' =>
+        'Erster Flug',
+
+    'activity_system' =>
+        'System',
+
+    'activity_award_unlocked' =>
+        'Award freigeschaltet',
+
 ];

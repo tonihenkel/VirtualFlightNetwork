@@ -2,6 +2,8 @@
 header("Content-Type: application/json; charset=utf-8");
 
 require_once 'config.php';
+require_once '../includes/activity_log.php';
+require_once '../includes/award_system.php';
 
 $token = trim($_POST["token"] ?? "");
 
@@ -220,6 +222,39 @@ try {
         "cruising_speed" => $cruising_speed,
         "remarks" => $remarks
     ]);
+
+    $firstFlightStmt = $pdo->prepare(
+        "SELECT id
+         FROM user_activity_log
+         WHERE user_id = :user_id
+           AND activity_key = 'activity_first_flight'
+         LIMIT 1"
+    );
+
+    $firstFlightStmt->execute([
+        'user_id' => (int)$session['user_id']
+    ]);
+
+    $firstFlight =
+        $firstFlightStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$firstFlight) {
+
+        logActivity(
+            $pdo,
+            (int)$session['user_id'],
+            'flight',
+            'activity_first_flight',
+            $departure_airport . ' ? ' . $arrival_airport,
+            0
+        );
+
+        awardUser(
+            $pdo,
+            (int)$session['user_id'],
+            'award_first_flight'
+        );
+    }
 
     echo json_encode([
         "success" => true,
