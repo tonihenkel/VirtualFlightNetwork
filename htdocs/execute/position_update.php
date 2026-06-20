@@ -3,6 +3,9 @@ header("Content-Type: application/json; charset=utf-8");
 
 require_once 'config.php';
 require_once 'aircraft_types.php';
+require_once '../includes/activity_log.php';
+require_once '../includes/award_system.php';
+
 
 $token = trim($_POST["token"] ?? "");
 
@@ -501,6 +504,42 @@ try {
                 "user_id" =>
                     (int)$session["user_id"]
             ]);
+
+            $totalLandingStmt = $pdo->prepare(
+                "SELECT total_landings
+                 FROM users
+                 WHERE id = :user_id
+                 LIMIT 1"
+            );
+
+            $totalLandingStmt->execute([
+                "user_id" =>
+                    (int)$session["user_id"]
+            ]);
+
+            $userStats =
+                $totalLandingStmt->fetch(PDO::FETCH_ASSOC);
+
+            $totalLandings =
+                (int)($userStats["total_landings"] ?? 0);
+
+            if ($totalLandings === 1) {
+
+                logActivity(
+                    $pdo,
+                    (int)$session["user_id"],
+                    'flight',
+                    'activity_first_landing',
+                    $aircraft_icao . ' · ' . $landingRateFpm . ' fpm',
+                    0
+                );
+
+                awardUser(
+                    $pdo,
+                    (int)$session["user_id"],
+                    'award_first_landing'
+                );
+            }
         }
 
         $sessionStateStmt = $pdo->prepare(

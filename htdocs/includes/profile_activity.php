@@ -108,7 +108,19 @@ function activityIcon(string $type): string
                             </strong>
 
                             <?php if (!empty($activity['activity_value'])): ?>
-                                <?php echo h($activity['activity_value']); ?><br>
+
+                                <?php
+                                    $activityValue =
+                                        $activity['activity_value'];
+
+                                    if ($activity['activity_type'] === 'award') {
+                                        $activityValue =
+                                            t($activityValue);
+                                    }
+                                ?>
+
+                                <?php echo h($activityValue); ?><br>
+
                             <?php endif; ?>
 
                             <small>

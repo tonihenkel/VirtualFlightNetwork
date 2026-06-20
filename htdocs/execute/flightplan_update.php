@@ -245,7 +245,7 @@ try {
             (int)$session['user_id'],
             'flight',
             'activity_first_flight',
-            $departure_airport . ' ? ' . $arrival_airport,
+            $departure_airport . ' → ' . $arrival_airport,
             0
         );
 

@@ -572,6 +572,9 @@
         'activity_rating_updated' =>
             'Rating Updated',
 
+        'award_first_flight' =>
+            'First Flight',
+
         'activity_first_flight' =>
             'First Flight',
 
@@ -580,5 +583,11 @@
 
         'activity_award_unlocked' =>
             'Award Unlocked',
+
+        'activity_first_landing' =>
+            'First Landing',
+
+        'award_first_landing' =>
+            'First Landing',
 
     ];

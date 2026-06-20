@@ -571,6 +571,9 @@ return [
     'activity_rating_updated' =>
         'Rating aktualisiert',
 
+    'award_first_flight' =>
+        'Erster Flug',
+
     'activity_first_flight' =>
         'Erster Flug',
 
@@ -579,5 +582,11 @@ return [
 
     'activity_award_unlocked' =>
         'Award freigeschaltet',
+
+    'activity_first_landing' =>
+        'Erste Landung',
+
+    'award_first_landing' =>
+        'Erste Landung',
 
 ];
