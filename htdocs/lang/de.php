@@ -571,11 +571,8 @@ return [
     'activity_rating_updated' =>
         'Rating aktualisiert',
 
-    'award_first_flight' =>
-        'Erster Flug',
-
-    'activity_first_flight' =>
-        'Erster Flug',
+    'profile_view_all_awards' =>
+        'Alle Auszeichnungen anzeigen',
 
     'activity_system' =>
         'System',
@@ -583,10 +580,129 @@ return [
     'activity_award_unlocked' =>
         'Award freigeschaltet',
 
+
+
+
+ // AWARDS //
+
+
+    'award_first_flight' =>
+        'Erster Flug',
+
+    'activity_first_flight' =>
+        'Erster Flug',
+
+    'description_award_first_flight' =>
+        'Den ersten Flugplan eingereicht.',
+
+
     'activity_first_landing' =>
         'Erste Landung',
 
     'award_first_landing' =>
         'Erste Landung',
+
+    'description_award_first_landing' =>
+        'Du hast deine erste Landung absolviert.',
+
+
+    'activity_crash_pilot' =>
+        'Crash Pilot',
+
+    'award_crash_pilot' =>
+        'Crash Pilot',
+
+    'description_award_crash_pilot' =>
+        'Du hast deinen ersten Simulatorabsturz erlebt.',
+
+
+    'activity_hard_landing' =>
+        'Harte Landung',
+
+    'award_hard_landing' =>
+        'Harte Landung',
+
+    'description_award_hard_landing' =>
+        'Jeder Pilot beginnt einmal – manchmal etwas unsanfter.',
+
+
+    'activity_butter_landing' =>
+        'Butterweiche Landung',
+
+    'award_butter_landing' =>
+        'Butterweiche Landung',
+
+    'description_award_butter_landing' =>
+        'Du hast eine außergewöhnlich sanfte Landung absolviert.',
+
+
+    'activity_world_traveler' =>
+        'Weltbereiser',
+
+    'award_world_traveler' =>
+        'Weltbereiser',
+
+    'description_award_world_traveler' =>
+        'Du hast mindesten 10 Länder bereist.',
+
+
+    'activity_global_explorer' =>
+        'Globaler Bereiser',
+
+    'award_global_explorer' =>
+        'Globaler Bereiser',
+
+    'description_award_global_explorer' =>
+        'Du hast mindestens 25 Länder bereist.',
+
+
+    'activity_international_ace' =>
+        'Internationaler Spitzenreiser',
+
+    'award_international_ace' =>
+        'Internationaler Spitzenreiser',
+
+    'description_award_international_ace' =>
+        'Du hast mindestens 75 Länder bereist.',
+
+
+    'activity_globe_master' =>
+        'Globus Meister',
+
+    'award_globe_master' =>
+        'Globus Meister',
+
+    'description_award_globe_master' =>
+        'Du hast mindesten 100 Länder bereist.',
+
+
+    'activity_night_owl' =>
+        'Nachteule',
+
+    'award_night_owl' =>
+        'Nachteule',
+
+    'description_award_night_owl' =>
+        'Du hast deinen ersten Nachtflug absolviert.',
+
+
+    'activity_moon_walker' =>
+        'Mondläufer',
+
+    'award_moon_walker' =>
+        'Mondläufer',
+
+    'description_award_moon_walker' =>
+        'Du hast 20 Nachtflüge absolviert.',
+
+
+    'activity_master_of_night' =>
+        'Meister der Nacht',
+
+    'award_master_of_night' =>
+        'Meister der Nacht',
+
+    'description_award_master_of_night' =>
+        'Du hast 50 Nachtflüge absolviert.',
 
 ];

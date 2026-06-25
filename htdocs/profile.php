@@ -250,7 +250,8 @@ $activeTab =
 
 $allowedTabs = [
     'overview',
-    'activity'
+    'activity',
+    'awards'
 ];
 
 if (!in_array($activeTab, $allowedTabs, true)) {
@@ -262,6 +263,31 @@ $profileBaseUrl =
     . (int)$profileUserId
     . '&lang='
     . urlencode($currentLanguage);
+
+;
+
+$awardImages = [
+
+    // Flight
+    'award_first_flight'         => 'images/awards/first_flight.png',
+    'award_first_landing'        => 'images/awards/first_landing.png',
+    'award_crash_pilot'          => 'images/awards/crash_pilot.png',
+    'award_hard_landing'         => 'images/awards/hard_landing.png',
+    'award_butter_landing'       => 'images/awards/butter_landing.png',
+
+    // Distance / World
+    'award_world_traveler'       => 'images/awards/world_traveler.png',
+    'award_global_explorer'      => 'images/awards/global_explorer.png',
+    'award_international_ace'    => 'images/awards/international_ace.png',
+    'award_globe_master'         => 'images/awards/globe_master.png',
+
+    // Night
+    'award_night_owl'            => 'images/awards/night_owl.png',
+    'award_moon_walker'          => 'images/awards/moon_walker.png',
+    'award_master_of_night'      => 'images/awards/master_of_night.png',
+
+];
+
 
 ?>
 <!DOCTYPE html>
@@ -326,7 +352,7 @@ $profileBaseUrl =
             display: flex;
             align-items: center;
             gap: 11px;
-            padding: 13px 14px;
+            padding: 3px 14px;
             margin-bottom: 6px;
             border-radius: 8px;
             color: #d7e8ff;
@@ -734,6 +760,44 @@ $profileBaseUrl =
             margin-bottom: 14px;
         }
 
+        .award-item {
+            text-align: center;
+            color: white;
+            font-size: 12px;
+        }
+
+        .award-image {
+            width: 140px;
+            height: 140px;
+            object-fit: contain;
+            display: block;
+            margin: 0 auto 8px auto;
+        }
+
+        .awards-footer {
+            margin-top: 15px;
+            text-align: center;
+            width: 100%;
+        }
+
+        .awards-footer a {
+            display: inline-block;
+            color: #6ea8ff;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .awards-full {
+            grid-template-columns: repeat(6, 1fr);
+        }
+
+        .award-date {
+            color: #9fb3cf;
+            font-size: 11px;
+            margin-top: 4px;
+        }
+
+
     </style>
 </head>
 <body>
@@ -761,13 +825,22 @@ $profileBaseUrl =
                 class="side-link <?php echo $activeTab === 'activity' ? 'active' : ''; ?>"
                 href="<?php echo $profileBaseUrl; ?>&a=activity">
                 🕘 <?php echo htmlspecialchars(t('profile_activities')); ?>
+
+                <?php if ($unreadActivityCount > 0): ?>
+                    <span class="activity-notification-dot"></span>
+                <?php endif; ?>
+            </a>
+
+            <a
+                class="side-link <?php echo $activeTab === 'awards' ? 'active' : ''; ?>"
+                href="<?php echo $profileBaseUrl; ?>&a=awards">
+                🏆 <?php echo htmlspecialchars(t('profile_awards')); ?>
             </a>
 
             <!--
             <a class="side-link" href="#">✈ <?php echo htmlspecialchars(t('profile_pilot')); ?></a>
             <a class="side-link" href="#">🗼 <?php echo htmlspecialchars(t('profile_atc')); ?></a>
             <a class="side-link" href="#">🛡 <?php echo htmlspecialchars(t('profile_ratings_badges')); ?></a>
-            <a class="side-link" href="#">🏆 <?php echo htmlspecialchars(t('profile_awards')); ?></a>
             <a class="side-link" href="#">⚙ <?php echo htmlspecialchars(t('profile_settings')); ?></a>
             -->
             <?php
@@ -809,6 +882,10 @@ $profileBaseUrl =
                     case 'overview':
                     default:
                         require_once 'includes/profile_overview.php';
+                        break;
+
+                    case 'awards':
+                        require_once 'includes/profile_awards.php';
                         break;
                 }
             ?>

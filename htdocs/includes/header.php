@@ -8,6 +8,8 @@ if (!isset($defaultTimezone) || trim($defaultTimezone) === '') {
     $defaultTimezone = "UTC";
 }
 
+
+
 $currentPage = basename($_SERVER['PHP_SELF']);
 
 $currentLanguage = $_SESSION['language'] ?? 'en';
@@ -29,7 +31,45 @@ function renderFlag(string $language): string
     return '<span class="flag flag-en"><span></span></span>';
 }
 
+
+$unreadActivityCount = 0;
+
+if (isset($_SESSION['web_user_id'])) {
+    try {
+        if (isset($pdo) && $pdo instanceof PDO) {
+            $headerPdo = $pdo;
+        } else {
+            $headerPdo = new PDO(
+                "mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4",
+                $dbUser,
+                $dbPass,
+                [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+                ]
+            );
+        }
+
+        $unreadActivityStmt = $headerPdo->prepare(
+            "SELECT COUNT(*)
+             FROM user_activity_log
+             WHERE user_id = :user_id
+               AND is_read = 0"
+        );
+
+        $unreadActivityStmt->execute([
+            'user_id' => (int)$_SESSION['web_user_id']
+        ]);
+
+        $unreadActivityCount =
+            (int)$unreadActivityStmt->fetchColumn();
+
+    } catch (Exception $e) {
+        $unreadActivityCount = 0;
+    }
+}
 ?>
+
+
 
 <style>
     .topbar {
@@ -302,6 +342,33 @@ function renderFlag(string $language): string
     height: 40px;
 }
 
+
+        .activity-notification-dot {
+            display: inline-block;
+            width: 9px;
+            height: 9px;
+            margin-left: 8px;
+            background: #ff3b3b;
+            border-radius: 50%;
+            box-shadow:  0 0 8px rgba(255, 59, 59, 0.9);
+            vertical-align: middle;
+        }
+
+        .header-notification-dot {
+            display: inline-block !important;
+            width: 8px;
+            height: 8px;
+            margin-left: 6px;
+            background: #ff3b3b !important;
+            background-color: #ff3b3b !important;
+            border-radius: 50%;
+            box-shadow: 0 0 8px rgba(255, 59, 59, 0.9);
+            position: relative;
+            top: -1px;
+            vertical-align: middle;
+            z-index: 1;
+        }
+
 </style>
 
 <header class="topbar">
@@ -338,6 +405,10 @@ function renderFlag(string $language): string
                     ?? 'User'
                 );
                 ?>
+
+                <?php if ($unreadActivityCount > 0): ?>
+                    <span class="header-notification-dot"></span>
+                <?php endif; ?>
             </a>
             </span>
 

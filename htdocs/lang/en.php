@@ -590,4 +590,7 @@
         'award_first_landing' =>
             'First Landing',
 
+        'profile_view_all_awards' =>
+            'View all awards',
+
     ];

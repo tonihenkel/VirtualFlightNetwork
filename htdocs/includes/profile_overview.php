@@ -1,4 +1,21 @@
 
+            <?php
+
+
+            $awardStmt = $pdo->prepare(
+                "SELECT award_key, awarded_at
+                 FROM user_awards
+                 WHERE user_id = :user_id
+                 ORDER BY awarded_at ASC LIMIT 0,4"
+            );
+
+            $awardStmt->execute([
+                'user_id' => $profileUserId
+            ]);
+
+            $userAwards =
+                $awardStmt->fetchAll(PDO::FETCH_ASSOC);
+            ?>
 
             <div class="card hero-card">
                 <div class="user-hero">
@@ -163,7 +180,49 @@
                     <div class="card-title"><?php echo htmlspecialchars(t('profile_awards')); ?></div>
                     <div class="card-body">
                         <div class="awards">
-                            <div><?php echo htmlspecialchars(t('profile_no_data')); ?></div>
+
+                            <div class="awards">
+
+                                <?php if (empty($userAwards)): ?>
+
+                                    <div><?php echo htmlspecialchars(t('profile_no_data')); ?></div>
+
+                                <?php else: ?>
+
+                                    <?php foreach ($userAwards as $award): ?>
+
+                                        <?php
+                                            $awardKey =
+                                                $award['award_key'];
+
+                                            $awardImage =
+                                                $awardImages[$awardKey]
+                                                ?? 'images/awards/default.png';
+                                        ?>
+
+                                        <div class="award-item">
+                                            <img
+                                                src="<?php echo h($awardImage); ?>"
+                                                alt="<?php echo h(t($awardKey)); ?>"
+                                                class="award-image">
+
+                                            <div class="award-title">
+                                                <?php echo h(t($awardKey)); ?>
+                                            </div>
+                                        </div>
+
+                                    <?php endforeach; ?>
+
+                                <?php endif; ?>
+                                <div class="awards-footer">
+                                    <a href="profile.php?id=<?php echo $profileUserId; ?>&lang=<?php echo urlencode($currentLanguage); ?>&a=awards">
+                                        <?php echo htmlspecialchars(t('profile_view_all_awards')); ?>
+                                    </a>
+                                </div>
+                            </div>
+
+
+
                         </div>
                     </div>
                 </div>

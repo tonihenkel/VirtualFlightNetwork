@@ -7,6 +7,7 @@ $activityStmt = $pdo->prepare(
         l.activity_value,
         l.actor_user_id,
         l.created_at,
+        l.is_read,
         u.username AS actor_username,
         u.real_name AS actor_real_name
      FROM user_activity_log l
@@ -64,6 +65,17 @@ function activityIcon(string $type): string
     }
 }
 
+$markReadStmt = $pdo->prepare(
+    "UPDATE user_activity_log
+     SET is_read = 1
+     WHERE user_id = :user_id
+       AND is_read = 0"
+);
+
+$markReadStmt->execute([
+    'user_id' => $profileUserId
+]);
+
 ?>
 
 <div class="card">
@@ -101,10 +113,15 @@ function activityIcon(string $type): string
                             <?php echo activityIcon($activity['activity_type']); ?>
                         </div>
 
+
                         <div class="activity-main">
 
                             <strong>
                                 <?php echo htmlspecialchars(t($activity['activity_key'])); ?>
+
+                                <?php
+                                    if ($activity['is_read'] == 0){ echo '<span class="header-notification-dot"></span>'; }
+                                ?>
                             </strong>
 
                             <?php if (!empty($activity['activity_value'])): ?>

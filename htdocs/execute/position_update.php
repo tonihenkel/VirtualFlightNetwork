@@ -530,7 +530,7 @@ try {
                     (int)$session["user_id"],
                     'flight',
                     'activity_first_landing',
-                    $aircraft_icao . ' · ' . $landingRateFpm . ' fpm',
+                    $aircraft_icao . ' - ' . $landingRateFpm . ' fpm',
                     0
                 );
 
