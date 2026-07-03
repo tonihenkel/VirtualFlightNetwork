@@ -2,7 +2,7 @@
 
 try
 {
-    require_once 'execute/config.php';
+    require_once __DIR__ . '/../execute/config.php';
 
     $pdo = new PDO(
         "mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4",

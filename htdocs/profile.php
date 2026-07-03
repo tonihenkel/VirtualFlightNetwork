@@ -286,6 +286,8 @@ $awardImages = [
     'award_moon_walker'          => 'images/awards/moon_walker.png',
     'award_master_of_night'      => 'images/awards/master_of_night.png',
 
+    'award_founder_home'         => 'images/awards/founder_home.png',
+
 ];
 
 
@@ -775,6 +777,7 @@ $awardImages = [
         }
 
         .awards-footer {
+            grid-column: 1 / -1;
             margin-top: 15px;
             text-align: center;
             width: 100%;
@@ -785,6 +788,10 @@ $awardImages = [
             color: #6ea8ff;
             text-decoration: none;
             white-space: nowrap;
+        }
+
+        .awards-footer a:hover {
+            text-decoration: underline;
         }
 
         .awards-full {

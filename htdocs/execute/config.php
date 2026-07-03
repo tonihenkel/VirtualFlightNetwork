@@ -3,8 +3,10 @@
 // MySQL Datenbank Zugriff
 $dbHost = "127.0.0.1";
 $dbName = "flight_network";
-$dbUser = "Administrator";
-$dbPass = "Yakus@nTheGhostRid3r";
+$dbUser = "root";
+//$dbUser = "Administrator";
+$dbPass = "";
+//$dbPass = "Yakus@nTheGhostRid3r";
 
 // Zeitzonen-Einstellungen
 $defaultTimezone = "UTC";

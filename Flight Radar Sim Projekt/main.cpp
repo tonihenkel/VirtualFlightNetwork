@@ -145,6 +145,8 @@ static XPLMDataRef gTransponder = nullptr;
 
 static XPLMDataRef gOnGround = nullptr;
 
+static XPLMDataRef gHasCrashedRef = nullptr;
+
 
 void UpdateFlightplanWindowState();
 
@@ -1900,6 +1902,14 @@ void SendPositionUpdate()
     int transponder =
         gTransponder ? XPLMGetDatai(gTransponder) : 0;
 
+    int hasCrashed = 0;
+
+    if (gHasCrashedRef)
+    {
+        hasCrashed =
+            XPLMGetDatai(gHasCrashedRef);
+    }
+
     std::string aircraftICAO =
         GetAircraftICAO();
 
@@ -1919,7 +1929,8 @@ void SendPositionUpdate()
         "&com1=" + UrlEncode(FormatComFrequency(com1)) +
         "&com2=" + UrlEncode(FormatComFrequency(com2)) +
         "&com3=" + UrlEncode(FormatComFrequency(com3)) +
-        "&transponder=" + UrlEncode(IntToString(transponder));
+        "&transponder=" + UrlEncode(IntToString(transponder)) +
+        "&has_crashed=" + UrlEncode(IntToString(hasCrashed));
 
     std::string response =
         HttpPost(
@@ -3426,6 +3437,11 @@ PLUGIN_API int XPluginStart(
     gOnGround =
         XPLMFindDataRef(
             "sim/flightmodel/failures/onground_any"
+        );
+
+    gHasCrashedRef =
+        XPLMFindDataRef(
+            "sim/flightmodel2/misc/has_crashed"
         );
 
     /*

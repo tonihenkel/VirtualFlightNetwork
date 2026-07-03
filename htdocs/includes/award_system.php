@@ -6,10 +6,44 @@ function awardUser(
     PDO $pdo,
     int $userId,
     string $awardKey,
-    int $actorUserId = 0
+    int $createdBy = 0
 ): bool {
 
-    $checkStmt = $pdo->prepare(
+    if (userHasAward($pdo, $userId, $awardKey)) {
+        return false;
+    }
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO user_awards
+         (
+            user_id,
+            award_key,
+            awarded_by
+         )
+         VALUES
+         (
+            :user_id,
+            :award_key,
+            :awarded_by
+         )"
+    );
+
+    $stmt->execute([
+        'user_id' => $userId,
+        'award_key' => $awardKey,
+        'awarded_by' => $createdBy
+    ]);
+
+    return true;
+}
+
+function userHasAward(
+    PDO $pdo,
+    int $userId,
+    string $awardKey
+): bool {
+
+    $stmt = $pdo->prepare(
         "SELECT id
          FROM user_awards
          WHERE user_id = :user_id
@@ -17,41 +51,10 @@ function awardUser(
          LIMIT 1"
     );
 
-    $checkStmt->execute([
+    $stmt->execute([
         'user_id' => $userId,
         'award_key' => $awardKey
     ]);
 
-    if ($checkStmt->fetch()) {
-        return false;
-    }
-
-    $insertStmt = $pdo->prepare(
-        "INSERT INTO user_awards
-        (
-            user_id,
-            award_key
-        )
-        VALUES
-        (
-            :user_id,
-            :award_key
-        )"
-    );
-
-    $insertStmt->execute([
-        'user_id' => $userId,
-        'award_key' => $awardKey
-    ]);
-
-    logActivity(
-        $pdo,
-        $userId,
-        'award',
-        'activity_award_unlocked',
-        $awardKey,
-        $actorUserId
-    );
-
-    return true;
+    return (bool)$stmt->fetch(PDO::FETCH_ASSOC);
 }

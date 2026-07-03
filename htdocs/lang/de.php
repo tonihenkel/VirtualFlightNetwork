@@ -635,7 +635,6 @@ return [
     'description_award_butter_landing' =>
         'Du hast eine außergewöhnlich sanfte Landung absolviert.',
 
-
     'activity_world_traveler' =>
         'Weltbereiser',
 
@@ -643,7 +642,7 @@ return [
         'Weltbereiser',
 
     'description_award_world_traveler' =>
-        'Du hast mindesten 10 Länder bereist.',
+        'Du hast mindestens 10 Länder bereist.',
 
 
     'activity_global_explorer' =>
@@ -663,7 +662,7 @@ return [
         'Internationaler Spitzenreiser',
 
     'description_award_international_ace' =>
-        'Du hast mindestens 75 Länder bereist.',
+        'Du hast mindestens 50 Länder bereist.',
 
 
     'activity_globe_master' =>
@@ -673,7 +672,7 @@ return [
         'Globus Meister',
 
     'description_award_globe_master' =>
-        'Du hast mindesten 100 Länder bereist.',
+        'Du hast mindestens 100 Länder bereist.',
 
 
     'activity_night_owl' =>
@@ -693,7 +692,7 @@ return [
         'Mondläufer',
 
     'description_award_moon_walker' =>
-        'Du hast 20 Nachtflüge absolviert.',
+        'Du hast 10 Nachtflüge absolviert.',
 
 
     'activity_master_of_night' =>
@@ -704,5 +703,14 @@ return [
 
     'description_award_master_of_night' =>
         'Du hast 50 Nachtflüge absolviert.',
+
+    'activity_founder_home' =>
+        'Das Haus des Gründers',
+
+    'award_founder_home' =>
+        'Das Haus des Gründers',
+
+    'description_award_founder_home' =>
+        'Du bist innerhalb von 5 NM am Haus des VFN-Gründers vorbeigeflogen.',
 
 ];

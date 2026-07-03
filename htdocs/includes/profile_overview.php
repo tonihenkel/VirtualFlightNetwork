@@ -6,7 +6,7 @@
                 "SELECT award_key, awarded_at
                  FROM user_awards
                  WHERE user_id = :user_id
-                 ORDER BY awarded_at ASC LIMIT 0,4"
+                 ORDER BY awarded_at ASC LIMIT 0,3"
             );
 
             $awardStmt->execute([

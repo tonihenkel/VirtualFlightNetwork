@@ -3,8 +3,7 @@ header("Content-Type: application/json; charset=utf-8");
 
 require_once 'config.php';
 require_once 'aircraft_types.php';
-require_once '../includes/activity_log.php';
-require_once '../includes/award_system.php';
+require_once '../includes/awards_checks.php';
 
 
 $token = trim($_POST["token"] ?? "");
@@ -36,6 +35,9 @@ $onGround =
 $com1 = $_POST["com1"] ?? 0;
 $com2 = $_POST["com2"] ?? 0;
 $com3 = $_POST["com3"] ?? 0;
+
+$hasCrashed =
+    (int)($_POST['has_crashed'] ?? 0);
 
 $transponder = trim($_POST["transponder"] ?? "0000");
 
@@ -257,11 +259,7 @@ try {
         "transponder" => $transponder
     ]);
 
-    /*
-        Trackpunkt speichern.
-        Nicht jede Sekunde, sondern nur wenn der letzte Punkt
-        mindestens 5 Sekunden alt ist oder sich die Position geaendert hat.
-    */
+
     $insertTrackStmt = $pdo->prepare(
         "INSERT INTO pilot_tracks
         (
@@ -505,41 +503,12 @@ try {
                     (int)$session["user_id"]
             ]);
 
-            $totalLandingStmt = $pdo->prepare(
-                "SELECT total_landings
-                 FROM users
-                 WHERE id = :user_id
-                 LIMIT 1"
+            checkLandingAwards(
+                $pdo,
+                (int)$session["user_id"],
+                $aircraft_icao,
+                $landingRateFpm
             );
-
-            $totalLandingStmt->execute([
-                "user_id" =>
-                    (int)$session["user_id"]
-            ]);
-
-            $userStats =
-                $totalLandingStmt->fetch(PDO::FETCH_ASSOC);
-
-            $totalLandings =
-                (int)($userStats["total_landings"] ?? 0);
-
-            if ($totalLandings === 1) {
-
-                logActivity(
-                    $pdo,
-                    (int)$session["user_id"],
-                    'flight',
-                    'activity_first_landing',
-                    $aircraft_icao . ' - ' . $landingRateFpm . ' fpm',
-                    0
-                );
-
-                awardUser(
-                    $pdo,
-                    (int)$session["user_id"],
-                    'award_first_landing'
-                );
-            }
         }
 
         $sessionStateStmt = $pdo->prepare(
@@ -595,6 +564,19 @@ try {
                 $token
         ]);
     }
+
+    checkCrashPilot(
+        $pdo,
+        (int)$session['user_id'],
+        $hasCrashed
+    );
+
+    checkPositionAwards(
+        $pdo,
+        (int)$session["user_id"],
+        (float)$latitude,
+        (float)$longitude
+    );
 
     echo json_encode([
         "success" => true,

@@ -590,7 +590,112 @@
         'award_first_landing' =>
             'First Landing',
 
+        'description_award_first_flight' =>
+            'Submitted your first flight plan.',
+
+        'description_award_first_landing' =>
+            'Completed your first landing.',
+
+        'activity_crash_pilot' =>
+            'Crash Pilot',
+
+        'award_crash_pilot' =>
+            'Crash Pilot',
+
+        'description_award_crash_pilot' =>
+            'You experienced your first simulator crash.',
+
+        'activity_hard_landing' =>
+            'Hard Landing',
+
+        'award_hard_landing' =>
+            'Hard Landing',
+
+        'description_award_hard_landing' =>
+            'You completed a particularly hard landing.',
+
+        'activity_butter_landing' =>
+            'Butter Landing',
+
+        'award_butter_landing' =>
+            'Butter Landing',
+
+        'description_award_butter_landing' =>
+            'You completed an exceptionally smooth landing.',
+
+        'activity_world_traveler' =>
+            'World Traveler',
+
+        'award_world_traveler' =>
+            'World Traveler',
+
+        'description_award_world_traveler' =>
+            'You have visited at least 10 countries.',
+
+        'activity_global_explorer' =>
+            'Global Explorer',
+
+        'award_global_explorer' =>
+            'Global Explorer',
+
+        'description_award_global_explorer' =>
+            'You have visited at least 25 countries.',
+
+        'activity_international_ace' =>
+            'International Ace',
+
+        'award_international_ace' =>
+            'International Ace',
+
+        'description_award_international_ace' =>
+            'You have visited at least 50 countries.',
+
+        'activity_globe_master' =>
+            'Globe Master',
+
+        'award_globe_master' =>
+            'Globe Master',
+
+        'description_award_globe_master' =>
+            'You have visited at least 100 countries.',
+
+        'activity_night_owl' =>
+            'Night Owl',
+
+        'award_night_owl' =>
+            'Night Owl',
+
+        'description_award_night_owl' =>
+            'Completed your first night flight.',
+
+        'activity_moon_walker' =>
+            'Moon Walker',
+
+        'award_moon_walker' =>
+            'Moon Walker',
+
+        'description_award_moon_walker' =>
+            'Completed 10 night flights.',
+
+        'activity_master_of_night' =>
+            'Master of the Night',
+
+        'award_master_of_night' =>
+            'Master of the Night',
+
+        'description_award_master_of_night' =>
+            'Completed 50 night flights.',
+
         'profile_view_all_awards' =>
             'View all awards',
+
+        'activity_founder_home' =>
+            'The Founder\'s Home',
+
+        'award_founder_home' =>
+            'The Founder\'s Home',
+
+        'description_award_founder_home' =>
+            'You flew within 5 NM of the VFN founder\'s home.',
 
     ];
