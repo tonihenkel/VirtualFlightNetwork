@@ -118,7 +118,7 @@ function checkLandingActivity(
         $userId,
         'flight',
         'activity_landing',
-        $aircraftIcao . ' · ' . $landingRateFpm . ' fpm',
+        $aircraftIcao . ' ï¿½ ' . $landingRateFpm . ' fpm',
         0
     );
 }
@@ -156,7 +156,7 @@ function checkFirstLanding(
         $userId,
         'flight',
         'activity_first_landing',
-        $aircraftIcao . ' · ' . $landingRateFpm . ' fpm',
+        $aircraftIcao . ' ï¿½ ' . $landingRateFpm . ' fpm',
         0
     );
 
@@ -196,7 +196,7 @@ function checkButterLanding(
         $userId,
         'flight',
         'activity_butter_landing',
-        $aircraftIcao . ' · ' . $landingRateFpm . ' fpm',
+        $aircraftIcao . ' ï¿½ ' . $landingRateFpm . ' fpm',
         0
     );
 }
@@ -228,7 +228,7 @@ function checkHardLanding(
         $userId,
         'flight',
         'activity_hard_landing',
-        $aircraftIcao . ' · ' . $landingRateFpm . ' fpm',
+        $aircraftIcao . ' ï¿½ ' . $landingRateFpm . ' fpm',
         0
     );
 }
@@ -243,19 +243,20 @@ function checkCrashPilot(
         return;
     }
 
+    if (userHasActivity($pdo, $userId, 'activity_crash_pilot')) {
+        return;
+    }
+
+    if (!awardUser($pdo, $userId, 'award_crash_pilot', 0)) {
+        return;
+    }
+
     logActivity(
         $pdo,
         $userId,
         'warning',
         'activity_crash_pilot',
         'Simulator crash detected',
-        0
-    );
-
-    awardUser(
-        $pdo,
-        $userId,
-        'award_crash_pilot',
         0
     );
 }
@@ -271,7 +272,11 @@ function checkCrashPilotByLandingRate(
         return;
     }
 
-    if (userHasAward($pdo, $userId, 'award_crash_pilot')) {
+    if (userHasActivity($pdo, $userId, 'activity_crash_pilot')) {
+        return;
+    }
+
+    if (!awardUser($pdo, $userId, 'award_crash_pilot', 0)) {
         return;
     }
 
@@ -280,14 +285,7 @@ function checkCrashPilotByLandingRate(
         $userId,
         'warning',
         'activity_crash_pilot',
-        $aircraftIcao . ' · ' . $landingRateFpm . ' fpm',
-        0
-    );
-
-    awardUser(
-        $pdo,
-        $userId,
-        'award_crash_pilot',
+        $aircraftIcao . ' Â· ' . $landingRateFpm . ' fpm',
         0
     );
 }

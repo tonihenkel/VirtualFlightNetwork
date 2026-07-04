@@ -58,3 +58,25 @@ function userHasAward(
 
     return (bool)$stmt->fetch(PDO::FETCH_ASSOC);
 }
+
+function userHasActivity(
+    PDO $pdo,
+    int $userId,
+    string $activityKey
+): bool {
+
+    $stmt = $pdo->prepare(
+        "SELECT id
+         FROM user_activity_log
+         WHERE user_id = :user_id
+           AND activity_key = :activity_key
+         LIMIT 1"
+    );
+
+    $stmt->execute([
+        'user_id' => $userId,
+        'activity_key' => $activityKey
+    ]);
+
+    return (bool)$stmt->fetch(PDO::FETCH_ASSOC);
+}
