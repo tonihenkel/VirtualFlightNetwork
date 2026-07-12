@@ -118,7 +118,7 @@ function checkLandingActivity(
         $userId,
         'flight',
         'activity_landing',
-        $aircraftIcao . ' � ' . $landingRateFpm . ' fpm',
+        $aircraftIcao . ' > ' . $landingRateFpm . ' fpm',
         0
     );
 }
@@ -156,7 +156,7 @@ function checkFirstLanding(
         $userId,
         'flight',
         'activity_first_landing',
-        $aircraftIcao . ' � ' . $landingRateFpm . ' fpm',
+        $aircraftIcao . ' > ' . $landingRateFpm . ' fpm',
         0
     );
 
@@ -176,7 +176,7 @@ function checkButterLanding(
     int $landingRateFpm
 ): void {
 
-    if ($landingRateFpm < 0 || $landingRateFpm > 50) {
+    if ($landingRateFpm < 0 || $landingRateFpm > 550) {
         return;
     }
 
@@ -196,7 +196,7 @@ function checkButterLanding(
         $userId,
         'flight',
         'activity_butter_landing',
-        $aircraftIcao . ' � ' . $landingRateFpm . ' fpm',
+        $aircraftIcao . ' > ' . $landingRateFpm . ' fpm',
         0
     );
 }
@@ -228,7 +228,7 @@ function checkHardLanding(
         $userId,
         'flight',
         'activity_hard_landing',
-        $aircraftIcao . ' � ' . $landingRateFpm . ' fpm',
+        $aircraftIcao . ' > ' . $landingRateFpm . ' fpm',
         0
     );
 }
