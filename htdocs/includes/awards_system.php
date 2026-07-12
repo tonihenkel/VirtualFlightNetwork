@@ -17,22 +17,28 @@ function awardUser(
         "INSERT INTO user_awards
          (
             user_id,
-            award_key,
-            awarded_by
+            award_key
          )
          VALUES
          (
             :user_id,
-            :award_key,
-            :awarded_by
+            :award_key
          )"
     );
 
     $stmt->execute([
         'user_id' => $userId,
-        'award_key' => $awardKey,
-        'awarded_by' => $createdBy
+        'award_key' => $awardKey
     ]);
+
+    logActivity(
+        $pdo,
+        $userId,
+        'award',
+        'activity_award_unlocked',
+        $awardKey,
+        $createdBy
+    );
 
     return true;
 }

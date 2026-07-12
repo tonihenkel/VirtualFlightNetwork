@@ -9,8 +9,28 @@ function checkFirstFlight(
     string $arrivalAirport
 ): void {
 
+    if (userHasAward($pdo, $userId, 'award_first_flight')) {
+        return;
+    }
+
+    if (
+        !awardUser(
+            $pdo,
+            $userId,
+            'award_first_flight',
+            0
+        )
+    ) {
+        return;
+    }
+
+    $activityValue =
+        $departureAirport . ' > ' . $arrivalAirport;
+
     $stmt = $pdo->prepare(
-        "SELECT id
+        "SELECT
+            id,
+            activity_value
          FROM user_activity_log
          WHERE user_id = :user_id
            AND activity_key = 'activity_first_flight'
@@ -21,7 +41,28 @@ function checkFirstFlight(
         'user_id' => $userId
     ]);
 
-    if ($stmt->fetch()) {
+    $existingActivity =
+        $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($existingActivity) {
+        if (
+            trim((string)$existingActivity['activity_value']) === ''
+            || trim((string)$existingActivity['activity_value']) === 'ZZZZ ? ZZZZ'
+            || trim((string)$existingActivity['activity_value']) === 'ZZZZ > ZZZZ'
+        ) {
+            $updateStmt = $pdo->prepare(
+                "UPDATE user_activity_log
+                 SET activity_value = :activity_value
+                 WHERE id = :id
+                 LIMIT 1"
+            );
+
+            $updateStmt->execute([
+                'activity_value' => $activityValue,
+                'id' => (int)$existingActivity['id']
+            ]);
+        }
+
         return;
     }
 
@@ -30,14 +71,7 @@ function checkFirstFlight(
         $userId,
         'flight',
         'activity_first_flight',
-        $departureAirport . ' ? ' . $arrivalAirport,
-        0
-    );
-
-    awardUser(
-        $pdo,
-        $userId,
-        'award_first_flight',
+        $activityValue,
         0
     );
 }
@@ -176,7 +210,7 @@ function checkButterLanding(
     int $landingRateFpm
 ): void {
 
-    if ($landingRateFpm < 0 || $landingRateFpm > 550) {
+    if ($landingRateFpm < 0 || $landingRateFpm > 50) {
         return;
     }
 
