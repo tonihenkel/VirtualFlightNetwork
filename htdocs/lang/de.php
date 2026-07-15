@@ -550,6 +550,9 @@ return [
         Aktivitäten
     */
 
+    'activity_landing' =>
+        'Neue Landnung',
+
     'activity_registration' =>
         'Konto erstellt',
 
@@ -634,6 +637,15 @@ return [
 
     'description_award_butter_landing' =>
         'Du hast eine außergewöhnlich sanfte Landung absolviert.',
+
+    'activity_fuel_gambler' =>
+        'Fuel Gambler',
+
+    'award_fuel_gambler' =>
+        'Fuel Gambler',
+
+    'description_award_fuel_gambler' =>
+        'Du bist mit weniger als 5 % Restsprit gelandet.',
 
     'activity_world_traveler' =>
         'Weltbereiser',

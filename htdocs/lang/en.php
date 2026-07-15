@@ -551,6 +551,9 @@
         Aktivitäten
         */
 
+        'activity_landing' =>
+            'New Landing',
+
         'activity_registration' =>
             'Account Created',
 
@@ -622,6 +625,15 @@
 
         'description_award_butter_landing' =>
             'You completed an exceptionally smooth landing.',
+
+        'activity_fuel_gambler' =>
+            'Fuel Gambler',
+
+        'award_fuel_gambler' =>
+            'Fuel Gambler',
+
+        'description_award_fuel_gambler' =>
+            'You landed with less than 5% fuel remaining.',
 
         'activity_world_traveler' =>
             'World Traveler',

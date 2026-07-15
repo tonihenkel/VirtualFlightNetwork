@@ -25,6 +25,10 @@ $airspeed = $_POST["airspeed"] ?? null;
 $pitch = $_POST["pitch"] ?? null;
 $roll = $_POST["roll"] ?? null;
 $vertical_speed = $_POST["vertical_speed"] ?? null;
+$fuelRemainingPercent =
+    isset($_POST["fuel_remaining_percent"])
+        ? (float)$_POST["fuel_remaining_percent"]
+        : null;
 
 $onGround =
     (int)($_POST["on_ground"] ?? 0);
@@ -507,7 +511,8 @@ try {
                 $pdo,
                 (int)$session["user_id"],
                 $aircraft_icao,
-                $landingRateFpm
+                $landingRateFpm,
+                $fuelRemainingPercent
             );
         }
 

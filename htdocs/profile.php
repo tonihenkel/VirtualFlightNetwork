@@ -274,6 +274,7 @@ $awardImages = [
     'award_crash_pilot'          => 'images/awards/crash_pilot.png',
     'award_hard_landing'         => 'images/awards/hard_landing.png',
     'award_butter_landing'       => 'images/awards/butter_landing.png',
+    'award_fuel_gambler'         => 'images/awards/fuel_gambler.png',
 
     // Distance / World
     'award_world_traveler'       => 'images/awards/world_traveler.png',

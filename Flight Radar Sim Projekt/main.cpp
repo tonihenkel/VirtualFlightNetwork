@@ -146,6 +146,8 @@ static XPLMDataRef gTransponder = nullptr;
 static XPLMDataRef gOnGround = nullptr;
 
 static XPLMDataRef gHasCrashedRef = nullptr;
+static XPLMDataRef gFuelTotal = nullptr;
+static XPLMDataRef gFuelCapacity = nullptr;
 
 
 void UpdateFlightplanWindowState();
@@ -1105,6 +1107,41 @@ std::string IntToString(int value)
 }
 
 
+float GetFuelRemainingPercent()
+{
+    if (gFuelTotal == nullptr || gFuelCapacity == nullptr)
+    {
+        return -1.0f;
+    }
+
+    float fuelTotal =
+        XPLMGetDataf(gFuelTotal);
+
+    float fuelCapacity =
+        XPLMGetDataf(gFuelCapacity);
+
+    if (fuelCapacity <= 0.0f)
+    {
+        return -1.0f;
+    }
+
+    float fuelPercent =
+        (fuelTotal / fuelCapacity) * 100.0f;
+
+    if (fuelPercent < 0.0f)
+    {
+        fuelPercent = 0.0f;
+    }
+
+    if (fuelPercent > 100.0f)
+    {
+        fuelPercent = 100.0f;
+    }
+
+    return fuelPercent;
+}
+
+
 std::string NormalizeAirportCode(
     const std::string& value
 )
@@ -1887,6 +1924,9 @@ void SendPositionUpdate()
     float verticalSpeed =
         XPLMGetDataf(gVerticalSpeed);
 
+    float fuelRemainingPercent =
+        GetFuelRemainingPercent();
+
     int onGround =
         gOnGround ? XPLMGetDatai(gOnGround) : 0;
 
@@ -1930,6 +1970,7 @@ void SendPositionUpdate()
         "&com2=" + UrlEncode(FormatComFrequency(com2)) +
         "&com3=" + UrlEncode(FormatComFrequency(com3)) +
         "&transponder=" + UrlEncode(IntToString(transponder)) +
+        "&fuel_remaining_percent=" + UrlEncode(FloatToString(fuelRemainingPercent)) +
         "&has_crashed=" + UrlEncode(IntToString(hasCrashed));
 
     std::string response =
@@ -3442,6 +3483,16 @@ PLUGIN_API int XPluginStart(
     gHasCrashedRef =
         XPLMFindDataRef(
             "sim/flightmodel2/misc/has_crashed"
+        );
+
+    gFuelTotal =
+        XPLMFindDataRef(
+            "sim/flightmodel/weight/m_fuel_total"
+        );
+
+    gFuelCapacity =
+        XPLMFindDataRef(
+            "sim/aircraft/weight/acf_m_fuel_tot"
         );
 
     /*

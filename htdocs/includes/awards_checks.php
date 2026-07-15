@@ -80,7 +80,8 @@ function checkLandingAwards(
     PDO $pdo,
     int $userId,
     string $aircraftIcao,
-    int $landingRateFpm
+    int $landingRateFpm,
+    ?float $fuelRemainingPercent = null
 ): void {
 
     checkFirstLanding(
@@ -111,11 +112,54 @@ function checkLandingAwards(
         $landingRateFpm
     );
 
+    checkFuelGambler(
+        $pdo,
+        $userId,
+        $aircraftIcao,
+        $fuelRemainingPercent
+    );
+
     checkLandingActivity(
         $pdo,
         $userId,
         $aircraftIcao,
         $landingRateFpm
+    );
+}
+
+function checkFuelGambler(
+    PDO $pdo,
+    int $userId,
+    string $aircraftIcao,
+    ?float $fuelRemainingPercent
+): void {
+
+    if ($fuelRemainingPercent === null || $fuelRemainingPercent < 0) {
+        return;
+    }
+
+    if ($fuelRemainingPercent >= 5.0) {
+        return;
+    }
+
+    if (
+        !awardUser(
+            $pdo,
+            $userId,
+            'award_fuel_gambler',
+            0
+        )
+    ) {
+        return;
+    }
+
+    logActivity(
+        $pdo,
+        $userId,
+        'flight',
+        'activity_fuel_gambler',
+        $aircraftIcao . ' > ' . number_format($fuelRemainingPercent, 1, '.', '') . '% fuel',
+        0
     );
 }
 
