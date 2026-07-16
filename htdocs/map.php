@@ -1587,7 +1587,7 @@ if ($statusMessage !== '') {
                 '<img src="images/flags/'
                 + countryCode
                 + '.png" '
-                + 'style="height:14px;vertical-align:-2px;margin-right:5px;">'
+                + 'style="height:20px;vertical-align:-2px;margin-right:5px;">'
                 + escapeHtml(
                     pilot.username || '----'
                 );

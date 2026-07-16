@@ -104,6 +104,138 @@ function calculateDistanceNm(
     return $distanceKm * 0.539957;
 }
 
+function normalizeLandingAirportCode(?string $airportCode): ?string
+{
+    $airportCode =
+        strtoupper(trim((string)$airportCode));
+
+    if ($airportCode === '' || $airportCode === 'ZZZZ') {
+        return null;
+    }
+
+    if (!preg_match('/^[A-Z0-9]{3,10}$/', $airportCode)) {
+        return null;
+    }
+
+    return $airportCode;
+}
+
+function resolveFlightplanLandingAirport(
+    PDO $pdo,
+    array $airportCodes,
+    float $landingLatitude,
+    float $landingLongitude
+): ?string {
+
+    $candidateCodes = [];
+
+    foreach ($airportCodes as $airportCode) {
+        $normalizedCode =
+            normalizeLandingAirportCode($airportCode);
+
+        if ($normalizedCode === null) {
+            continue;
+        }
+
+        if (in_array($normalizedCode, $candidateCodes, true)) {
+            continue;
+        }
+
+        $candidateCodes[] =
+            $normalizedCode;
+    }
+
+    if (empty($candidateCodes)) {
+        return null;
+    }
+
+    $placeholders =
+        implode(
+            ',',
+            array_fill(0, count($candidateCodes), '?')
+        );
+
+    $airportStmt = $pdo->prepare(
+        "SELECT
+            ident,
+            icao_code,
+            gps_code,
+            latitude_deg,
+            longitude_deg
+         FROM airports
+         WHERE ident IN ($placeholders)
+            OR icao_code IN ($placeholders)
+            OR gps_code IN ($placeholders)"
+    );
+
+    $airportStmt->execute(
+        array_merge(
+            $candidateCodes,
+            $candidateCodes,
+            $candidateCodes
+        )
+    );
+
+    $airportRows =
+        $airportStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $closestAirportCode = null;
+    $closestDistanceNm = null;
+
+    foreach ($airportRows as $airportRow) {
+        $matchedCode = null;
+
+        foreach ($candidateCodes as $candidateCode) {
+            if (
+                strtoupper((string)$airportRow['ident']) === $candidateCode
+                || strtoupper((string)$airportRow['icao_code']) === $candidateCode
+                || strtoupper((string)$airportRow['gps_code']) === $candidateCode
+            ) {
+                $matchedCode =
+                    $candidateCode;
+
+                break;
+            }
+        }
+
+        if ($matchedCode === null) {
+            continue;
+        }
+
+        $distanceNm =
+            calculateDistanceNm(
+                $landingLatitude,
+                $landingLongitude,
+                (float)$airportRow['latitude_deg'],
+                (float)$airportRow['longitude_deg']
+            );
+
+        if (
+            $closestDistanceNm === null
+            || $distanceNm < $closestDistanceNm
+        ) {
+            $closestDistanceNm =
+                $distanceNm;
+
+            $closestAirportCode =
+                $matchedCode;
+        }
+    }
+
+    if (
+        $closestAirportCode === null
+        || $closestDistanceNm === null
+    ) {
+        return null;
+    }
+
+    if ($closestDistanceNm > 15.0) {
+        return null;
+    }
+
+    return $closestAirportCode;
+}
+
 try {
     $pdo = new PDO(
         "mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4",
@@ -507,12 +639,47 @@ try {
                     (int)$session["user_id"]
             ]);
 
+            $landingAirport = null;
+
+            $flightplanStmt = $pdo->prepare(
+                "SELECT
+                    arrival_airport,
+                    alternate1_airport,
+                    alternate2_airport
+                 FROM pilot_flightplans
+                 WHERE session_token = :session_token
+                 LIMIT 1"
+            );
+
+            $flightplanStmt->execute([
+                "session_token" =>
+                    $token
+            ]);
+
+            $flightplan =
+                $flightplanStmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($flightplan) {
+                $landingAirport =
+                    resolveFlightplanLandingAirport(
+                        $pdo,
+                        [
+                            $flightplan["arrival_airport"] ?? null,
+                            $flightplan["alternate1_airport"] ?? null,
+                            $flightplan["alternate2_airport"] ?? null
+                        ],
+                        (float)$latitude,
+                        (float)$longitude
+                    );
+            }
+
             checkLandingAwards(
                 $pdo,
                 (int)$session["user_id"],
                 $aircraft_icao,
                 $landingRateFpm,
-                $fuelRemainingPercent
+                $fuelRemainingPercent,
+                $landingAirport
             );
         }
 

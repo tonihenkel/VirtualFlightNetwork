@@ -508,9 +508,13 @@ $awardImages = [
 
         .content-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-columns: 1fr 1fr;
             gap: 14px;
             margin-bottom: 14px;
+        }
+
+        .overview-awards-card {
+            grid-column: 1 / -1;
         }
 
         .content-grid-bottom {
@@ -729,6 +733,7 @@ $awardImages = [
             .hero-card,
             .profile-row-three,
             .profile-row-full,
+            .content-grid,
             .training-card {
                 grid-template-columns: 1fr;
             }

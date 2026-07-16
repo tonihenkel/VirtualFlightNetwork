@@ -6,7 +6,7 @@
                 "SELECT award_key, awarded_at
                  FROM user_awards
                  WHERE user_id = :user_id
-                 ORDER BY awarded_at ASC LIMIT 0,3"
+                 ORDER BY awarded_at DESC LIMIT 0,3"
             );
 
             $awardStmt->execute([
@@ -176,7 +176,7 @@
 
 
 
-                <div class="card">
+                <div class="card overview-awards-card">
                     <div class="card-title"><?php echo htmlspecialchars(t('profile_awards')); ?></div>
                     <div class="card-body">
                         <div class="awards">

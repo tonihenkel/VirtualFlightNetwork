@@ -17,6 +17,9 @@
 #include <string>
 #include <sstream>
 #include <map>
+#include <atomic>
+#include <mutex>
+#include <thread>
 #include <windows.h>
 #include <winhttp.h>
 
@@ -69,6 +72,12 @@ static bool gIsInvisible = false;
 
 static bool gCloseFlightplanAfterSend = false;
 static int gPositionUpdateFailureCount = 0;
+static std::atomic<bool> gPositionUpdateInProgress(false);
+static std::atomic<bool> gPositionUpdateResultReady(false);
+static std::atomic<bool> gPositionUpdateLastSuccess(true);
+static std::mutex gPositionUpdateResultMutex;
+static std::string gPositionUpdateLastResponse = "";
+static std::thread gPositionUpdateThread;
 
 static const int gHttpResolveTimeoutMs = 1500;
 static const int gHttpConnectTimeoutMs = 1500;
@@ -1855,6 +1864,7 @@ void DoLogout()
     gCanUseInvisible = false;
     gIsInvisible = false;
     gPositionUpdateFailureCount = 0;
+    gPositionUpdateResultReady.store(false);
 
     if (gRememberLogin)
     {
@@ -1928,6 +1938,7 @@ void ForceLocalLogoutAfterConnectionFailures(
     gCanUseInvisible = false;
     gIsInvisible = false;
     gPositionUpdateFailureCount = 0;
+    gPositionUpdateResultReady.store(false);
 
     if (gRememberLogin)
     {
@@ -1968,6 +1979,123 @@ void ForceLocalLogoutAfterConnectionFailures(
     );
 
     XPLMDebugString("\n");
+}
+
+
+void StartPositionUpdateWorker(
+    const std::string& postData
+)
+{
+    if (gPositionUpdateInProgress.exchange(true))
+    {
+        return;
+    }
+
+    if (gPositionUpdateThread.joinable())
+    {
+        gPositionUpdateThread.join();
+    }
+
+    gPositionUpdateThread =
+        std::thread(
+        [postData]()
+        {
+            std::string response =
+                HttpPost(
+                    gPositionUrl,
+                    postData
+                );
+
+            bool success =
+                ResponseIsSuccess(response);
+
+            {
+                std::lock_guard<std::mutex> lock(
+                    gPositionUpdateResultMutex
+                );
+
+                gPositionUpdateLastResponse =
+                    response;
+            }
+
+            gPositionUpdateLastSuccess.store(
+                success
+            );
+
+            gPositionUpdateResultReady.store(
+                true
+            );
+
+            gPositionUpdateInProgress.store(
+                false
+            );
+        }
+    );
+}
+
+
+void ProcessPositionUpdateResult()
+{
+    if (!gPositionUpdateResultReady.exchange(false))
+    {
+        return;
+    }
+
+    bool success =
+        gPositionUpdateLastSuccess.load();
+
+    std::string response;
+
+    {
+        std::lock_guard<std::mutex> lock(
+            gPositionUpdateResultMutex
+        );
+
+        response =
+            gPositionUpdateLastResponse;
+    }
+
+    if (gDebugEnabled)
+    {
+        XPLMDebugString("POSITION RESPONSE: ");
+        XPLMDebugString(response.c_str());
+        XPLMDebugString("\n");
+    }
+
+    if (
+        !gPositionUpdateInProgress.load()
+        && gPositionUpdateThread.joinable()
+    ) {
+        gPositionUpdateThread.join();
+    }
+
+    if (success)
+    {
+        gPositionUpdateFailureCount = 0;
+        return;
+    }
+
+    std::string message =
+        ExtractMessageFromResponse(response);
+
+    gPositionUpdateFailureCount++;
+
+    XPLMDebugString(
+        T("debug.position_failed")
+    );
+
+    XPLMDebugString(
+        message.c_str()
+    );
+
+    XPLMDebugString("\n");
+
+    if (gPositionUpdateFailureCount >= gMaxPositionUpdateFailures)
+    {
+        ForceLocalLogoutAfterConnectionFailures(
+            message
+        );
+    }
 }
 
 
@@ -2051,47 +2179,9 @@ void SendPositionUpdate()
         "&fuel_remaining_percent=" + UrlEncode(FloatToString(fuelRemainingPercent)) +
         "&has_crashed=" + UrlEncode(IntToString(hasCrashed));
 
-    std::string response =
-        HttpPost(
-            gPositionUrl,
-            postData
-        );
-
-    if (gDebugEnabled)
-    {
-        XPLMDebugString("POSITION RESPONSE: ");
-        XPLMDebugString(response.c_str());
-        XPLMDebugString("\n");
-    }
-
-    if (ResponseIsSuccess(response))
-    {
-        gPositionUpdateFailureCount = 0;
-    }
-    else
-    {
-        std::string message =
-            ExtractMessageFromResponse(response);
-
-        gPositionUpdateFailureCount++;
-
-        XPLMDebugString(
-            T("debug.position_failed")
-        );
-
-        XPLMDebugString(
-            message.c_str()
-        );
-
-        XPLMDebugString("\n");
-
-        if (gPositionUpdateFailureCount >= gMaxPositionUpdateFailures)
-        {
-            ForceLocalLogoutAfterConnectionFailures(
-                message
-            );
-        }
-    }
+    StartPositionUpdateWorker(
+        postData
+    );
 }
 
 
@@ -3409,6 +3499,8 @@ float FlightLoopCallback(
     void* inRefcon
 )
 {
+    ProcessPositionUpdateResult();
+
     double latitude =
         XPLMGetDatad(gLatitude);
 
@@ -3653,6 +3745,11 @@ PLUGIN_API void XPluginStop(void)
         FlightLoopCallback,
         nullptr
     );
+
+    if (gPositionUpdateThread.joinable())
+    {
+        gPositionUpdateThread.join();
+    }
 
     if (gLoggedIn && !gAuthToken.empty())
     {

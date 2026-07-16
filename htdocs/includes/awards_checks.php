@@ -81,7 +81,8 @@ function checkLandingAwards(
     int $userId,
     string $aircraftIcao,
     int $landingRateFpm,
-    ?float $fuelRemainingPercent = null
+    ?float $fuelRemainingPercent = null,
+    ?string $arrivalAirport = null
 ): void {
 
     checkFirstLanding(
@@ -119,12 +120,149 @@ function checkLandingAwards(
         $fuelRemainingPercent
     );
 
+    checkWorldTravelerAwards(
+        $pdo,
+        $userId,
+        $arrivalAirport
+    );
+
     checkLandingActivity(
         $pdo,
         $userId,
         $aircraftIcao,
         $landingRateFpm
     );
+}
+
+function checkWorldTravelerAwards(
+    PDO $pdo,
+    int $userId,
+    ?string $arrivalAirport
+): void {
+
+    $airportIcao =
+        strtoupper(trim((string)$arrivalAirport));
+
+    if ($airportIcao === '' || $airportIcao === 'ZZZZ') {
+        return;
+    }
+
+    $countryCode =
+        getAirportCountryCode(
+            $pdo,
+            $airportIcao
+        );
+
+    if ($countryCode === null) {
+        return;
+    }
+
+    $insertStmt = $pdo->prepare(
+        "INSERT IGNORE INTO user_visited_countries
+        (
+            user_id,
+            country_code,
+            first_airport_icao
+        )
+        VALUES
+        (
+            :user_id,
+            :country_code,
+            :first_airport_icao
+        )"
+    );
+
+    $insertStmt->execute([
+        'user_id' =>
+            $userId,
+
+        'country_code' =>
+            $countryCode,
+
+        'first_airport_icao' =>
+            $airportIcao
+    ]);
+
+    $countStmt = $pdo->prepare(
+        "SELECT COUNT(*)
+         FROM user_visited_countries
+         WHERE user_id = :user_id"
+    );
+
+    $countStmt->execute([
+        'user_id' => $userId
+    ]);
+
+    $visitedCountryCount =
+        (int)$countStmt->fetchColumn();
+
+    awardCountryTravelRanks(
+        $pdo,
+        $userId,
+        $visitedCountryCount
+    );
+}
+
+function getAirportCountryCode(
+    PDO $pdo,
+    string $airportIcao
+): ?string {
+
+    $stmt = $pdo->prepare(
+        "SELECT iso_country
+         FROM airports
+         WHERE ident = :airport_icao
+            OR icao_code = :airport_icao
+            OR gps_code = :airport_icao
+         LIMIT 1"
+    );
+
+    $stmt->execute([
+        'airport_icao' => $airportIcao
+    ]);
+
+    $countryCode =
+        strtoupper(trim((string)$stmt->fetchColumn()));
+
+    if ($countryCode === '') {
+        return null;
+    }
+
+    return $countryCode;
+}
+
+function awardCountryTravelRanks(
+    PDO $pdo,
+    int $userId,
+    int $visitedCountryCount
+): void {
+
+    $awardThresholds = [
+        10 =>
+            'award_world_traveler',
+
+        25 =>
+            'award_global_explorer',
+
+        50 =>
+            'award_international_ace',
+
+        100 =>
+            'award_globe_master'
+    ];
+
+    foreach ($awardThresholds as $requiredCountries => $awardKey) {
+        if ($visitedCountryCount < $requiredCountries) {
+            continue;
+        }
+
+        awardUser(
+            $pdo,
+            $userId,
+            $awardKey,
+            0
+        );
+    }
 }
 
 function checkFuelGambler(
