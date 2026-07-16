@@ -68,6 +68,13 @@ static bool gCanUseInvisible = false;
 static bool gIsInvisible = false;
 
 static bool gCloseFlightplanAfterSend = false;
+static int gPositionUpdateFailureCount = 0;
+
+static const int gHttpResolveTimeoutMs = 1500;
+static const int gHttpConnectTimeoutMs = 1500;
+static const int gHttpSendTimeoutMs = 1500;
+static const int gHttpReceiveTimeoutMs = 1500;
+static const int gMaxPositionUpdateFailures = 3;
 
 static int gSelectedFlightRulesIndex = 0;
 static int gSelectedFlightTypeIndex = 2;
@@ -268,6 +275,7 @@ void LoadInternalEnglishLanguage()
     gText["status.login_success_no_token"] = "Login successful, but no token received.";
     gText["status.login_failed_log"] = "Flight Radar Plugin: Login failed.\n";
     gText["status.login_first"] = "Please login first.";
+    gText["status.connection_lost_auto_logout"] = "Connection lost. Logged out locally.";
 
     gText["label.flight_rules"] = "Flight Rules:";
     gText["label.flight_type"] = "Flight Type:";
@@ -381,6 +389,7 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "status.login_success_no_token=Login successful, but no token received.\n";
             enFile << "status.login_failed_log=Flight Radar Plugin: Login failed.\\n\n";
             enFile << "status.login_first=Please login first.\n";
+            enFile << "status.connection_lost_auto_logout=Connection lost. Logged out locally.\n";
             enFile << "label.flight_rules=Flight Rules:\n";
             enFile << "label.flight_type=Flight Type:\n";
             enFile << "label.departure_time=Departure Time:\n";
@@ -473,6 +482,7 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "status.login_success_no_token=Login erfolgreich, aber kein Token erhalten.\n";
             deFile << "status.login_failed_log=Flight Radar Plugin: Login fehlgeschlagen.\\n\n";
             deFile << "status.login_first=Bitte zuerst einloggen.\n";
+            deFile << "status.connection_lost_auto_logout=Verbindung verloren. Lokal ausgeloggt.\n";
             deFile << "label.flight_rules=Flugregeln:\n";
             deFile << "label.flight_type=Flugart:\n";
             deFile << "label.departure_time=Abflugzeit:\n";
@@ -1267,6 +1277,14 @@ std::string HttpPost(
         return "{\"success\":false,\"message\":\"WinHTTP Session Fehler.\"}";
     }
 
+    WinHttpSetTimeouts(
+        hSession,
+        gHttpResolveTimeoutMs,
+        gHttpConnectTimeoutMs,
+        gHttpSendTimeoutMs,
+        gHttpReceiveTimeoutMs
+    );
+
     HINTERNET hConnect =
         WinHttpConnect(
             hSession,
@@ -1836,6 +1854,7 @@ void DoLogout()
     gAuthToken = "";
     gCanUseInvisible = false;
     gIsInvisible = false;
+    gPositionUpdateFailureCount = 0;
 
     if (gRememberLogin)
     {
@@ -1890,6 +1909,65 @@ void DoLogout()
 
     UpdateLoginWindowState();
     UpdateFlightplanWindowState();
+}
+
+
+void ForceLocalLogoutAfterConnectionFailures(
+    const std::string& reason
+)
+{
+    if (!gLoggedIn)
+    {
+        return;
+    }
+
+    gLoggedIn = false;
+    gCurrentUsername = "";
+    gCurrentCallsign = "";
+    gAuthToken = "";
+    gCanUseInvisible = false;
+    gIsInvisible = false;
+    gPositionUpdateFailureCount = 0;
+
+    if (gRememberLogin)
+    {
+        LoadSavedLoginData();
+    }
+    else
+    {
+        XPSetWidgetDescriptor(
+            gUsernameField,
+            ""
+        );
+
+        XPSetWidgetDescriptor(
+            gPasswordField,
+            ""
+        );
+
+        XPSetWidgetDescriptor(
+            gCallsignField,
+            ""
+        );
+    }
+
+    UpdateLoginWindowState();
+    UpdateFlightplanWindowState();
+
+    XPSetWidgetDescriptor(
+        gStatusCaption,
+        T("status.connection_lost_auto_logout")
+    );
+
+    XPLMDebugString(
+        "Flight Radar Plugin: Auto logout after repeated position update failures: "
+    );
+
+    XPLMDebugString(
+        reason.c_str()
+    );
+
+    XPLMDebugString("\n");
 }
 
 
@@ -1986,10 +2064,16 @@ void SendPositionUpdate()
         XPLMDebugString("\n");
     }
 
-    if (!ResponseIsSuccess(response))
+    if (ResponseIsSuccess(response))
+    {
+        gPositionUpdateFailureCount = 0;
+    }
+    else
     {
         std::string message =
             ExtractMessageFromResponse(response);
+
+        gPositionUpdateFailureCount++;
 
         XPLMDebugString(
             T("debug.position_failed")
@@ -2000,6 +2084,13 @@ void SendPositionUpdate()
         );
 
         XPLMDebugString("\n");
+
+        if (gPositionUpdateFailureCount >= gMaxPositionUpdateFailures)
+        {
+            ForceLocalLogoutAfterConnectionFailures(
+                message
+            );
+        }
     }
 }
 
@@ -2242,6 +2333,7 @@ int LoginWindowHandler(
                 gLoggedIn = true;
                 gCurrentUsername = username;
                 gCurrentCallsign = callsign;
+                gPositionUpdateFailureCount = 0;
 
                 gAuthToken =
                     ExtractJsonStringValue(
