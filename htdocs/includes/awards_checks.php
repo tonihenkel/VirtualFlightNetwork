@@ -82,7 +82,10 @@ function checkLandingAwards(
     string $aircraftIcao,
     int $landingRateFpm,
     ?float $fuelRemainingPercent = null,
-    ?string $arrivalAirport = null
+    ?string $arrivalAirport = null,
+    int $nightFlightSeconds = 0,
+    int $totalFlightSeconds = 0,
+    ?int $landingId = null
 ): void {
 
     checkFirstLanding(
@@ -126,12 +129,169 @@ function checkLandingAwards(
         $arrivalAirport
     );
 
+    checkNightFlightAwards(
+        $pdo,
+        $userId,
+        $aircraftIcao,
+        $nightFlightSeconds,
+        $totalFlightSeconds,
+        $landingId
+    );
+
     checkLandingActivity(
         $pdo,
         $userId,
         $aircraftIcao,
         $landingRateFpm
     );
+}
+
+function checkNightFlightAwards(
+    PDO $pdo,
+    int $userId,
+    string $aircraftIcao,
+    int $nightFlightSeconds,
+    int $totalFlightSeconds,
+    ?int $landingId
+): void {
+
+    if ($landingId === null || $landingId <= 0) {
+        return;
+    }
+
+    if ($totalFlightSeconds <= 0) {
+        return;
+    }
+
+    if ($nightFlightSeconds < 1800) {
+        return;
+    }
+
+    if ($nightFlightSeconds > $totalFlightSeconds) {
+        return;
+    }
+
+    $insertStmt = $pdo->prepare(
+        "INSERT IGNORE INTO user_night_flights
+        (
+            user_id,
+            pilot_landing_id,
+            aircraft_icao,
+            night_duration_seconds,
+            total_duration_seconds
+        )
+        VALUES
+        (
+            :user_id,
+            :pilot_landing_id,
+            :aircraft_icao,
+            :night_duration_seconds,
+            :total_duration_seconds
+        )"
+    );
+
+    $insertStmt->execute([
+        'user_id' =>
+            $userId,
+
+        'pilot_landing_id' =>
+            $landingId,
+
+        'aircraft_icao' =>
+            $aircraftIcao,
+
+        'night_duration_seconds' =>
+            $nightFlightSeconds,
+
+        'total_duration_seconds' =>
+            $totalFlightSeconds
+    ]);
+
+    if ($insertStmt->rowCount() < 1) {
+        return;
+    }
+
+    $countStmt = $pdo->prepare(
+        "SELECT COUNT(*)
+         FROM user_night_flights
+         WHERE user_id = :user_id"
+    );
+
+    $countStmt->execute([
+        'user_id' => $userId
+    ]);
+
+    $nightFlightCount =
+        (int)$countStmt->fetchColumn();
+
+    awardNightFlightRanks(
+        $pdo,
+        $userId,
+        $aircraftIcao,
+        $nightFlightSeconds,
+        $nightFlightCount
+    );
+}
+
+function awardNightFlightRanks(
+    PDO $pdo,
+    int $userId,
+    string $aircraftIcao,
+    int $nightFlightSeconds,
+    int $nightFlightCount
+): void {
+
+    $awardThresholds = [
+        1 => [
+            'award' =>
+                'award_night_owl',
+
+            'activity' =>
+                'activity_night_owl'
+        ],
+
+        10 => [
+            'award' =>
+                'award_moon_walker',
+
+            'activity' =>
+                'activity_moon_walker'
+        ],
+
+        50 => [
+            'award' =>
+                'award_master_of_night',
+
+            'activity' =>
+                'activity_master_of_night'
+        ]
+    ];
+
+    foreach ($awardThresholds as $requiredFlights => $awardData) {
+        if ($nightFlightCount < $requiredFlights) {
+            continue;
+        }
+
+        if (
+            !awardUser(
+                $pdo,
+                $userId,
+                $awardData['award'],
+                0
+            )
+        ) {
+            continue;
+        }
+
+        logActivity(
+            $pdo,
+            $userId,
+            'flight',
+            $awardData['activity'],
+            $aircraftIcao . ' > ' . floor($nightFlightSeconds / 60) . ' min night',
+            0
+        );
+    }
 }
 
 function checkWorldTravelerAwards(

@@ -29,6 +29,16 @@ $fuelRemainingPercent =
     isset($_POST["fuel_remaining_percent"])
         ? (float)$_POST["fuel_remaining_percent"]
         : null;
+$nightFlightSeconds =
+    max(
+        0,
+        (int)($_POST["night_flight_seconds"] ?? 0)
+    );
+$totalFlightSeconds =
+    max(
+        0,
+        (int)($_POST["total_flight_seconds"] ?? 0)
+    );
 
 $onGround =
     (int)($_POST["on_ground"] ?? 0);
@@ -627,6 +637,9 @@ try {
                     (float)$longitude
             ]);
 
+            $landingId =
+                (int)$pdo->lastInsertId();
+
             $landingCounterStmt = $pdo->prepare(
                 "UPDATE users
                  SET total_landings =
@@ -679,7 +692,10 @@ try {
                 $aircraft_icao,
                 $landingRateFpm,
                 $fuelRemainingPercent,
-                $landingAirport
+                $landingAirport,
+                $nightFlightSeconds,
+                $totalFlightSeconds,
+                $landingId
             );
         }
 

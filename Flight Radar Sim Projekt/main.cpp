@@ -164,6 +164,14 @@ static XPLMDataRef gOnGround = nullptr;
 static XPLMDataRef gHasCrashedRef = nullptr;
 static XPLMDataRef gFuelTotal = nullptr;
 static XPLMDataRef gFuelCapacity = nullptr;
+static XPLMDataRef gSunPitchDegrees = nullptr;
+static XPLMDataRef gPausedRef = nullptr;
+static XPLMDataRef gReplayModeRef = nullptr;
+
+static bool gNightFlightActive = false;
+static int gNightFlightSeconds = 0;
+static int gTotalFlightSeconds = 0;
+static double gNightFlightSecondAccumulator = 0.0;
 
 
 void UpdateFlightplanWindowState();
@@ -1161,6 +1169,117 @@ float GetFuelRemainingPercent()
 }
 
 
+void ResetNightFlightTracking()
+{
+    gNightFlightActive = false;
+    gNightFlightSeconds = 0;
+    gTotalFlightSeconds = 0;
+    gNightFlightSecondAccumulator = 0.0;
+}
+
+
+bool IsSimulatorPaused()
+{
+    return gPausedRef != nullptr && XPLMGetDatai(gPausedRef) != 0;
+}
+
+
+bool IsReplayActive()
+{
+    return gReplayModeRef != nullptr && XPLMGetDatai(gReplayModeRef) != 0;
+}
+
+
+bool IsNightInSimulator()
+{
+    if (gSunPitchDegrees == nullptr)
+    {
+        return false;
+    }
+
+    return XPLMGetDataf(gSunPitchDegrees) < -6.0f;
+}
+
+
+void UpdateNightFlightTracking(
+    float elapsedSeconds
+)
+{
+    if (!gLoggedIn || gAuthToken.empty())
+    {
+        return;
+    }
+
+    int onGround =
+        gOnGround ? XPLMGetDatai(gOnGround) : 1;
+
+    float airspeed =
+        gAirspeed ? XPLMGetDataf(gAirspeed) : 0.0f;
+
+    bool isAirborne =
+        onGround == 0 && airspeed >= 40.0f;
+
+    if (!isAirborne)
+    {
+        return;
+    }
+
+    if (!gNightFlightActive)
+    {
+        ResetNightFlightTracking();
+        gNightFlightActive = true;
+    }
+
+    if (
+        IsSimulatorPaused()
+        || IsReplayActive()
+    ) {
+        return;
+    }
+
+    if (
+        elapsedSeconds < 0.0f
+        || elapsedSeconds > 5.0f
+    ) {
+        elapsedSeconds = 1.0f;
+    }
+
+    gNightFlightSecondAccumulator += elapsedSeconds;
+
+    bool isNight =
+        IsNightInSimulator();
+
+    while (gNightFlightSecondAccumulator >= 1.0)
+    {
+        gTotalFlightSeconds++;
+
+        if (isNight)
+        {
+            gNightFlightSeconds++;
+        }
+
+        gNightFlightSecondAccumulator -= 1.0;
+    }
+}
+
+
+void CompleteNightFlightTrackingIfLanded()
+{
+    if (!gNightFlightActive)
+    {
+        return;
+    }
+
+    int onGround =
+        gOnGround ? XPLMGetDatai(gOnGround) : 1;
+
+    if (onGround == 1)
+    {
+        ResetNightFlightTracking();
+    }
+}
+
+
 std::string NormalizeAirportCode(
     const std::string& value
 )
@@ -1865,6 +1984,7 @@ void DoLogout()
     gIsInvisible = false;
     gPositionUpdateFailureCount = 0;
     gPositionUpdateResultReady.store(false);
+    ResetNightFlightTracking();
 
     if (gRememberLogin)
     {
@@ -1939,6 +2059,7 @@ void ForceLocalLogoutAfterConnectionFailures(
     gIsInvisible = false;
     gPositionUpdateFailureCount = 0;
     gPositionUpdateResultReady.store(false);
+    ResetNightFlightTracking();
 
     if (gRememberLogin)
     {
@@ -2177,6 +2298,8 @@ void SendPositionUpdate()
         "&com3=" + UrlEncode(FormatComFrequency(com3)) +
         "&transponder=" + UrlEncode(IntToString(transponder)) +
         "&fuel_remaining_percent=" + UrlEncode(FloatToString(fuelRemainingPercent)) +
+        "&night_flight_seconds=" + UrlEncode(IntToString(gNightFlightSeconds)) +
+        "&total_flight_seconds=" + UrlEncode(IntToString(gTotalFlightSeconds)) +
         "&has_crashed=" + UrlEncode(IntToString(hasCrashed));
 
     StartPositionUpdateWorker(
@@ -2424,6 +2547,7 @@ int LoginWindowHandler(
                 gCurrentUsername = username;
                 gCurrentCallsign = callsign;
                 gPositionUpdateFailureCount = 0;
+                ResetNightFlightTracking();
 
                 gAuthToken =
                     ExtractJsonStringValue(
@@ -3500,6 +3624,9 @@ float FlightLoopCallback(
 )
 {
     ProcessPositionUpdateResult();
+    UpdateNightFlightTracking(
+        inElapsedSinceLastCall
+    );
 
     double latitude =
         XPLMGetDatad(gLatitude);
@@ -3570,6 +3697,7 @@ float FlightLoopCallback(
     }
 
     SendPositionUpdate();
+    CompleteNightFlightTrackingIfLanded();
 
     return 1.0f;
 }
@@ -3679,6 +3807,21 @@ PLUGIN_API int XPluginStart(
             "sim/aircraft/weight/acf_m_fuel_tot"
         );
 
+    gSunPitchDegrees =
+        XPLMFindDataRef(
+            "sim/graphics/scenery/sun_pitch_degrees"
+        );
+
+    gPausedRef =
+        XPLMFindDataRef(
+            "sim/time/paused"
+        );
+
+    gReplayModeRef =
+        XPLMFindDataRef(
+            "sim/operation/prefs/replay_mode"
+        );
+
     /*
         Moderne cockpit2-DataRefs verwenden.
         Diese passen bei G1000-Flugzeugen besser zur tatsächlich sichtbaren aktiven Frequenz.
@@ -3765,6 +3908,7 @@ PLUGIN_API void XPluginStop(void)
         gCurrentUsername = "";
         gCurrentCallsign = "";
         gAuthToken = "";
+        ResetNightFlightTracking();
     }
 
     if (gMenuId != nullptr)
