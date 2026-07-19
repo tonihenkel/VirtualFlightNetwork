@@ -1,39 +1,26 @@
 ﻿#include "pch.h"
 
 #define IBM 1
-#define XPLM200 1
-#define XPLM210 1
-#define XPLM300 1
-#define XPLM301 1
 
 #include "XPLMPlugin.h"
 #include "XPLMUtilities.h"
 #include "XPLMDataAccess.h"
 #include "XPLMProcessing.h"
 #include "XPLMMenus.h"
-#include "XPLMDisplay.h"
-#include "XPLMGraphics.h"
 
 #include "XPWidgets.h"
 #include "XPStandardWidgets.h"
 #include "XPWidgetUtils.h"
 
-#include <algorithm>
-#include <cctype>
 #include <cstdio>
 #include <fstream>
 #include <string>
 #include <sstream>
 #include <map>
-#include <atomic>
-#include <mutex>
-#include <thread>
 #include <windows.h>
 #include <winhttp.h>
-#include <gl/GL.h>
 
 #pragma comment(lib, "winhttp.lib")
-#pragma comment(lib, "opengl32.lib")
 
 static std::string gPluginDirectory;
 static std::string gConfigPath;
@@ -71,9 +58,6 @@ gServerAddress + "/execute/flightplan_update.php";
 static const std::string gSetInvisibleUrl =
 gServerAddress + "/execute/set_invisible.php";
 
-static const std::string gPilotsUrl =
-gServerAddress + "/execute/get_pilots.php";
-
 static bool gLoggedIn = false;
 
 static std::string gCurrentUsername = "";
@@ -84,19 +68,6 @@ static bool gCanUseInvisible = false;
 static bool gIsInvisible = false;
 
 static bool gCloseFlightplanAfterSend = false;
-static int gPositionUpdateFailureCount = 0;
-static std::atomic<bool> gPositionUpdateInProgress(false);
-static std::atomic<bool> gPositionUpdateResultReady(false);
-static std::atomic<bool> gPositionUpdateLastSuccess(true);
-static std::mutex gPositionUpdateResultMutex;
-static std::string gPositionUpdateLastResponse = "";
-static std::thread gPositionUpdateThread;
-
-static const int gHttpResolveTimeoutMs = 1500;
-static const int gHttpConnectTimeoutMs = 1500;
-static const int gHttpSendTimeoutMs = 1500;
-static const int gHttpReceiveTimeoutMs = 1500;
-static const int gMaxPositionUpdateFailures = 3;
 
 static int gSelectedFlightRulesIndex = 0;
 static int gSelectedFlightTypeIndex = 2;
@@ -106,21 +77,10 @@ static int gLoginMenuItem = 0;
 static int gFlightplanMenuItem = 0;
 
 static XPWidgetID gLoginWindow = nullptr;
-static XPLMWindowID gCustomLoginWindow = nullptr;
-static bool gCustomLoginDragging = false;
-static bool gCustomLoginPoppedOut = false;
-static int gCustomLoginDragOffsetX = 0;
-static int gCustomLoginDragOffsetY = 0;
 
 static XPWidgetID gUsernameLabel = nullptr;
 static XPWidgetID gPasswordLabel = nullptr;
 static XPWidgetID gCallsignLabel = nullptr;
-static XPWidgetID gLoginBrandLabel = nullptr;
-static XPWidgetID gLoginSubtitleLabel = nullptr;
-static XPWidgetID gLoginSectionLabel = nullptr;
-static XPWidgetID gLoginNetworkLabel = nullptr;
-static XPWidgetID gLoginPilotsLabel = nullptr;
-static XPWidgetID gLoginAtcLabel = nullptr;
 
 static XPWidgetID gUsernameField = nullptr;
 static XPWidgetID gPasswordField = nullptr;
@@ -134,30 +94,6 @@ static XPWidgetID gStatusCaption = nullptr;
 static XPWidgetID gConnectButton = nullptr;
 static XPWidgetID gLogoutButton = nullptr;
 static XPWidgetID gInvisibleButton = nullptr;
-
-static std::string gLoginUsernameText = "";
-static std::string gLoginPasswordText = "";
-static std::string gLoginCallsignText = "";
-static std::string gCustomLoginStatusText = "";
-static int gNetworkPilotsOnline = -1;
-static int gNetworkAtcOnline = 0;
-static float gNetworkStatusRefreshElapsed = 999.0f;
-static std::atomic<bool> gNetworkStatusUpdateInProgress(false);
-static std::atomic<bool> gNetworkStatusUpdateResultReady(false);
-static std::mutex gNetworkStatusResultMutex;
-static std::string gNetworkStatusLastResponse = "";
-static std::thread gNetworkStatusThread;
-
-enum CustomLoginField
-{
-    CustomLoginFieldNone = 0,
-    CustomLoginFieldUsername,
-    CustomLoginFieldPassword,
-    CustomLoginFieldCallsign
-};
-
-static CustomLoginField gCustomLoginFocusedField =
-    CustomLoginFieldNone;
 
 static XPWidgetID gFlightplanWindow = nullptr;
 
@@ -189,8 +125,6 @@ static XPWidgetID gRemarksField = nullptr;
 
 static XPWidgetID gCloseAfterSendButton = nullptr;
 
-void UpdateLoginNetworkLabels();
-
 static XPWidgetID gSendFlightplanButton = nullptr;
 static XPWidgetID gFlightplanStatusCaption = nullptr;
 
@@ -212,168 +146,11 @@ static XPLMDataRef gTransponder = nullptr;
 static XPLMDataRef gOnGround = nullptr;
 
 static XPLMDataRef gHasCrashedRef = nullptr;
-static XPLMDataRef gFuelTotal = nullptr;
-static XPLMDataRef gFuelCapacity = nullptr;
-static XPLMDataRef gSunPitchDegrees = nullptr;
-static XPLMDataRef gPausedRef = nullptr;
-static XPLMDataRef gReplayModeRef = nullptr;
 
-static bool gNightFlightActive = false;
-static int gNightFlightSeconds = 0;
-static int gTotalFlightSeconds = 0;
-static double gNightFlightSecondAccumulator = 0.0;
+static bool gCrashAlreadySent = false;
 
 
 void UpdateFlightplanWindowState();
-void SetCustomLoginStatus(
-    const std::string& value
-);
-
-struct CustomRect
-{
-    int left;
-    int top;
-    int right;
-    int bottom;
-};
-
-bool PointInRect(
-    int x,
-    int y,
-    const CustomRect& rect
-)
-{
-    return
-        x >= rect.left &&
-        x <= rect.right &&
-        y <= rect.top &&
-        y >= rect.bottom;
-}
-
-void DrawFilledRect(
-    const CustomRect& rect,
-    float red,
-    float green,
-    float blue,
-    float alpha
-)
-{
-    glDisable(GL_TEXTURE_2D);
-    if (alpha >= 1.0f)
-    {
-        glDisable(GL_BLEND);
-    }
-    else
-    {
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    }
-
-    glColor4f(red, green, blue, alpha);
-
-    glBegin(GL_QUADS);
-    glVertex2i(rect.left, rect.bottom);
-    glVertex2i(rect.right, rect.bottom);
-    glVertex2i(rect.right, rect.top);
-    glVertex2i(rect.left, rect.top);
-    glEnd();
-}
-
-void DrawRectOutline(
-    const CustomRect& rect,
-    float red,
-    float green,
-    float blue,
-    float alpha
-)
-{
-    glDisable(GL_TEXTURE_2D);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glColor4f(red, green, blue, alpha);
-    glLineWidth(1.4f);
-
-    glBegin(GL_LINE_LOOP);
-    glVertex2i(rect.left, rect.bottom);
-    glVertex2i(rect.right, rect.bottom);
-    glVertex2i(rect.right, rect.top);
-    glVertex2i(rect.left, rect.top);
-    glEnd();
-}
-
-void DrawLine(
-    int x1,
-    int y1,
-    int x2,
-    int y2,
-    float red,
-    float green,
-    float blue,
-    float alpha
-)
-{
-    glDisable(GL_TEXTURE_2D);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glColor4f(red, green, blue, alpha);
-    glLineWidth(1.2f);
-
-    glBegin(GL_LINES);
-    glVertex2i(x1, y1);
-    glVertex2i(x2, y2);
-    glEnd();
-}
-
-void DrawText(
-    int x,
-    int y,
-    const std::string& text,
-    float red,
-    float green,
-    float blue
-)
-{
-    float color[] =
-    {
-        red,
-        green,
-        blue
-    };
-
-    XPLMDrawString(
-        color,
-        x,
-        y,
-        text.c_str(),
-        nullptr,
-        xplmFont_Basic
-    );
-}
-
-std::string MaskPassword(
-    const std::string& password
-)
-{
-    return std::string(
-        password.size(),
-        '*'
-    );
-}
-
-std::string TruncateForField(
-    const std::string& value,
-    size_t maxLength
-)
-{
-    if (value.size() <= maxLength)
-    {
-        return value;
-    }
-
-    return value.substr(
-        value.size() - maxLength
-    );
-}
 
 
 std::string TrimString(const std::string& value)
@@ -491,7 +268,6 @@ void LoadInternalEnglishLanguage()
     gText["status.login_success_no_token"] = "Login successful, but no token received.";
     gText["status.login_failed_log"] = "Flight Radar Plugin: Login failed.\n";
     gText["status.login_first"] = "Please login first.";
-    gText["status.connection_lost_auto_logout"] = "Connection lost. Logged out locally.";
 
     gText["label.flight_rules"] = "Flight Rules:";
     gText["label.flight_type"] = "Flight Type:";
@@ -605,7 +381,6 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "status.login_success_no_token=Login successful, but no token received.\n";
             enFile << "status.login_failed_log=Flight Radar Plugin: Login failed.\\n\n";
             enFile << "status.login_first=Please login first.\n";
-            enFile << "status.connection_lost_auto_logout=Connection lost. Logged out locally.\n";
             enFile << "label.flight_rules=Flight Rules:\n";
             enFile << "label.flight_type=Flight Type:\n";
             enFile << "label.departure_time=Departure Time:\n";
@@ -698,7 +473,6 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "status.login_success_no_token=Login erfolgreich, aber kein Token erhalten.\n";
             deFile << "status.login_failed_log=Flight Radar Plugin: Login fehlgeschlagen.\\n\n";
             deFile << "status.login_first=Bitte zuerst einloggen.\n";
-            deFile << "status.connection_lost_auto_logout=Verbindung verloren. Lokal ausgeloggt.\n";
             deFile << "label.flight_rules=Flugregeln:\n";
             deFile << "label.flight_type=Flugart:\n";
             deFile << "label.departure_time=Abflugzeit:\n";
@@ -1173,10 +947,6 @@ void LoadSavedLoginData()
 
     if (gRememberLogin)
     {
-        gLoginUsernameText = username;
-        gLoginPasswordText = password;
-        gLoginCallsignText = callsign;
-
         if (gUsernameField != nullptr)
         {
             XPSetWidgetDescriptor(
@@ -1337,152 +1107,6 @@ std::string IntToString(int value)
 }
 
 
-float GetFuelRemainingPercent()
-{
-    if (gFuelTotal == nullptr || gFuelCapacity == nullptr)
-    {
-        return -1.0f;
-    }
-
-    float fuelTotal =
-        XPLMGetDataf(gFuelTotal);
-
-    float fuelCapacity =
-        XPLMGetDataf(gFuelCapacity);
-
-    if (fuelCapacity <= 0.0f)
-    {
-        return -1.0f;
-    }
-
-    float fuelPercent =
-        (fuelTotal / fuelCapacity) * 100.0f;
-
-    if (fuelPercent < 0.0f)
-    {
-        fuelPercent = 0.0f;
-    }
-
-    if (fuelPercent > 100.0f)
-    {
-        fuelPercent = 100.0f;
-    }
-
-    return fuelPercent;
-}
-
-
-void ResetNightFlightTracking()
-{
-    gNightFlightActive = false;
-    gNightFlightSeconds = 0;
-    gTotalFlightSeconds = 0;
-    gNightFlightSecondAccumulator = 0.0;
-}
-
-
-bool IsSimulatorPaused()
-{
-    return gPausedRef != nullptr && XPLMGetDatai(gPausedRef) != 0;
-}
-
-
-bool IsReplayActive()
-{
-    return gReplayModeRef != nullptr && XPLMGetDatai(gReplayModeRef) != 0;
-}
-
-
-bool IsNightInSimulator()
-{
-    if (gSunPitchDegrees == nullptr)
-    {
-        return false;
-    }
-
-    return XPLMGetDataf(gSunPitchDegrees) < -6.0f;
-}
-
-
-void UpdateNightFlightTracking(
-    float elapsedSeconds
-)
-{
-    if (!gLoggedIn || gAuthToken.empty())
-    {
-        return;
-    }
-
-    int onGround =
-        gOnGround ? XPLMGetDatai(gOnGround) : 1;
-
-    float airspeed =
-        gAirspeed ? XPLMGetDataf(gAirspeed) : 0.0f;
-
-    bool isAirborne =
-        onGround == 0 && airspeed >= 40.0f;
-
-    if (!isAirborne)
-    {
-        return;
-    }
-
-    if (!gNightFlightActive)
-    {
-        ResetNightFlightTracking();
-        gNightFlightActive = true;
-    }
-
-    if (
-        IsSimulatorPaused()
-        || IsReplayActive()
-    ) {
-        return;
-    }
-
-    if (
-        elapsedSeconds < 0.0f
-        || elapsedSeconds > 5.0f
-    ) {
-        elapsedSeconds = 1.0f;
-    }
-
-    gNightFlightSecondAccumulator += elapsedSeconds;
-
-    bool isNight =
-        IsNightInSimulator();
-
-    while (gNightFlightSecondAccumulator >= 1.0)
-    {
-        gTotalFlightSeconds++;
-
-        if (isNight)
-        {
-            gNightFlightSeconds++;
-        }
-
-        gNightFlightSecondAccumulator -= 1.0;
-    }
-}
-
-
-void CompleteNightFlightTrackingIfLanded()
-{
-    if (!gNightFlightActive)
-    {
-        return;
-    }
-
-    int onGround =
-        gOnGround ? XPLMGetDatai(gOnGround) : 1;
-
-    if (onGround == 1)
-    {
-        ResetNightFlightTracking();
-    }
-}
-
-
 std::string NormalizeAirportCode(
     const std::string& value
 )
@@ -1608,14 +1232,6 @@ std::string HttpPost(
         return "{\"success\":false,\"message\":\"WinHTTP Session Fehler.\"}";
     }
 
-    WinHttpSetTimeouts(
-        hSession,
-        gHttpResolveTimeoutMs,
-        gHttpConnectTimeoutMs,
-        gHttpSendTimeoutMs,
-        gHttpReceiveTimeoutMs
-    );
-
     HINTERNET hConnect =
         WinHttpConnect(
             hSession,
@@ -1662,189 +1278,6 @@ std::string HttpPost(
             (LPVOID)postData.c_str(),
             (DWORD)postData.length(),
             (DWORD)postData.length(),
-            0
-        );
-
-    if (!result)
-    {
-        WinHttpCloseHandle(hRequest);
-        WinHttpCloseHandle(hConnect);
-        WinHttpCloseHandle(hSession);
-        return "{\"success\":false,\"message\":\"HTTP Request senden fehlgeschlagen.\"}";
-    }
-
-    result =
-        WinHttpReceiveResponse(
-            hRequest,
-            nullptr
-        );
-
-    if (!result)
-    {
-        WinHttpCloseHandle(hRequest);
-        WinHttpCloseHandle(hConnect);
-        WinHttpCloseHandle(hSession);
-        return "{\"success\":false,\"message\":\"Keine Serverantwort erhalten.\"}";
-    }
-
-    std::string response;
-    DWORD size = 0;
-
-    do
-    {
-        DWORD downloaded = 0;
-
-        if (!WinHttpQueryDataAvailable(
-            hRequest,
-            &size
-        ))
-        {
-            break;
-        }
-
-        if (size == 0)
-        {
-            break;
-        }
-
-        std::string buffer(size, 0);
-
-        if (!WinHttpReadData(
-            hRequest,
-            &buffer[0],
-            size,
-            &downloaded
-        ))
-        {
-            break;
-        }
-
-        buffer.resize(downloaded);
-        response += buffer;
-
-    } while (size > 0);
-
-    WinHttpCloseHandle(hRequest);
-    WinHttpCloseHandle(hConnect);
-    WinHttpCloseHandle(hSession);
-
-    if (response.empty())
-    {
-        return "{\"success\":false,\"message\":\"Leere Serverantwort.\"}";
-    }
-
-    return response;
-}
-
-
-std::string HttpGet(
-    const std::string& url
-)
-{
-    std::wstring wideUrl =
-        StringToWString(url);
-
-    URL_COMPONENTS urlComp;
-    ZeroMemory(&urlComp, sizeof(urlComp));
-    urlComp.dwStructSize =
-        sizeof(urlComp);
-
-    wchar_t hostName[256];
-    wchar_t urlPath[2048];
-
-    ZeroMemory(hostName, sizeof(hostName));
-    ZeroMemory(urlPath, sizeof(urlPath));
-
-    urlComp.lpszHostName =
-        hostName;
-
-    urlComp.dwHostNameLength =
-        256;
-
-    urlComp.lpszUrlPath =
-        urlPath;
-
-    urlComp.dwUrlPathLength =
-        2048;
-
-    if (!WinHttpCrackUrl(
-        wideUrl.c_str(),
-        0,
-        0,
-        &urlComp
-    ))
-    {
-        return "{\"success\":false,\"message\":\"URL konnte nicht gelesen werden.\"}";
-    }
-
-    bool useHttps =
-        urlComp.nScheme == INTERNET_SCHEME_HTTPS;
-
-    HINTERNET hSession =
-        WinHttpOpen(
-            L"FlightRadarPlugin/1.0",
-            WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-            WINHTTP_NO_PROXY_NAME,
-            WINHTTP_NO_PROXY_BYPASS,
-            0
-        );
-
-    if (!hSession)
-    {
-        return "{\"success\":false,\"message\":\"WinHTTP Session Fehler.\"}";
-    }
-
-    WinHttpSetTimeouts(
-        hSession,
-        gHttpResolveTimeoutMs,
-        gHttpConnectTimeoutMs,
-        gHttpSendTimeoutMs,
-        gHttpReceiveTimeoutMs
-    );
-
-    HINTERNET hConnect =
-        WinHttpConnect(
-            hSession,
-            hostName,
-            urlComp.nPort,
-            0
-        );
-
-    if (!hConnect)
-    {
-        WinHttpCloseHandle(hSession);
-        return "{\"success\":false,\"message\":\"Server Verbindung fehlgeschlagen.\"}";
-    }
-
-    DWORD flags =
-        useHttps ? WINHTTP_FLAG_SECURE : 0;
-
-    HINTERNET hRequest =
-        WinHttpOpenRequest(
-            hConnect,
-            L"GET",
-            urlPath,
-            nullptr,
-            WINHTTP_NO_REFERER,
-            WINHTTP_DEFAULT_ACCEPT_TYPES,
-            flags
-        );
-
-    if (!hRequest)
-    {
-        WinHttpCloseHandle(hConnect);
-        WinHttpCloseHandle(hSession);
-        return "{\"success\":false,\"message\":\"HTTP Request konnte nicht erstellt werden.\"}";
-    }
-
-    BOOL result =
-        WinHttpSendRequest(
-            hRequest,
-            WINHTTP_NO_ADDITIONAL_HEADERS,
-            0,
-            WINHTTP_NO_REQUEST_DATA,
-            0,
-            0,
             0
         );
 
@@ -1980,82 +1413,6 @@ std::string ExtractJsonStringValue(
         firstQuote + 1,
         secondQuote - firstQuote - 1
     );
-}
-
-
-int ExtractJsonIntValue(
-    const std::string& response,
-    const std::string& keyName,
-    int fallbackValue
-)
-{
-    std::string key =
-        "\"" + keyName + "\"";
-
-    size_t keyPos =
-        response.find(key);
-
-    if (keyPos == std::string::npos)
-    {
-        return fallbackValue;
-    }
-
-    size_t colonPos =
-        response.find(":", keyPos);
-
-    if (colonPos == std::string::npos)
-    {
-        return fallbackValue;
-    }
-
-    size_t valuePos =
-        colonPos + 1;
-
-    while (
-        valuePos < response.size() &&
-        std::isspace(
-            static_cast<unsigned char>(response[valuePos])
-        )
-    )
-    {
-        valuePos++;
-    }
-
-    bool negative =
-        false;
-
-    if (
-        valuePos < response.size() &&
-        response[valuePos] == '-'
-    )
-    {
-        negative = true;
-        valuePos++;
-    }
-
-    int value = 0;
-    bool foundDigit = false;
-
-    while (
-        valuePos < response.size() &&
-        std::isdigit(
-            static_cast<unsigned char>(response[valuePos])
-        )
-    )
-    {
-        foundDigit = true;
-        value =
-            (value * 10) +
-            (response[valuePos] - '0');
-        valuePos++;
-    }
-
-    if (!foundDigit)
-    {
-        return fallbackValue;
-    }
-
-    return negative ? -value : value;
 }
 
 
@@ -2292,15 +1649,8 @@ void UpdateLoginWindowState()
         return;
     }
 
-    UpdateLoginNetworkLabels();
-
     if (gLoggedIn)
     {
-        SetCustomLoginStatus(
-            std::string(T("status.connected_as")) + " " +
-            gCurrentCallsign
-        );
-
         XPHideWidget(gUsernameLabel);
         XPHideWidget(gPasswordLabel);
         XPHideWidget(gCallsignLabel);
@@ -2338,10 +1688,6 @@ void UpdateLoginWindowState()
     }
     else
     {
-        SetCustomLoginStatus(
-            T("status.not_connected")
-        );
-
         XPShowWidget(gUsernameLabel);
         XPShowWidget(gPasswordLabel);
         XPShowWidget(gCallsignLabel);
@@ -2455,9 +1801,6 @@ void DoLogout()
     gAuthToken = "";
     gCanUseInvisible = false;
     gIsInvisible = false;
-    gPositionUpdateFailureCount = 0;
-    gPositionUpdateResultReady.store(false);
-    ResetNightFlightTracking();
 
     if (gRememberLogin)
     {
@@ -2479,10 +1822,6 @@ void DoLogout()
             gCallsignField,
             ""
         );
-
-        gLoginUsernameText = "";
-        gLoginPasswordText = "";
-        gLoginCallsignText = "";
     }
 
     if (ResponseIsSuccess(response))
@@ -2519,188 +1858,6 @@ void DoLogout()
 }
 
 
-void ForceLocalLogoutAfterConnectionFailures(
-    const std::string& reason
-)
-{
-    if (!gLoggedIn)
-    {
-        return;
-    }
-
-    gLoggedIn = false;
-    gCurrentUsername = "";
-    gCurrentCallsign = "";
-    gAuthToken = "";
-    gCanUseInvisible = false;
-    gIsInvisible = false;
-    gPositionUpdateFailureCount = 0;
-    gPositionUpdateResultReady.store(false);
-    ResetNightFlightTracking();
-
-    if (gRememberLogin)
-    {
-        LoadSavedLoginData();
-    }
-    else
-    {
-        XPSetWidgetDescriptor(
-            gUsernameField,
-            ""
-        );
-
-        XPSetWidgetDescriptor(
-            gPasswordField,
-            ""
-        );
-
-        XPSetWidgetDescriptor(
-            gCallsignField,
-            ""
-        );
-
-        gLoginUsernameText = "";
-        gLoginPasswordText = "";
-        gLoginCallsignText = "";
-    }
-
-    UpdateLoginWindowState();
-    UpdateFlightplanWindowState();
-
-    XPSetWidgetDescriptor(
-        gStatusCaption,
-        T("status.connection_lost_auto_logout")
-    );
-
-    XPLMDebugString(
-        "Flight Radar Plugin: Auto logout after repeated position update failures: "
-    );
-
-    XPLMDebugString(
-        reason.c_str()
-    );
-
-    XPLMDebugString("\n");
-}
-
-
-void StartPositionUpdateWorker(
-    const std::string& postData
-)
-{
-    if (gPositionUpdateInProgress.exchange(true))
-    {
-        return;
-    }
-
-    if (gPositionUpdateThread.joinable())
-    {
-        gPositionUpdateThread.join();
-    }
-
-    gPositionUpdateThread =
-        std::thread(
-        [postData]()
-        {
-            std::string response =
-                HttpPost(
-                    gPositionUrl,
-                    postData
-                );
-
-            bool success =
-                ResponseIsSuccess(response);
-
-            {
-                std::lock_guard<std::mutex> lock(
-                    gPositionUpdateResultMutex
-                );
-
-                gPositionUpdateLastResponse =
-                    response;
-            }
-
-            gPositionUpdateLastSuccess.store(
-                success
-            );
-
-            gPositionUpdateResultReady.store(
-                true
-            );
-
-            gPositionUpdateInProgress.store(
-                false
-            );
-        }
-    );
-}
-
-
-void ProcessPositionUpdateResult()
-{
-    if (!gPositionUpdateResultReady.exchange(false))
-    {
-        return;
-    }
-
-    bool success =
-        gPositionUpdateLastSuccess.load();
-
-    std::string response;
-
-    {
-        std::lock_guard<std::mutex> lock(
-            gPositionUpdateResultMutex
-        );
-
-        response =
-            gPositionUpdateLastResponse;
-    }
-
-    if (gDebugEnabled)
-    {
-        XPLMDebugString("POSITION RESPONSE: ");
-        XPLMDebugString(response.c_str());
-        XPLMDebugString("\n");
-    }
-
-    if (
-        !gPositionUpdateInProgress.load()
-        && gPositionUpdateThread.joinable()
-    ) {
-        gPositionUpdateThread.join();
-    }
-
-    if (success)
-    {
-        gPositionUpdateFailureCount = 0;
-        return;
-    }
-
-    std::string message =
-        ExtractMessageFromResponse(response);
-
-    gPositionUpdateFailureCount++;
-
-    XPLMDebugString(
-        T("debug.position_failed")
-    );
-
-    XPLMDebugString(
-        message.c_str()
-    );
-
-    XPLMDebugString("\n");
-
-    if (gPositionUpdateFailureCount >= gMaxPositionUpdateFailures)
-    {
-        ForceLocalLogoutAfterConnectionFailures(
-            message
-        );
-    }
-}
-
-
 void SendPositionUpdate()
 {
     if (!gLoggedIn || gAuthToken.empty())
@@ -2731,9 +1888,6 @@ void SendPositionUpdate()
 
     float verticalSpeed =
         XPLMGetDataf(gVerticalSpeed);
-
-    float fuelRemainingPercent =
-        GetFuelRemainingPercent();
 
     int onGround =
         gOnGround ? XPLMGetDatai(gOnGround) : 0;
@@ -2778,14 +1932,36 @@ void SendPositionUpdate()
         "&com2=" + UrlEncode(FormatComFrequency(com2)) +
         "&com3=" + UrlEncode(FormatComFrequency(com3)) +
         "&transponder=" + UrlEncode(IntToString(transponder)) +
-        "&fuel_remaining_percent=" + UrlEncode(FloatToString(fuelRemainingPercent)) +
-        "&night_flight_seconds=" + UrlEncode(IntToString(gNightFlightSeconds)) +
-        "&total_flight_seconds=" + UrlEncode(IntToString(gTotalFlightSeconds)) +
         "&has_crashed=" + UrlEncode(IntToString(hasCrashed));
 
-    StartPositionUpdateWorker(
-        postData
-    );
+    std::string response =
+        HttpPost(
+            gPositionUrl,
+            postData
+        );
+
+    if (gDebugEnabled)
+    {
+        XPLMDebugString("POSITION RESPONSE: ");
+        XPLMDebugString(response.c_str());
+        XPLMDebugString("\n");
+    }
+
+    if (!ResponseIsSuccess(response))
+    {
+        std::string message =
+            ExtractMessageFromResponse(response);
+
+        XPLMDebugString(
+            T("debug.position_failed")
+        );
+
+        XPLMDebugString(
+            message.c_str()
+        );
+
+        XPLMDebugString("\n");
+    }
 }
 
 
@@ -2919,1329 +2095,6 @@ void SendFlightplan()
 }
 
 
-CustomRect GetCustomLoginUsernameRect(int left, int top)
-{
-    return { left + 28, top - 142, left + 332, top - 170 };
-}
-
-
-CustomRect GetCustomLoginPasswordRect(int left, int top)
-{
-    return { left + 28, top - 194, left + 332, top - 222 };
-}
-
-
-CustomRect GetCustomLoginCallsignRect(int left, int top)
-{
-    return { left + 28, top - 246, left + 332, top - 274 };
-}
-
-
-CustomRect GetCustomLoginRememberRect(int left, int top)
-{
-    return { left + 28, top - 286, left + 150, top - 306 };
-}
-
-
-CustomRect GetCustomLoginButtonRect(int left, int top)
-{
-    return { left + 28, top - 322, left + 332, top - 356 };
-}
-
-
-CustomRect GetCustomLoginLogoutRect(int left, int top)
-{
-    return { left + 28, top - 322, left + 174, top - 356 };
-}
-
-
-CustomRect GetCustomLoginInvisibleRect(int left, int top)
-{
-    return { left + 186, top - 322, left + 332, top - 356 };
-}
-
-
-CustomRect GetCustomLoginCloseRect(int left, int top, int right)
-{
-    return { right - 36, top - 32, right - 6, top - 4 };
-}
-
-
-CustomRect GetCustomLoginPopoutRect(int left, int top, int right)
-{
-    return { right - 126, top - 32, right - 42, top - 4 };
-}
-
-
-void SetCustomLoginStatus(
-    const std::string& value
-)
-{
-    gCustomLoginStatusText =
-        value;
-}
-
-
-std::string FormatNetworkCount(
-    int value
-)
-{
-    if (value < 0)
-    {
-        return "--";
-    }
-
-    return std::to_string(value);
-}
-
-
-void UpdateLoginNetworkLabels()
-{
-    if (gLoginPilotsLabel != nullptr)
-    {
-        std::string pilotsText =
-            "Pilots Online: " +
-            FormatNetworkCount(gNetworkPilotsOnline);
-
-        XPSetWidgetDescriptor(
-            gLoginPilotsLabel,
-            pilotsText.c_str()
-        );
-    }
-
-    if (gLoginAtcLabel != nullptr)
-    {
-        std::string atcText =
-            "ATC Online: " +
-            FormatNetworkCount(gNetworkAtcOnline);
-
-        XPSetWidgetDescriptor(
-            gLoginAtcLabel,
-            atcText.c_str()
-        );
-    }
-}
-
-
-void StartNetworkStatusUpdateWorker()
-{
-    if (gNetworkStatusUpdateInProgress.exchange(true))
-    {
-        return;
-    }
-
-    if (gNetworkStatusThread.joinable())
-    {
-        gNetworkStatusThread.join();
-    }
-
-    gNetworkStatusThread =
-        std::thread(
-        []()
-        {
-            std::string response =
-                HttpGet(
-                    gPilotsUrl
-                );
-
-            {
-                std::lock_guard<std::mutex> lock(
-                    gNetworkStatusResultMutex
-                );
-
-                gNetworkStatusLastResponse =
-                    response;
-            }
-
-            gNetworkStatusUpdateResultReady.store(
-                true
-            );
-
-            gNetworkStatusUpdateInProgress.store(
-                false
-            );
-        }
-    );
-}
-
-
-void ProcessNetworkStatusUpdateResult()
-{
-    if (!gNetworkStatusUpdateResultReady.exchange(false))
-    {
-        return;
-    }
-
-    std::string response;
-
-    {
-        std::lock_guard<std::mutex> lock(
-            gNetworkStatusResultMutex
-        );
-
-        response =
-            gNetworkStatusLastResponse;
-    }
-
-    if (!ResponseIsSuccess(response))
-    {
-        return;
-    }
-
-    int pilotCount =
-        ExtractJsonIntValue(
-            response,
-            "visible_count",
-            -1
-        );
-
-    if (pilotCount < 0)
-    {
-        pilotCount =
-            ExtractJsonIntValue(
-                response,
-                "count",
-                -1
-            );
-    }
-
-    gNetworkPilotsOnline =
-        pilotCount;
-
-    gNetworkAtcOnline =
-        0;
-
-    UpdateLoginNetworkLabels();
-}
-
-
-void UpdateNetworkStatusIfNeeded(
-    float elapsedSeconds
-)
-{
-    gNetworkStatusRefreshElapsed +=
-        elapsedSeconds;
-
-    if (gNetworkStatusRefreshElapsed < 10.0f)
-    {
-        return;
-    }
-
-    if (
-        gCustomLoginWindow != nullptr &&
-        !XPLMGetWindowIsVisible(gCustomLoginWindow)
-    )
-    {
-        return;
-    }
-
-    gNetworkStatusRefreshElapsed =
-        0.0f;
-
-    StartNetworkStatusUpdateWorker();
-}
-
-
-void PerformCustomLogin()
-{
-    if (gLoggedIn)
-    {
-        SetCustomLoginStatus(
-            T("status.already_connected")
-        );
-
-        UpdateLoginWindowState();
-        return;
-    }
-
-    std::string username =
-        TrimString(gLoginUsernameText);
-
-    std::string password =
-        gLoginPasswordText;
-
-    std::string callsign =
-        TrimString(gLoginCallsignText);
-
-    if (
-        username.empty() ||
-        password.empty() ||
-        callsign.empty()
-    ) {
-        SetCustomLoginStatus(
-            T("status.login_missing")
-        );
-
-        return;
-    }
-
-    SetCustomLoginStatus(
-        T("status.connecting")
-    );
-
-    std::string postData =
-        "username=" + UrlEncode(username) +
-        "&password=" + UrlEncode(password) +
-        "&callsign=" + UrlEncode(callsign);
-
-    std::string response =
-        HttpPost(
-            gLoginUrl,
-            postData
-        );
-
-    if (gDebugEnabled)
-    {
-        XPLMDebugString("LOGIN RESPONSE: ");
-        XPLMDebugString(response.c_str());
-        XPLMDebugString("\n");
-    }
-
-    if (ResponseIsSuccess(response))
-    {
-        if (gRememberLogin)
-        {
-            SaveLoginData(
-                username,
-                password,
-                callsign
-            );
-        }
-        else
-        {
-            DeleteSavedLoginData();
-        }
-
-        gLoggedIn = true;
-        gCurrentUsername = username;
-        gCurrentCallsign = callsign;
-        gPositionUpdateFailureCount = 0;
-        ResetNightFlightTracking();
-
-        gAuthToken =
-            ExtractJsonStringValue(
-                response,
-                "token"
-            );
-
-        gCanUseInvisible =
-            (
-                response.find("\"can_use_invisible\":true")
-                != std::string::npos ||
-                response.find("\"can_use_invisible\": true")
-                != std::string::npos
-            );
-
-        gIsInvisible = false;
-
-        if (gAuthToken.empty())
-        {
-            gLoggedIn = false;
-            gCurrentUsername = "";
-            gCurrentCallsign = "";
-
-            SetCustomLoginStatus(
-                T("status.login_success_no_token")
-            );
-
-            return;
-        }
-
-        XPLMDebugString(
-            T("debug.login_success")
-        );
-
-        if (gDebugEnabled)
-        {
-            XPLMDebugString(
-                T("debug.token_saved")
-            );
-        }
-
-        UpdateLoginWindowState();
-
-        if (gCustomLoginWindow != nullptr)
-        {
-            XPLMSetWindowIsVisible(
-                gCustomLoginWindow,
-                0
-            );
-        }
-
-        if (gLoginWindow != nullptr)
-        {
-            XPHideWidget(
-                gLoginWindow
-            );
-        }
-
-        if (gFlightplanWindow != nullptr)
-        {
-            XPShowWidget(gFlightplanWindow);
-
-            XPBringRootWidgetToFront(
-                gFlightplanWindow
-            );
-
-            UpdateFlightplanWindowState();
-        }
-
-        return;
-    }
-
-    gLoggedIn = false;
-    gCurrentUsername = "";
-    gCurrentCallsign = "";
-    gAuthToken = "";
-    gCanUseInvisible = false;
-    gIsInvisible = false;
-
-    SetCustomLoginStatus(
-        ExtractMessageFromResponse(response)
-    );
-
-    XPLMDebugString(
-        T("status.login_failed_log")
-    );
-}
-
-
-void ToggleCustomInvisible()
-{
-    if (!gLoggedIn || gAuthToken.empty())
-    {
-        return;
-    }
-
-    bool newInvisibleState =
-        !gIsInvisible;
-
-    std::string postData =
-        "token=" + UrlEncode(gAuthToken) +
-        "&is_invisible=" +
-        UrlEncode(
-            newInvisibleState ? "1" : "0"
-        );
-
-    std::string response =
-        HttpPost(
-            gSetInvisibleUrl,
-            postData
-        );
-
-    if (ResponseIsSuccess(response))
-    {
-        gIsInvisible =
-            newInvisibleState;
-
-        SetCustomLoginStatus(
-            gIsInvisible
-            ? T("status.invisible_enabled")
-            : T("status.invisible_disabled")
-        );
-    }
-    else
-    {
-        SetCustomLoginStatus(
-            ExtractMessageFromResponse(response)
-        );
-    }
-}
-
-
-void ToggleCustomLoginPopout()
-{
-    if (gCustomLoginWindow == nullptr)
-    {
-        return;
-    }
-
-    bool isCurrentlyPoppedOut =
-        XPLMWindowIsPoppedOut(
-            gCustomLoginWindow
-        ) != 0;
-
-    if (isCurrentlyPoppedOut)
-    {
-        XPLMSetWindowPositioningMode(
-            gCustomLoginWindow,
-            xplm_WindowPositionFree,
-            -1
-        );
-
-        XPLMSetWindowGeometry(
-            gCustomLoginWindow,
-            80,
-            700,
-            440,
-            230
-        );
-
-        gCustomLoginPoppedOut = false;
-
-        XPLMSetWindowIsVisible(
-            gCustomLoginWindow,
-            1
-        );
-
-        XPLMBringWindowToFront(
-            gCustomLoginWindow
-        );
-
-        return;
-    }
-
-    XPLMSetWindowIsVisible(
-        gCustomLoginWindow,
-        1
-    );
-
-    XPLMSetWindowPositioningMode(
-        gCustomLoginWindow,
-        xplm_WindowPopOut,
-        -1
-    );
-
-    XPLMSetWindowGeometryOS(
-        gCustomLoginWindow,
-        120,
-        120,
-        480,
-        590
-    );
-
-    XPLMBringWindowToFront(
-        gCustomLoginWindow
-    );
-
-    gCustomLoginPoppedOut = true;
-}
-
-
-void DrawCustomLoginInput(
-    const CustomRect& rect,
-    const std::string& label,
-    const std::string& value,
-    CustomLoginField field,
-    bool password
-)
-{
-    bool focused =
-        gCustomLoginFocusedField == field;
-
-    DrawText(
-        rect.left,
-        rect.top + 9,
-        label,
-        0.82f,
-        0.88f,
-        0.95f
-    );
-
-    DrawFilledRect(
-        rect,
-        0.025f,
-        0.080f,
-        0.115f,
-        0.98f
-    );
-
-    DrawRectOutline(
-        rect,
-        focused ? 0.14f : 0.22f,
-        focused ? 0.60f : 0.36f,
-        focused ? 1.00f : 0.46f,
-        focused ? 1.00f : 0.95f
-    );
-
-    std::string displayValue =
-        password
-        ? MaskPassword(value)
-        : value;
-
-    displayValue =
-        TruncateForField(
-            displayValue,
-            31
-        );
-
-    if (displayValue.empty())
-    {
-        std::string placeholder =
-            field == CustomLoginFieldUsername
-            ? "Enter your VFN username"
-            : (
-                field == CustomLoginFieldPassword
-                ? "Enter your password"
-                : "Enter your callsign"
-            );
-
-        DrawText(
-            rect.left + 12,
-            rect.bottom + 9,
-            placeholder,
-            0.46f,
-            0.54f,
-            0.62f
-        );
-    }
-    else
-    {
-        DrawText(
-            rect.left + 12,
-            rect.bottom + 9,
-            displayValue,
-            0.86f,
-            0.91f,
-            0.96f
-        );
-    }
-}
-
-
-void DrawCustomLoginButton(
-    const CustomRect& rect,
-    const std::string& label,
-    bool primary
-)
-{
-    if (primary)
-    {
-        DrawFilledRect(
-            rect,
-            0.04f,
-            0.30f,
-            0.72f,
-            1.00f
-        );
-
-        DrawRectOutline(
-            rect,
-            0.13f,
-            0.50f,
-            0.95f,
-            1.00f
-        );
-    }
-    else
-    {
-        DrawFilledRect(
-            rect,
-            0.04f,
-            0.10f,
-            0.15f,
-            0.98f
-        );
-
-        DrawRectOutline(
-            rect,
-            0.16f,
-            0.28f,
-            0.38f,
-            0.96f
-        );
-    }
-
-    int textX =
-        rect.left + ((rect.right - rect.left) / 2) - ((int)label.size() * 3);
-
-    DrawText(
-        textX,
-        rect.bottom + 11,
-        label,
-        0.92f,
-        0.96f,
-        1.00f
-    );
-}
-
-
-void DrawCustomLoginWindow(
-    XPLMWindowID inWindowID,
-    void* inRefcon
-)
-{
-    int left;
-    int top;
-    int right;
-    int bottom;
-
-    XPLMGetWindowGeometry(
-        inWindowID,
-        &left,
-        &top,
-        &right,
-        &bottom
-    );
-
-    gCustomLoginPoppedOut =
-        XPLMWindowIsPoppedOut(
-            inWindowID
-        ) != 0;
-
-    XPLMSetGraphicsState(
-        0,
-        0,
-        0,
-        0,
-        1,
-        0,
-        0
-    );
-
-    CustomRect windowRect =
-    {
-        left,
-        top,
-        right,
-        bottom
-    };
-
-    XPLMDrawTranslucentDarkBox(
-        left,
-        top,
-        right,
-        bottom
-    );
-
-    DrawFilledRect(
-        windowRect,
-        0.015f,
-        0.040f,
-        0.065f,
-        1.00f
-    );
-
-    DrawRectOutline(
-        windowRect,
-        0.36f,
-        0.55f,
-        0.66f,
-        0.98f
-    );
-
-    DrawRectOutline(
-        { left + 2, top - 2, right - 2, bottom + 2 },
-        0.06f,
-        0.17f,
-        0.25f,
-        1.00f
-    );
-
-    DrawFilledRect(
-        { left + 1, top - 34, right - 1, top - 1 },
-        0.018f,
-        0.075f,
-        0.115f,
-        1.00f
-    );
-
-    DrawFilledRect(
-        { left + 3, top - 36, right - 3, top - 34 },
-        0.10f,
-        0.45f,
-        0.85f,
-        0.80f
-    );
-
-    DrawFilledRect(
-        { left + 17, top - 24, left + 23, top - 9 },
-        0.00f,
-        0.32f,
-        0.72f,
-        1.00f
-    );
-
-    DrawFilledRect(
-        { left + 25, top - 24, left + 30, top - 9 },
-        0.04f,
-        0.52f,
-        1.00f,
-        1.00f
-    );
-
-    DrawText(
-        left + 36,
-        top - 18,
-        "VFN",
-        0.76f,
-        0.90f,
-        1.00f
-    );
-
-    DrawText(
-        left + 78,
-        top - 18,
-        "Network Pilot Client",
-        0.94f,
-        0.97f,
-        1.00f
-    );
-
-    DrawText(
-        right - 154,
-        top - 24,
-        gLoggedIn ? "ONLINE" : "OFFLINE",
-        gLoggedIn ? 0.24f : 0.75f,
-        gLoggedIn ? 0.92f : 0.30f,
-        gLoggedIn ? 0.25f : 0.25f
-    );
-
-    DrawRectOutline(
-        GetCustomLoginPopoutRect(left, top, right),
-        0.18f,
-        0.38f,
-        0.52f,
-        0.85f
-    );
-
-    DrawRectOutline(
-        GetCustomLoginCloseRect(left, top, right),
-        0.18f,
-        0.38f,
-        0.52f,
-        0.85f
-    );
-
-    DrawText(
-        right - 91,
-        top - 22,
-        gCustomLoginPoppedOut ? "DOCK" : "DETACH",
-        0.72f,
-        0.86f,
-        0.96f
-    );
-
-    DrawText(
-        right - 21,
-        top - 22,
-        "X",
-        0.72f,
-        0.80f,
-        0.88f
-    );
-
-    DrawLine(
-        left + 22,
-        top - 102,
-        right - 26,
-        top - 102,
-        0.15f,
-        0.30f,
-        0.40f,
-        0.84f
-    );
-
-    DrawFilledRect(
-        { left + 92, top - 82, left + 103, top - 51 },
-        0.00f,
-        0.32f,
-        0.72f,
-        1.00f
-    );
-
-    DrawFilledRect(
-        { left + 107, top - 82, left + 116, top - 51 },
-        0.04f,
-        0.52f,
-        1.00f,
-        1.00f
-    );
-
-    DrawText(
-        left + 124,
-        top - 61,
-        "VFN",
-        0.94f,
-        0.98f,
-        1.00f
-    );
-
-    DrawText(
-        left + 122,
-        top - 82,
-        "NETWORK",
-        0.82f,
-        0.88f,
-        0.96f
-    );
-
-    DrawText(
-        left + 28,
-        top - 113,
-        "LOGIN",
-        0.13f,
-        0.58f,
-        1.00f
-    );
-
-    DrawLine(
-        left + 82,
-        top - 108,
-        right - 28,
-        top - 108,
-        0.15f,
-        0.30f,
-        0.40f,
-        0.84f
-    );
-
-    DrawCustomLoginInput(
-        GetCustomLoginUsernameRect(left, top),
-        "Username",
-        gLoginUsernameText,
-        CustomLoginFieldUsername,
-        false
-    );
-
-    DrawCustomLoginInput(
-        GetCustomLoginPasswordRect(left, top),
-        "Password",
-        gLoginPasswordText,
-        CustomLoginFieldPassword,
-        true
-    );
-
-    DrawCustomLoginInput(
-        GetCustomLoginCallsignRect(left, top),
-        "Callsign",
-        gLoginCallsignText,
-        CustomLoginFieldCallsign,
-        false
-    );
-
-    CustomRect rememberRect =
-        GetCustomLoginRememberRect(left, top);
-
-    DrawFilledRect(
-        { rememberRect.left, rememberRect.top - 14, rememberRect.left + 13, rememberRect.top - 1 },
-        gRememberLogin ? 0.05f : 0.03f,
-        gRememberLogin ? 0.36f : 0.10f,
-        gRememberLogin ? 0.82f : 0.16f,
-        0.94f
-    );
-
-    DrawRectOutline(
-        { rememberRect.left, rememberRect.top - 14, rememberRect.left + 13, rememberRect.top - 1 },
-        0.13f,
-        0.50f,
-        0.95f,
-        0.90f
-    );
-
-    if (gRememberLogin)
-    {
-        DrawText(
-            rememberRect.left + 2,
-            rememberRect.top - 13,
-            "X",
-            0.90f,
-            0.96f,
-            1.00f
-        );
-    }
-
-    DrawText(
-        rememberRect.left + 22,
-        rememberRect.top - 12,
-        "Remember me",
-        0.82f,
-        0.88f,
-        0.95f
-    );
-
-    if (gLoggedIn)
-    {
-        DrawCustomLoginButton(
-            GetCustomLoginLogoutRect(left, top),
-            "LOGOUT",
-            false
-        );
-
-        DrawCustomLoginButton(
-            GetCustomLoginInvisibleRect(left, top),
-            gIsInvisible ? "VISIBLE" : "INVISIBLE",
-            true
-        );
-    }
-    else
-    {
-        DrawCustomLoginButton(
-            GetCustomLoginButtonRect(left, top),
-            "LOGIN",
-            true
-        );
-    }
-
-    DrawLine(
-        left + 28,
-        top - 374,
-        right - 28,
-        top - 374,
-        0.15f,
-        0.30f,
-        0.40f,
-        0.84f
-    );
-
-    std::string status =
-        gCustomLoginStatusText.empty()
-        ? (
-            gLoggedIn
-            ? std::string(T("status.connected_as")) + " " + gCurrentCallsign
-            : std::string(T("status.not_connected"))
-        )
-        : gCustomLoginStatusText;
-
-    DrawText(
-        left + 28,
-        top - 396,
-        "Network Status:",
-        0.82f,
-        0.88f,
-        0.95f
-    );
-
-    DrawText(
-        left + 143,
-        top - 396,
-        status,
-        gLoggedIn ? 0.22f : 0.78f,
-        gLoggedIn ? 0.92f : 0.72f,
-        gLoggedIn ? 0.25f : 0.72f
-    );
-
-    DrawText(
-        left + 28,
-        top - 420,
-        "Pilots Online: " + FormatNetworkCount(gNetworkPilotsOnline),
-        0.82f,
-        0.88f,
-        0.95f
-    );
-
-    DrawText(
-        left + 28,
-        top - 444,
-        "ATC Online: " + FormatNetworkCount(gNetworkAtcOnline),
-        0.82f,
-        0.88f,
-        0.95f
-    );
-}
-
-
-void AppendToFocusedLoginField(
-    char value
-)
-{
-    std::string* target =
-        nullptr;
-
-    size_t maxLength =
-        64;
-
-    if (gCustomLoginFocusedField == CustomLoginFieldUsername)
-    {
-        target =
-            &gLoginUsernameText;
-    }
-    else if (gCustomLoginFocusedField == CustomLoginFieldPassword)
-    {
-        target =
-            &gLoginPasswordText;
-    }
-    else if (gCustomLoginFocusedField == CustomLoginFieldCallsign)
-    {
-        target =
-            &gLoginCallsignText;
-        maxLength =
-            16;
-    }
-
-    if (target == nullptr)
-    {
-        return;
-    }
-
-    if (target->size() >= maxLength)
-    {
-        return;
-    }
-
-    target->push_back(value);
-}
-
-
-void BackspaceFocusedLoginField()
-{
-    std::string* target =
-        nullptr;
-
-    if (gCustomLoginFocusedField == CustomLoginFieldUsername)
-    {
-        target =
-            &gLoginUsernameText;
-    }
-    else if (gCustomLoginFocusedField == CustomLoginFieldPassword)
-    {
-        target =
-            &gLoginPasswordText;
-    }
-    else if (gCustomLoginFocusedField == CustomLoginFieldCallsign)
-    {
-        target =
-            &gLoginCallsignText;
-    }
-
-    if (target == nullptr || target->empty())
-    {
-        return;
-    }
-
-    target->pop_back();
-}
-
-
-void FocusNextCustomLoginField()
-{
-    if (gCustomLoginFocusedField == CustomLoginFieldUsername)
-    {
-        gCustomLoginFocusedField =
-            CustomLoginFieldPassword;
-    }
-    else if (gCustomLoginFocusedField == CustomLoginFieldPassword)
-    {
-        gCustomLoginFocusedField =
-            CustomLoginFieldCallsign;
-    }
-    else
-    {
-        gCustomLoginFocusedField =
-            CustomLoginFieldUsername;
-    }
-}
-
-
-void CustomLoginHandleKey(
-    XPLMWindowID inWindowID,
-    char inKey,
-    XPLMKeyFlags inFlags,
-    char inVirtualKey,
-    void* inRefcon,
-    int losingFocus
-)
-{
-    if (losingFocus)
-    {
-        return;
-    }
-
-    if (inVirtualKey == 8 || inKey == 8)
-    {
-        BackspaceFocusedLoginField();
-        return;
-    }
-
-    if (inVirtualKey == 9 || inKey == 9)
-    {
-        FocusNextCustomLoginField();
-        return;
-    }
-
-    if (inVirtualKey == 13 || inKey == 13)
-    {
-        PerformCustomLogin();
-        return;
-    }
-
-    if (inKey >= 32 && inKey <= 126)
-    {
-        AppendToFocusedLoginField(
-            inKey
-        );
-    }
-}
-
-
-int CustomLoginHandleMouse(
-    XPLMWindowID inWindowID,
-    int x,
-    int y,
-    XPLMMouseStatus inMouse,
-    void* inRefcon
-)
-{
-    int left;
-    int top;
-    int right;
-    int bottom;
-
-    XPLMGetWindowGeometry(
-        inWindowID,
-        &left,
-        &top,
-        &right,
-        &bottom
-    );
-
-    if (inMouse == xplm_MouseDown)
-    {
-        if (PointInRect(x, y, GetCustomLoginPopoutRect(left, top, right)))
-        {
-            ToggleCustomLoginPopout();
-            return 1;
-        }
-
-        if (PointInRect(x, y, GetCustomLoginCloseRect(left, top, right)))
-        {
-            XPLMSetWindowIsVisible(
-                inWindowID,
-                0
-            );
-
-            return 1;
-        }
-
-        if (PointInRect(x, y, GetCustomLoginUsernameRect(left, top)))
-        {
-            gCustomLoginFocusedField =
-                CustomLoginFieldUsername;
-
-            XPLMTakeKeyboardFocus(
-                inWindowID
-            );
-
-            return 1;
-        }
-
-        if (PointInRect(x, y, GetCustomLoginPasswordRect(left, top)))
-        {
-            gCustomLoginFocusedField =
-                CustomLoginFieldPassword;
-
-            XPLMTakeKeyboardFocus(
-                inWindowID
-            );
-
-            return 1;
-        }
-
-        if (PointInRect(x, y, GetCustomLoginCallsignRect(left, top)))
-        {
-            gCustomLoginFocusedField =
-                CustomLoginFieldCallsign;
-
-            XPLMTakeKeyboardFocus(
-                inWindowID
-            );
-
-            return 1;
-        }
-
-        if (PointInRect(x, y, GetCustomLoginRememberRect(left, top)))
-        {
-            gRememberLogin =
-                !gRememberLogin;
-
-            if (!gRememberLogin)
-            {
-                DeleteSavedLoginData();
-            }
-
-            return 1;
-        }
-
-        if (
-            !gLoggedIn &&
-            PointInRect(x, y, GetCustomLoginButtonRect(left, top))
-        ) {
-            PerformCustomLogin();
-            return 1;
-        }
-
-        if (
-            gLoggedIn &&
-            PointInRect(x, y, GetCustomLoginLogoutRect(left, top))
-        ) {
-            DoLogout();
-            return 1;
-        }
-
-        if (
-            gLoggedIn &&
-            PointInRect(x, y, GetCustomLoginInvisibleRect(left, top))
-        ) {
-            ToggleCustomInvisible();
-            return 1;
-        }
-
-        if (y >= top - 34)
-        {
-            gCustomLoginDragging = true;
-            gCustomLoginDragOffsetX = x - left;
-            gCustomLoginDragOffsetY = top - y;
-            return 1;
-        }
-    }
-    else if (inMouse == xplm_MouseDrag && gCustomLoginDragging)
-    {
-        int width =
-            right - left;
-
-        int height =
-            top - bottom;
-
-        int newLeft =
-            x - gCustomLoginDragOffsetX;
-
-        int newTop =
-            y + gCustomLoginDragOffsetY;
-
-        XPLMSetWindowGeometry(
-            inWindowID,
-            newLeft,
-            newTop,
-            newLeft + width,
-            newTop - height
-        );
-
-        return 1;
-    }
-    else if (inMouse == xplm_MouseUp)
-    {
-        gCustomLoginDragging = false;
-        return 1;
-    }
-
-    return 1;
-}
-
-
-int CustomLoginHandleCursor(
-    XPLMWindowID inWindowID,
-    int x,
-    int y,
-    void* inRefcon
-)
-{
-    return 0;
-}
-
-
-int CustomLoginHandleMouseWheel(
-    XPLMWindowID inWindowID,
-    int x,
-    int y,
-    int wheel,
-    int clicks,
-    void* inRefcon
-)
-{
-    return 1;
-}
-
-
 int LoginWindowHandler(
     XPWidgetMessage inMessage,
     XPWidgetID inWidget,
@@ -4350,8 +2203,6 @@ int LoginWindowHandler(
                 gLoggedIn = true;
                 gCurrentUsername = username;
                 gCurrentCallsign = callsign;
-                gPositionUpdateFailureCount = 0;
-                ResetNightFlightTracking();
 
                 gAuthToken =
                     ExtractJsonStringValue(
@@ -4395,21 +2246,6 @@ int LoginWindowHandler(
                 }
 
                 UpdateLoginWindowState();
-
-                if (gCustomLoginWindow != nullptr)
-                {
-                    XPLMSetWindowIsVisible(
-                        gCustomLoginWindow,
-                        0
-                    );
-                }
-
-                if (gLoginWindow != nullptr)
-                {
-                    XPHideWidget(
-                        gLoginWindow
-                    );
-                }
 
                 if (gFlightplanWindow != nullptr)
                 {
@@ -4619,9 +2455,9 @@ int FlightplanWindowHandler(
 void CreateLoginWindow()
 {
     int left = 100;
-    int top = 760;
-    int right = 455;
-    int bottom = 230;
+    int top = 700;
+    int right = 520;
+    int bottom = 360;
 
     gLoginWindow =
         XPCreateWidget(
@@ -4630,7 +2466,7 @@ void CreateLoginWindow()
             right,
             bottom,
             1,
-            "VFN Network Pilot Client",
+            T("window.login.title"),
             1,
             nullptr,
             xpWidgetClass_MainWindow
@@ -4638,61 +2474,16 @@ void CreateLoginWindow()
 
     XPSetWidgetProperty(
         gLoginWindow,
-        xpProperty_MainWindowType,
-        xpMainWindowStyle_Translucent
-    );
-
-    XPSetWidgetProperty(
-        gLoginWindow,
         xpProperty_MainWindowHasCloseBoxes,
         1
     );
 
-    gLoginBrandLabel =
-        XPCreateWidget(
-            left + 30,
-            top - 45,
-            right - 30,
-            top - 75,
-            1,
-            "VFN NETWORK",
-            0,
-            gLoginWindow,
-            xpWidgetClass_Caption
-        );
-
-    gLoginSubtitleLabel =
-        XPCreateWidget(
-            left + 30,
-            top - 72,
-            right - 30,
-            top - 95,
-            1,
-            "Pilot Client Login",
-            0,
-            gLoginWindow,
-            xpWidgetClass_Caption
-        );
-
-    gLoginSectionLabel =
-        XPCreateWidget(
-            left + 30,
-            top - 115,
-            right - 30,
-            top - 135,
-            1,
-            "LOGIN",
-            0,
-            gLoginWindow,
-            xpWidgetClass_Caption
-        );
-
     gUsernameLabel =
         XPCreateWidget(
             left + 30,
-            top - 150,
-            right - 30,
-            top - 170,
+            top - 50,
+            left + 150,
+            top - 70,
             1,
             T("label.username"),
             0,
@@ -4702,10 +2493,10 @@ void CreateLoginWindow()
 
     gUsernameField =
         XPCreateWidget(
-            left + 30,
-            top - 170,
+            left + 160,
+            top - 45,
             right - 30,
-            top - 200,
+            top - 75,
             1,
             "",
             0,
@@ -4722,9 +2513,9 @@ void CreateLoginWindow()
     gPasswordLabel =
         XPCreateWidget(
             left + 30,
-            top - 210,
-            right - 30,
-            top - 230,
+            top - 95,
+            left + 150,
+            top - 115,
             1,
             T("label.password"),
             0,
@@ -4734,10 +2525,10 @@ void CreateLoginWindow()
 
     gPasswordField =
         XPCreateWidget(
-            left + 30,
-            top - 230,
+            left + 160,
+            top - 90,
             right - 30,
-            top - 260,
+            top - 120,
             1,
             "",
             0,
@@ -4754,9 +2545,9 @@ void CreateLoginWindow()
     gCallsignLabel =
         XPCreateWidget(
             left + 30,
-            top - 270,
-            right - 30,
-            top - 290,
+            top - 140,
+            left + 150,
+            top - 160,
             1,
             T("label.callsign"),
             0,
@@ -4766,10 +2557,10 @@ void CreateLoginWindow()
 
     gCallsignField =
         XPCreateWidget(
-            left + 30,
-            top - 290,
+            left + 160,
+            top - 135,
             right - 30,
-            top - 320,
+            top - 165,
             1,
             "",
             0,
@@ -4785,10 +2576,10 @@ void CreateLoginWindow()
 
     gRememberLoginButton =
         XPCreateWidget(
-            left + 30,
-            top - 330,
+            left + 160,
+            top - 175,
             right - 30,
-            top - 360,
+            top - 205,
             1,
             T("checkbox.remember_login.off"),
             0,
@@ -4804,10 +2595,10 @@ void CreateLoginWindow()
 
     gConnectButton =
         XPCreateWidget(
-            left + 30,
-            top - 370,
-            right - 30,
-            top - 405,
+            left + 160,
+            top - 230,
+            left + 300,
+            top - 265,
             1,
             T("button.connect"),
             0,
@@ -4823,10 +2614,10 @@ void CreateLoginWindow()
 
     gLogoutButton =
         XPCreateWidget(
-            left + 30,
-            top - 370,
-            left + 185,
-            top - 405,
+            left + 160,
+            top - 230,
+            left + 300,
+            top - 265,
             1,
             T("button.logout"),
             0,
@@ -4842,10 +2633,10 @@ void CreateLoginWindow()
 
     gInvisibleButton =
         XPCreateWidget(
-            left + 195,
-            top - 370,
+            left + 320,
+            top - 230,
             right - 30,
-            top - 405,
+            top - 265,
             1,
             T("checkbox.invisible.off"),
             0,
@@ -4859,53 +2650,14 @@ void CreateLoginWindow()
         xpPushButton
     );
 
-    gLoginNetworkLabel =
-        XPCreateWidget(
-            left + 30,
-            top - 415,
-            right - 30,
-            top - 435,
-            1,
-            "Network Status",
-            0,
-            gLoginWindow,
-            xpWidgetClass_Caption
-        );
-
     gStatusCaption =
         XPCreateWidget(
             left + 30,
-            top - 438,
+            top - 295,
             right - 30,
-            top - 460,
+            top - 320,
             1,
             T("status.not_connected"),
-            0,
-            gLoginWindow,
-            xpWidgetClass_Caption
-        );
-
-    gLoginPilotsLabel =
-        XPCreateWidget(
-            left + 30,
-            top - 465,
-            right - 30,
-            top - 485,
-            1,
-            "Pilots Online: --",
-            0,
-            gLoginWindow,
-            xpWidgetClass_Caption
-        );
-
-    gLoginAtcLabel =
-        XPCreateWidget(
-            left + 30,
-            top - 490,
-            right - 30,
-            top - 510,
-            1,
-            "ATC Online: --",
             0,
             gLoginWindow,
             xpWidgetClass_Caption
@@ -4919,46 +2671,6 @@ void CreateLoginWindow()
     UpdateLoginWindowState();
 
     XPHideWidget(gLoginWindow);
-
-    XPLMCreateWindow_t customLoginParams = {};
-    customLoginParams.structSize = sizeof(customLoginParams);
-    customLoginParams.left = 80;
-    customLoginParams.top = 700;
-    customLoginParams.right = 440;
-    customLoginParams.bottom = 230;
-    customLoginParams.visible = 0;
-    customLoginParams.drawWindowFunc = DrawCustomLoginWindow;
-    customLoginParams.handleMouseClickFunc = CustomLoginHandleMouse;
-    customLoginParams.handleKeyFunc = CustomLoginHandleKey;
-    customLoginParams.handleCursorFunc = CustomLoginHandleCursor;
-    customLoginParams.handleMouseWheelFunc = CustomLoginHandleMouseWheel;
-    customLoginParams.refcon = nullptr;
-    customLoginParams.decorateAsFloatingWindow =
-        xplm_WindowDecorationRoundRectangle;
-    customLoginParams.layer =
-        xplm_WindowLayerFloatingWindows;
-    customLoginParams.handleRightClickFunc = CustomLoginHandleMouse;
-
-    gCustomLoginWindow =
-        XPLMCreateWindowEx(
-            &customLoginParams
-        );
-
-    if (gCustomLoginWindow != nullptr)
-    {
-        XPLMSetWindowTitle(
-            gCustomLoginWindow,
-            "VFN Network Pilot Client"
-        );
-
-        XPLMSetWindowResizingLimits(
-            gCustomLoginWindow,
-            360,
-            470,
-            360,
-            470
-        );
-    }
 }
 
 
@@ -5456,31 +3168,24 @@ void MenuHandler(
 
     if (item == 1)
     {
-        if (gCustomLoginWindow == nullptr)
+        if (gLoginWindow == nullptr)
         {
             return;
         }
 
-        if (XPLMGetWindowIsVisible(gCustomLoginWindow))
+        if (XPIsWidgetVisible(gLoginWindow))
         {
-            XPLMSetWindowIsVisible(
-                gCustomLoginWindow,
-                0
-            );
+            XPHideWidget(gLoginWindow);
         }
         else
         {
-            XPLMSetWindowIsVisible(
-                gCustomLoginWindow,
-                1
-            );
+            XPShowWidget(gLoginWindow);
 
-            XPLMBringWindowToFront(
-                gCustomLoginWindow
+            XPBringRootWidgetToFront(
+                gLoginWindow
             );
 
             UpdateLoginWindowState();
-            StartNetworkStatusUpdateWorker();
         }
 
         return;
@@ -5495,19 +3200,14 @@ void MenuHandler(
 
         if (!gLoggedIn)
         {
-            if (gCustomLoginWindow != nullptr)
-            {
-                XPLMSetWindowIsVisible(
-                    gCustomLoginWindow,
-                    1
-                );
+            XPShowWidget(gLoginWindow);
 
-                XPLMBringWindowToFront(
-                    gCustomLoginWindow
-                );
-            }
+            XPBringRootWidgetToFront(
+                gLoginWindow
+            );
 
-            SetCustomLoginStatus(
+            XPSetWidgetDescriptor(
+                gStatusCaption,
                 T("status.login_first")
             );
 
@@ -5531,7 +3231,6 @@ void MenuHandler(
 
         return;
     }
-
 }
 
 
@@ -5579,16 +3278,6 @@ float FlightLoopCallback(
     void* inRefcon
 )
 {
-    ProcessPositionUpdateResult();
-    ProcessNetworkStatusUpdateResult();
-    UpdateNetworkStatusIfNeeded(
-        inElapsedSinceLastCall
-    );
-
-    UpdateNightFlightTracking(
-        inElapsedSinceLastCall
-    );
-
     double latitude =
         XPLMGetDatad(gLatitude);
 
@@ -5658,7 +3347,6 @@ float FlightLoopCallback(
     }
 
     SendPositionUpdate();
-    CompleteNightFlightTrackingIfLanded();
 
     return 1.0f;
 }
@@ -5758,31 +3446,6 @@ PLUGIN_API int XPluginStart(
             "sim/flightmodel2/misc/has_crashed"
         );
 
-    gFuelTotal =
-        XPLMFindDataRef(
-            "sim/flightmodel/weight/m_fuel_total"
-        );
-
-    gFuelCapacity =
-        XPLMFindDataRef(
-            "sim/aircraft/weight/acf_m_fuel_tot"
-        );
-
-    gSunPitchDegrees =
-        XPLMFindDataRef(
-            "sim/graphics/scenery/sun_pitch_degrees"
-        );
-
-    gPausedRef =
-        XPLMFindDataRef(
-            "sim/time/paused"
-        );
-
-    gReplayModeRef =
-        XPLMFindDataRef(
-            "sim/operation/prefs/replay_mode"
-        );
-
     /*
         Moderne cockpit2-DataRefs verwenden.
         Diese passen bei G1000-Flugzeugen besser zur tatsächlich sichtbaren aktiven Frequenz.
@@ -5850,16 +3513,6 @@ PLUGIN_API void XPluginStop(void)
         nullptr
     );
 
-    if (gPositionUpdateThread.joinable())
-    {
-        gPositionUpdateThread.join();
-    }
-
-    if (gNetworkStatusThread.joinable())
-    {
-        gNetworkStatusThread.join();
-    }
-
     if (gLoggedIn && !gAuthToken.empty())
     {
         std::string postData =
@@ -5874,7 +3527,6 @@ PLUGIN_API void XPluginStop(void)
         gCurrentUsername = "";
         gCurrentCallsign = "";
         gAuthToken = "";
-        ResetNightFlightTracking();
     }
 
     if (gMenuId != nullptr)
@@ -5891,15 +3543,6 @@ PLUGIN_API void XPluginStop(void)
         );
 
         gFlightplanWindow = nullptr;
-    }
-
-    if (gCustomLoginWindow != nullptr)
-    {
-        XPLMDestroyWindow(
-            gCustomLoginWindow
-        );
-
-        gCustomLoginWindow = nullptr;
     }
 
     if (gLoginWindow != nullptr)
