@@ -1,19 +1,32 @@
 {
     "configurations": [
         {
-            "name": "Win32",
+            "name": "Win64",
             "includePath": [
-                "${workspaceFolder}/**"
+                "${workspaceFolder}/Flight Radar Sim Projekt",
+                "${workspaceFolder}/Flight Radar Sim Projekt/**",
+                "C:/Users/tonih/Desktop/Xplane Development/SDK/CHeaders/Wrappers",
+                "C:/Users/tonih/Desktop/Xplane Development/SDK/CHeaders/Widgets",
+                "C:/Users/tonih/Desktop/Xplane Development/SDK/CHeaders/XPLM"
             ],
             "defines": [
-                "_DEBUG",
+                "NDEBUG",
+                "IBM=1",
+                "XPLM200=1",
+                "XPLM210=1",
+                "XPLM300=1",
+                "XPLM301=1",
+                "FLIGHTRADARSIMPROJEKT_EXPORTS",
+                "_WINDOWS",
+                "_USRDLL",
+                "_WINDLL",
                 "UNICODE",
                 "_UNICODE"
             ],
             "windowsSdkVersion": "10.0.26100.0",
             "compilerPath": "cl.exe",
             "cStandard": "c17",
-            "cppStandard": "c++17",
+            "cppStandard": "c++20",
             "intelliSenseMode": "windows-msvc-x64"
         }
     ],
