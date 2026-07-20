@@ -18,6 +18,9 @@ $minimumInvisibleOpPermission = 3;
 // Anzeige der Ratings überall
 $showRatings = true;
 
+// Reichweite fuer frequenzgebundene Chat-Nachrichten ausser UNICOM 122.800.
+$chatFrequencyRangeNm = 200.0;
+
 // Browser-Titelname
 $projectName = "Flight Radar Sim Project";
 

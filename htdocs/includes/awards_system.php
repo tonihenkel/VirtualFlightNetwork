@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/activity_log.php';
+require_once __DIR__ . '/chat_system.php';
 
 function awardUser(
     PDO $pdo,
@@ -38,6 +39,13 @@ function awardUser(
         'activity_award_unlocked',
         $awardKey,
         $createdBy
+    );
+
+    insertUserChatSystemMessage(
+        $pdo,
+        $userId,
+        'award',
+        'award:' . $awardKey
     );
 
     return true;

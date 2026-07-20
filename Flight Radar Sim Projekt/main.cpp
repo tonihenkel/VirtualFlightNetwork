@@ -26,6 +26,7 @@
 #include <string>
 #include <sstream>
 #include <map>
+#include <vector>
 #include <atomic>
 #include <mutex>
 #include <thread>
@@ -75,6 +76,12 @@ gServerAddress + "/execute/set_invisible.php";
 static const std::string gPilotsUrl =
 gServerAddress + "/execute/get_pilots.php";
 
+static const std::string gChatSendUrl =
+gServerAddress + "/execute/chat_send.php";
+
+static const std::string gChatPollUrl =
+gServerAddress + "/execute/chat_poll.php";
+
 static bool gLoggedIn = false;
 
 static std::string gCurrentUsername = "";
@@ -119,6 +126,11 @@ static int gCustomLoginDragOffsetY = 0;
 static bool gCompactWindowDragging = false;
 static int gCompactWindowDragOffsetX = 0;
 static int gCompactWindowDragOffsetY = 0;
+static bool gWindowsChatMouseDown = false;
+static char gLastCompactKey = 0;
+static char gLastCompactVirtualKey = 0;
+static float gLastCompactKeyTime = -1.0f;
+static bool gWindowsChatKeyDown[256] = {};
 static char gLastLoginKey = 0;
 static char gLastLoginVirtualKey = 0;
 static float gLastLoginKeyTime = -1.0f;
@@ -158,6 +170,33 @@ static std::atomic<bool> gNetworkStatusUpdateResultReady(false);
 static std::mutex gNetworkStatusResultMutex;
 static std::string gNetworkStatusLastResponse = "";
 static std::thread gNetworkStatusThread;
+
+struct ChatLine
+{
+    int id;
+    std::string frequency;
+    std::string sender;
+    std::string type;
+    std::string text;
+};
+
+static std::vector<ChatLine> gChatLines;
+static std::string gChatInputText = "";
+static bool gChatInputFocused = false;
+static int gChatScrollOffset = 0;
+static bool gChatSendButtonPressed = false;
+static int gLastChatMessageId = 0;
+static float gChatPollElapsed = 999.0f;
+static std::atomic<bool> gChatPollInProgress(false);
+static std::atomic<bool> gChatPollResultReady(false);
+static std::mutex gChatPollResultMutex;
+static std::string gChatPollLastResponse = "";
+static std::thread gChatPollThread;
+static std::atomic<bool> gChatSendInProgress(false);
+static std::atomic<bool> gChatSendResultReady(false);
+static std::mutex gChatSendResultMutex;
+static std::string gChatSendLastResponse = "";
+static std::thread gChatSendThread;
 
 enum CustomLoginField
 {
@@ -242,6 +281,17 @@ void UpdateFlightplanWindowState();
 void SetCustomLoginStatus(
     const std::string& value
 );
+bool HandleChatKeyInput(
+    char inKey,
+    XPLMKeyFlags inFlags,
+    char inVirtualKey
+);
+int ChatKeySniffer(
+    char inChar,
+    XPLMKeyFlags inFlags,
+    char inVirtualKey,
+    void* inRefcon
+);
 
 struct CustomRect
 {
@@ -262,6 +312,51 @@ bool PointInRect(
         x <= rect.right &&
         y <= rect.top &&
         y >= rect.bottom;
+}
+
+
+bool PointInWindowRect(
+    int x,
+    int y,
+    const CustomRect& rect,
+    int windowLeft,
+    int windowTop,
+    int windowBottom
+)
+{
+    if (PointInRect(x, y, rect))
+    {
+        return true;
+    }
+
+    int localLeft =
+        rect.left - windowLeft;
+    int localRight =
+        rect.right - windowLeft;
+    int localBottomFromBottom =
+        rect.bottom - windowBottom;
+    int localTopFromBottom =
+        rect.top - windowBottom;
+
+    if (
+        x >= localLeft &&
+        x <= localRight &&
+        y >= localBottomFromBottom &&
+        y <= localTopFromBottom
+    ) {
+        return true;
+    }
+
+    int localTopFromTop =
+        windowTop - rect.top;
+    int localBottomFromTop =
+        windowTop - rect.bottom;
+
+    return
+        x >= localLeft &&
+        x <= localRight &&
+        y >= localTopFromTop &&
+        y <= localBottomFromTop;
 }
 
 void DrawFilledRect(
@@ -577,6 +672,22 @@ void LoadInternalEnglishLanguage()
     gText["flightplan.saved_log"] = "Flight Radar Plugin: Flightplan saved.\n";
     gText["flightplan.failed_log"] = "Flight Radar Plugin: Flightplan could not be saved.\n";
 
+    gText["chat.award_unlocked"] = "Award unlocked";
+    gText["award_first_flight"] = "First Flight";
+    gText["award_first_landing"] = "First Landing";
+    gText["award_crash_pilot"] = "Crash Pilot";
+    gText["award_hard_landing"] = "Hard Landing";
+    gText["award_butter_landing"] = "Butter Landing";
+    gText["award_fuel_gambler"] = "Fuel Gambler";
+    gText["award_world_traveler"] = "World Traveler";
+    gText["award_global_explorer"] = "Global Explorer";
+    gText["award_international_ace"] = "International Ace";
+    gText["award_globe_master"] = "Globe Master";
+    gText["award_night_owl"] = "Night Owl";
+    gText["award_moon_walker"] = "Moon Walker";
+    gText["award_master_of_night"] = "Master of Night";
+    gText["award_founder_home"] = "Founder's House";
+
     gText["debug.plugin_path"] = "Flight Radar Plugin: Plugin path detected:\n";
     gText["debug.config_created"] = "Flight Radar Plugin: config.txt created.\n";
     gText["debug.config_create_failed"] = "Flight Radar Plugin: config.txt could NOT be created.\n";
@@ -593,6 +704,26 @@ void LoadInternalEnglishLanguage()
     gText["debug.logout_success"] = "Flight Radar Plugin: Logout successful.\n";
     gText["debug.logout_local_error"] = "Flight Radar Plugin: Logged out locally, server response invalid.\n";
     gText["debug.position_failed"] = "Flight Radar Plugin: Position update failed: ";
+}
+
+
+void ApplyInternalGermanLanguageFallbacks()
+{
+    gText["chat.award_unlocked"] = "Award freigeschaltet";
+    gText["award_first_flight"] = "Erster Flug";
+    gText["award_first_landing"] = "Erste Landung";
+    gText["award_crash_pilot"] = "Crash Pilot";
+    gText["award_hard_landing"] = "Harte Landung";
+    gText["award_butter_landing"] = "Butterweiche Landung";
+    gText["award_fuel_gambler"] = "Fuel Gambler";
+    gText["award_world_traveler"] = "World Traveler";
+    gText["award_global_explorer"] = "Global Explorer";
+    gText["award_international_ace"] = "International Ace";
+    gText["award_globe_master"] = "Globe Master";
+    gText["award_night_owl"] = "Night Owl";
+    gText["award_moon_walker"] = "Moon Walker";
+    gText["award_master_of_night"] = "Master of Night";
+    gText["award_founder_home"] = "Haus des Gruenders";
 }
 
 
@@ -686,6 +817,21 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "flightplan.error=Flightplan error: \n";
             enFile << "flightplan.saved_log=Flight Radar Plugin: Flightplan saved.\\n\n";
             enFile << "flightplan.failed_log=Flight Radar Plugin: Flightplan could not be saved.\\n\n";
+            enFile << "chat.award_unlocked=Award unlocked\n";
+            enFile << "award_first_flight=First Flight\n";
+            enFile << "award_first_landing=First Landing\n";
+            enFile << "award_crash_pilot=Crash Pilot\n";
+            enFile << "award_hard_landing=Hard Landing\n";
+            enFile << "award_butter_landing=Butter Landing\n";
+            enFile << "award_fuel_gambler=Fuel Gambler\n";
+            enFile << "award_world_traveler=World Traveler\n";
+            enFile << "award_global_explorer=Global Explorer\n";
+            enFile << "award_international_ace=International Ace\n";
+            enFile << "award_globe_master=Globe Master\n";
+            enFile << "award_night_owl=Night Owl\n";
+            enFile << "award_moon_walker=Moon Walker\n";
+            enFile << "award_master_of_night=Master of Night\n";
+            enFile << "award_founder_home=Founder's House\n";
             enFile << "debug.plugin_path=Flight Radar Plugin: Plugin path detected:\\n\n";
             enFile << "debug.config_created=Flight Radar Plugin: config.txt created.\\n\n";
             enFile << "debug.config_create_failed=Flight Radar Plugin: config.txt could NOT be created.\\n\n";
@@ -780,6 +926,21 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "flightplan.error=Flugplan Fehler: \n";
             deFile << "flightplan.saved_log=Flight Radar Plugin: Flugplan gespeichert.\\n\n";
             deFile << "flightplan.failed_log=Flight Radar Plugin: Flugplan konnte nicht gespeichert werden.\\n\n";
+            deFile << "chat.award_unlocked=Award freigeschaltet\n";
+            deFile << "award_first_flight=Erster Flug\n";
+            deFile << "award_first_landing=Erste Landung\n";
+            deFile << "award_crash_pilot=Crash Pilot\n";
+            deFile << "award_hard_landing=Harte Landung\n";
+            deFile << "award_butter_landing=Butterweiche Landung\n";
+            deFile << "award_fuel_gambler=Fuel Gambler\n";
+            deFile << "award_world_traveler=World Traveler\n";
+            deFile << "award_global_explorer=Global Explorer\n";
+            deFile << "award_international_ace=International Ace\n";
+            deFile << "award_globe_master=Globe Master\n";
+            deFile << "award_night_owl=Night Owl\n";
+            deFile << "award_moon_walker=Moon Walker\n";
+            deFile << "award_master_of_night=Master of Night\n";
+            deFile << "award_founder_home=Haus des Gruenders\n";
             deFile << "debug.plugin_path=Flight Radar Plugin: Plugin Pfad erkannt:\\n\n";
             deFile << "debug.config_created=Flight Radar Plugin: config.txt wurde erstellt.\\n\n";
             deFile << "debug.config_create_failed=Flight Radar Plugin: config.txt konnte NICHT erstellt werden.\\n\n";
@@ -968,6 +1129,11 @@ void LoadLanguage()
         gCurrentLanguage = "en";
 
         LoadLanguageFile("en");
+    }
+
+    if (gCurrentLanguage == "de")
+    {
+        ApplyInternalGermanLanguageFallbacks();
     }
 
     if (
@@ -1609,6 +1775,148 @@ std::string FormatComFrequency(int value)
     );
 
     return std::string(buffer);
+}
+
+
+std::string GetPrimaryChatFrequency()
+{
+    int com1 =
+        gCom1 ? XPLMGetDatai(gCom1) : 0;
+
+    std::string frequency =
+        FormatComFrequency(com1);
+
+    if (frequency != "0.000")
+    {
+        return frequency;
+    }
+
+    int com2 =
+        gCom2 ? XPLMGetDatai(gCom2) : 0;
+
+    return FormatComFrequency(com2);
+}
+
+
+std::string GetActiveChatFrequencies()
+{
+    std::vector<std::string> frequencies;
+
+    int com1 =
+        gCom1 ? XPLMGetDatai(gCom1) : 0;
+
+    int com2 =
+        gCom2 ? XPLMGetDatai(gCom2) : 0;
+
+    std::string com1Frequency =
+        FormatComFrequency(com1);
+
+    std::string com2Frequency =
+        FormatComFrequency(com2);
+
+    if (com1Frequency != "0.000")
+    {
+        frequencies.push_back(com1Frequency);
+    }
+
+    if (
+        com2Frequency != "0.000" &&
+        com2Frequency != com1Frequency
+    ) {
+        frequencies.push_back(com2Frequency);
+    }
+
+    std::string value;
+
+    for (size_t i = 0; i < frequencies.size(); i++)
+    {
+        if (i > 0)
+        {
+            value += ",";
+        }
+
+        value += frequencies[i];
+    }
+
+    return value;
+}
+
+
+std::vector<std::string> SplitString(
+    const std::string& value,
+    char delimiter
+)
+{
+    std::vector<std::string> parts;
+    std::stringstream stream(value);
+    std::string part;
+
+    while (std::getline(stream, part, delimiter))
+    {
+        parts.push_back(part);
+    }
+
+    return parts;
+}
+
+
+void AddChatLine(
+    const ChatLine& line,
+    bool notify
+)
+{
+    gChatLines.push_back(line);
+
+    while (gChatLines.size() > 200)
+    {
+        gChatLines.erase(gChatLines.begin());
+    }
+
+    gChatScrollOffset = 0;
+
+    if (line.id > gLastChatMessageId)
+    {
+        gLastChatMessageId =
+            line.id;
+    }
+
+    if (notify)
+    {
+        MessageBeep(MB_ICONASTERISK);
+    }
+}
+
+
+std::string GetLocalizedChatText(
+    const ChatLine& line
+)
+{
+    if (line.type != "award")
+    {
+        return line.text;
+    }
+
+    std::string awardKey =
+        line.text;
+
+    const std::string keyPrefix =
+        "award:";
+
+    const std::string oldPrefix =
+        "Award unlocked: ";
+
+    if (awardKey.rfind(keyPrefix, 0) == 0)
+    {
+        awardKey =
+            awardKey.substr(keyPrefix.size());
+    }
+    else if (awardKey.rfind(oldPrefix, 0) == 0)
+    {
+        awardKey =
+            TrimString(awardKey.substr(oldPrefix.size()));
+    }
+
+    return std::string(T("chat.award_unlocked")) + ": " + T(awardKey);
 }
 
 
@@ -2521,6 +2829,12 @@ void DoLogout()
     gPositionUpdateFirstFailureTime = -1.0f;
     gPositionUpdateResultReady.store(false);
     ResetNightFlightTracking();
+    gChatLines.clear();
+    gChatInputText = "";
+    gChatInputFocused = false;
+    gChatScrollOffset = 0;
+    gLastChatMessageId = 0;
+    gChatPollElapsed = 999.0f;
 
     if (gRememberLogin)
     {
@@ -2629,6 +2943,12 @@ void ForceLocalLogoutAfterConnectionFailures(
     gPositionUpdateFirstFailureTime = -1.0f;
     gPositionUpdateResultReady.store(false);
     ResetNightFlightTracking();
+    gChatLines.clear();
+    gChatInputText = "";
+    gChatInputFocused = false;
+    gChatScrollOffset = 0;
+    gLastChatMessageId = 0;
+    gChatPollElapsed = 999.0f;
 
     if (gRememberLogin)
     {
@@ -2832,6 +3152,263 @@ void ProcessPositionUpdateResult()
             message
         );
     }
+}
+
+
+void StartChatPollWorker()
+{
+    if (!gLoggedIn || gAuthToken.empty())
+    {
+        return;
+    }
+
+    if (gChatPollInProgress.exchange(true))
+    {
+        return;
+    }
+
+    if (gChatPollThread.joinable())
+    {
+        gChatPollThread.join();
+    }
+
+    std::string postData =
+        "token=" + UrlEncode(gAuthToken) +
+        "&since_id=" + UrlEncode(IntToString(gLastChatMessageId)) +
+        "&frequencies=" + UrlEncode(GetActiveChatFrequencies());
+
+    gChatPollThread =
+        std::thread(
+        [postData]()
+        {
+            std::string response =
+                HttpPost(
+                    gChatPollUrl,
+                    postData
+                );
+
+            {
+                std::lock_guard<std::mutex> lock(
+                    gChatPollResultMutex
+                );
+
+                gChatPollLastResponse =
+                    response;
+            }
+
+            gChatPollResultReady.store(true);
+            gChatPollInProgress.store(false);
+        }
+    );
+}
+
+
+void ProcessChatPollResult()
+{
+    if (!gChatPollResultReady.exchange(false))
+    {
+        return;
+    }
+
+    std::string response;
+
+    {
+        std::lock_guard<std::mutex> lock(
+            gChatPollResultMutex
+        );
+
+        response =
+            gChatPollLastResponse;
+    }
+
+    if (
+        !gChatPollInProgress.load() &&
+        gChatPollThread.joinable()
+    ) {
+        gChatPollThread.join();
+    }
+
+    if (response.rfind("OK", 0) != 0)
+    {
+        return;
+    }
+
+    std::stringstream stream(response);
+    std::string line;
+    bool firstLine = true;
+    bool gotNewLine = false;
+
+    while (std::getline(stream, line))
+    {
+        if (firstLine)
+        {
+            firstLine = false;
+            continue;
+        }
+
+        if (line.empty())
+        {
+            continue;
+        }
+
+        if (line.rfind("LAST|", 0) == 0)
+        {
+            gLastChatMessageId =
+                atoi(line.substr(5).c_str());
+
+            continue;
+        }
+
+        std::vector<std::string> parts =
+            SplitString(line, '|');
+
+        if (parts.size() < 5)
+        {
+            continue;
+        }
+
+        ChatLine chatLine;
+        chatLine.id = atoi(parts[0].c_str());
+        chatLine.frequency = parts[1];
+        chatLine.sender = parts[2];
+        chatLine.type = parts[3];
+        chatLine.text = parts[4];
+
+        bool isOwnPilotMessage =
+            chatLine.type == "pilot" &&
+            chatLine.sender == gCurrentCallsign;
+
+        AddChatLine(
+            chatLine,
+            !isOwnPilotMessage
+        );
+
+        if (!isOwnPilotMessage)
+        {
+            gotNewLine = true;
+        }
+    }
+
+    if (gotNewLine && gDebugEnabled)
+    {
+        XPLMDebugString("Flight Radar Plugin: New chat message received.\n");
+    }
+}
+
+
+void UpdateChatPolling(
+    float elapsedSeconds
+)
+{
+    if (!gLoggedIn || gAuthToken.empty())
+    {
+        return;
+    }
+
+    gChatPollElapsed += elapsedSeconds;
+
+    if (gChatPollElapsed < 2.0f)
+    {
+        return;
+    }
+
+    gChatPollElapsed =
+        0.0f;
+
+    StartChatPollWorker();
+}
+
+
+void StartChatSendWorker(
+    const std::string& postData
+)
+{
+    if (gChatSendInProgress.exchange(true))
+    {
+        return;
+    }
+
+    if (gChatSendThread.joinable())
+    {
+        gChatSendThread.join();
+    }
+
+    gChatSendThread =
+        std::thread(
+        [postData]()
+        {
+            std::string response =
+                HttpPost(
+                    gChatSendUrl,
+                    postData
+                );
+
+            {
+                std::lock_guard<std::mutex> lock(
+                    gChatSendResultMutex
+                );
+
+                gChatSendLastResponse =
+                    response;
+            }
+
+            gChatSendResultReady.store(true);
+            gChatSendInProgress.store(false);
+        }
+    );
+}
+
+
+void ProcessChatSendResult()
+{
+    if (!gChatSendResultReady.exchange(false))
+    {
+        return;
+    }
+
+    if (
+        !gChatSendInProgress.load() &&
+        gChatSendThread.joinable()
+    ) {
+        gChatSendThread.join();
+    }
+}
+
+
+void SendChatMessage()
+{
+    if (!gLoggedIn || gAuthToken.empty())
+    {
+        return;
+    }
+
+    std::string message =
+        TrimString(gChatInputText);
+
+    if (message.empty())
+    {
+        return;
+    }
+
+    std::string frequency =
+        GetPrimaryChatFrequency();
+
+    if (frequency == "0.000")
+    {
+        return;
+    }
+
+    std::string postData =
+        "token=" + UrlEncode(gAuthToken) +
+        "&callsign=" + UrlEncode(gCurrentCallsign) +
+        "&frequency=" + UrlEncode(frequency) +
+        "&message=" + UrlEncode(message);
+
+    gChatInputText = "";
+
+    StartChatSendWorker(
+        postData
+    );
 }
 
 
@@ -3381,6 +3958,24 @@ void PerformCustomLogin()
             return;
         }
 
+        gChatLines.clear();
+        gChatInputText = "";
+        gChatInputFocused = false;
+        gChatSendButtonPressed = false;
+        gChatScrollOffset = 0;
+        gLastChatMessageId = 0;
+        gChatPollElapsed = 999.0f;
+
+        AddChatLine(
+            { 0, "", "SYSTEM", "system", "Connected to VFN Network." },
+            false
+        );
+
+        AddChatLine(
+            { 0, "", "VFN", "system", "Ready for network operations." },
+            false
+        );
+
         XPLMDebugString(
             T("debug.login_success")
         );
@@ -3417,6 +4012,10 @@ void PerformCustomLogin()
             );
 
             XPLMBringWindowToFront(
+                gCompactWindow
+            );
+
+            XPLMTakeKeyboardFocus(
                 gCompactWindow
             );
         }
@@ -4013,6 +4612,50 @@ CustomRect GetCompactTabRect(int left, int top, int index)
 }
 
 
+CustomRect GetCompactChatInputRect(const CustomRect& chatRect)
+{
+    return {
+        chatRect.left + 8,
+        chatRect.bottom + 10,
+        chatRect.right - 100,
+        chatRect.bottom + 48
+    };
+}
+
+
+CustomRect GetCompactChatSendRect(const CustomRect& chatRect)
+{
+    return {
+        chatRect.right - 94,
+        chatRect.bottom + 14,
+        chatRect.right - 43,
+        chatRect.bottom + 44
+    };
+}
+
+
+CustomRect GetCompactChatSendHitRect(const CustomRect& chatRect)
+{
+    return {
+        chatRect.right - 102,
+        chatRect.bottom + 6,
+        chatRect.right - 34,
+        chatRect.bottom + 56
+    };
+}
+
+
+CustomRect GetCompactChatFocusRect(const CustomRect& chatRect)
+{
+    return {
+        chatRect.left,
+        chatRect.bottom,
+        chatRect.right,
+        chatRect.top - 28
+    };
+}
+
+
 std::string FormatTransponderCode(int value)
 {
     char buffer[8];
@@ -4446,17 +5089,127 @@ void DrawCompactWindow(
     DrawFilledRect(chatRect, 0.015f, 0.040f, 0.065f, 1.00f);
     DrawRectOutline(chatRect, 0.14f, 0.28f, 0.38f, 0.84f);
     DrawText(chatRect.left + 14, chatRect.top - 20, "CHAT", 0.88f, 0.94f, 1.00f);
-    DrawText(chatRect.left + 14, chatRect.top - 52, "SYSTEM:", 0.05f, 0.50f, 1.00f);
-    DrawText(chatRect.left + 82, chatRect.top - 52, "Connected to VFN Network.", 0.72f, 0.80f, 0.88f);
-    DrawText(chatRect.left + 14, chatRect.top - 82, "SYSTEM:", 0.05f, 0.50f, 1.00f);
-    DrawText(chatRect.left + 82, chatRect.top - 82, "You are Pilot Rating FC0.", 0.72f, 0.80f, 0.88f);
-    DrawText(chatRect.left + 14, chatRect.top - 112, "VFN:", 0.24f, 0.92f, 0.25f);
-    DrawText(chatRect.left + 82, chatRect.top - 112, "Ready for network operations.", 0.72f, 0.80f, 0.88f);
 
-    DrawFilledRect({ chatRect.left + 12, chatRect.bottom + 14, chatRect.right - 104, chatRect.bottom + 44 }, 0.090f, 0.105f, 0.122f, 0.98f);
-    DrawRectOutline({ chatRect.left + 12, chatRect.bottom + 14, chatRect.right - 104, chatRect.bottom + 44 }, 0.13f, 0.27f, 0.38f, 0.84f);
-    DrawText(chatRect.left + 24, chatRect.bottom + 25, "Type your message...", 0.45f, 0.56f, 0.66f);
-    DrawCustomLoginButton({ chatRect.right - 94, chatRect.bottom + 14, chatRect.right - 43, chatRect.bottom + 44 }, "SEND", true);
+    const int chatLineHeight = 24;
+    const int visibleChatLines =
+        (std::max)(1, (chatRect.top - chatRect.bottom - 110) / chatLineHeight);
+    const int totalChatLines =
+        (int)gChatLines.size();
+    const int maxChatScrollOffset =
+        (std::max)(0, totalChatLines - visibleChatLines);
+
+    gChatScrollOffset =
+        (std::max)(0, (std::min)(gChatScrollOffset, maxChatScrollOffset));
+
+    int visibleEnd =
+        (std::max)(0, totalChatLines - gChatScrollOffset);
+    int visibleStart =
+        (std::max)(0, visibleEnd - visibleChatLines);
+    int messageY =
+        chatRect.top - 52;
+
+    for (int chatIndex = visibleStart; chatIndex < visibleEnd; ++chatIndex)
+    {
+        const ChatLine& line =
+            gChatLines[chatIndex];
+
+        float senderRed = 0.05f;
+        float senderGreen = 0.50f;
+        float senderBlue = 1.00f;
+
+        if (line.type == "award")
+        {
+            senderRed = 1.00f;
+            senderGreen = 0.78f;
+            senderBlue = 0.16f;
+        }
+        else if (line.type == "landing")
+        {
+            senderRed = 0.24f;
+            senderGreen = 0.92f;
+            senderBlue = 0.25f;
+        }
+        else if (line.sender == gCurrentCallsign)
+        {
+            senderRed = 0.55f;
+            senderGreen = 0.78f;
+            senderBlue = 1.00f;
+        }
+
+        DrawText(
+            chatRect.left + 14,
+            messageY,
+            TruncateForField(line.sender + ":", 11),
+            senderRed,
+            senderGreen,
+            senderBlue
+        );
+
+        DrawText(
+            chatRect.left + 82,
+            messageY,
+            TruncateForField(GetLocalizedChatText(line), 54),
+            0.72f,
+            0.80f,
+            0.88f
+        );
+
+        messageY -= 24;
+    }
+
+    if (maxChatScrollOffset > 0)
+    {
+        CustomRect scrollTrack =
+            { chatRect.right - 10, chatRect.bottom + 58, chatRect.right - 6, chatRect.top - 36 };
+
+        DrawFilledRect(scrollTrack, 0.05f, 0.10f, 0.14f, 0.92f);
+
+        float visibleRatio =
+            (float)visibleChatLines / (float)totalChatLines;
+        int trackHeight =
+            scrollTrack.top - scrollTrack.bottom;
+        int thumbHeight =
+            (std::max)(18, (int)(trackHeight * visibleRatio));
+        int scrollableTrack =
+            (std::max)(1, trackHeight - thumbHeight);
+        int thumbTop =
+            scrollTrack.top - (int)((float)gChatScrollOffset / (float)maxChatScrollOffset * scrollableTrack);
+
+        CustomRect scrollThumb =
+            { scrollTrack.left, thumbTop - thumbHeight, scrollTrack.right, thumbTop };
+
+        DrawFilledRect(scrollThumb, 0.10f, 0.45f, 0.85f, 0.95f);
+
+        if (gChatScrollOffset > 0)
+        {
+            DrawText(chatRect.right - 56, chatRect.top - 20, "OLDER", 0.45f, 0.66f, 0.82f);
+        }
+    }
+
+    CustomRect inputRect =
+        GetCompactChatInputRect(chatRect);
+
+    DrawFilledRect(inputRect, 0.090f, 0.105f, 0.122f, 0.98f);
+    DrawRectOutline(
+        inputRect,
+        gChatInputFocused ? 0.05f : 0.13f,
+        gChatInputFocused ? 0.50f : 0.27f,
+        gChatInputFocused ? 1.00f : 0.38f,
+        0.84f
+    );
+
+    DrawText(
+        chatRect.left + 24,
+        chatRect.bottom + 25,
+        gChatInputText.empty()
+            ? (gChatInputFocused ? "|" : "Type your message...")
+            : TruncateForField(gChatInputText + (gChatInputFocused ? "|" : ""), 44),
+        gChatInputText.empty() ? 0.45f : 0.86f,
+        gChatInputText.empty() ? 0.56f : 0.92f,
+        gChatInputText.empty() ? 0.66f : 1.00f
+    );
+
+    DrawCustomLoginButton(GetCompactChatSendRect(chatRect), "SEND", true);
 
     DrawCompactTab(GetCompactTabRect(left, top, 0), "ATC", false);
     DrawCompactTab(GetCompactTabRect(left, top, 1), "MSG", false);
@@ -4751,6 +5504,473 @@ void ShowLogoutConfirmWindow()
 }
 
 
+void CompactHandleKey(
+    XPLMWindowID inWindowID,
+    char inKey,
+    XPLMKeyFlags inFlags,
+    char inVirtualKey,
+    void* inRefcon,
+    int losingFocus
+)
+{
+    if (losingFocus)
+    {
+        gChatInputFocused = false;
+        return;
+    }
+
+    HandleChatKeyInput(
+        inKey,
+        inFlags,
+        inVirtualKey
+    );
+}
+
+
+bool HandleChatKeyInput(
+    char inKey,
+    XPLMKeyFlags inFlags,
+    char inVirtualKey
+)
+{
+    if (!gChatInputFocused)
+    {
+        return false;
+    }
+
+    if ((inFlags & xplm_UpFlag) != 0)
+    {
+        return false;
+    }
+
+    float now =
+        XPLMGetElapsedTime();
+
+    bool repeatedKeyEvent =
+        inKey == gLastCompactKey &&
+        inVirtualKey == gLastCompactVirtualKey &&
+        now - gLastCompactKeyTime < 0.06f;
+
+    if (repeatedKeyEvent)
+    {
+        return true;
+    }
+
+    gLastCompactKey =
+        inKey;
+
+    gLastCompactVirtualKey =
+        inVirtualKey;
+
+    gLastCompactKeyTime =
+        now;
+
+    if (inVirtualKey == 8 || inKey == 8)
+    {
+        if (!gChatInputText.empty())
+        {
+            gChatInputText.pop_back();
+        }
+
+        return true;
+    }
+
+    if (inVirtualKey == 13 || inKey == 13)
+    {
+        SendChatMessage();
+        return true;
+    }
+
+    if (inVirtualKey == 27 || inKey == 27)
+    {
+        gChatInputFocused = false;
+        XPLMTakeKeyboardFocus(
+            nullptr
+        );
+        return true;
+    }
+
+    if (
+        inKey >= 32 &&
+        inKey <= 126 &&
+        gChatInputText.size() < 180
+    ) {
+        gChatInputText.push_back(inKey);
+        return true;
+    }
+
+    return false;
+}
+
+
+int ChatKeySniffer(
+    char inChar,
+    XPLMKeyFlags inFlags,
+    char inVirtualKey,
+    void* inRefcon
+)
+{
+    if (
+        !gChatInputFocused ||
+        gCompactWindow == nullptr ||
+        !XPLMGetWindowIsVisible(gCompactWindow)
+    ) {
+        return 1;
+    }
+
+    return HandleChatKeyInput(
+        inChar,
+        inFlags,
+        inVirtualKey
+    ) ? 0 : 1;
+}
+
+
+char GetWindowsChatCharacter(int virtualKey)
+{
+    bool shiftDown =
+        (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+
+    if (virtualKey >= 'A' && virtualKey <= 'Z')
+    {
+        char value =
+            static_cast<char>(virtualKey);
+
+        return shiftDown
+            ? value
+            : static_cast<char>(std::tolower(value));
+    }
+
+    if (virtualKey >= '0' && virtualKey <= '9')
+    {
+        if (!shiftDown)
+        {
+            return static_cast<char>(virtualKey);
+        }
+
+        const char shiftedDigits[] =
+            ")!@#$%^&*(";
+
+        return shiftedDigits[virtualKey - '0'];
+    }
+
+    switch (virtualKey)
+    {
+    case VK_SPACE:
+        return ' ';
+
+    case VK_OEM_PERIOD:
+        return shiftDown ? '>' : '.';
+
+    case VK_OEM_COMMA:
+        return shiftDown ? '<' : ',';
+
+    case VK_OEM_MINUS:
+        return shiftDown ? '_' : '-';
+
+    case VK_OEM_PLUS:
+        return shiftDown ? '+' : '=';
+
+    case VK_OEM_1:
+        return shiftDown ? ':' : ';';
+
+    case VK_OEM_2:
+        return shiftDown ? '?' : '/';
+
+    case VK_OEM_3:
+        return shiftDown ? '~' : '`';
+
+    case VK_OEM_4:
+        return shiftDown ? '{' : '[';
+
+    case VK_OEM_5:
+        return shiftDown ? '|' : '\\';
+
+    case VK_OEM_6:
+        return shiftDown ? '}' : ']';
+
+    case VK_OEM_7:
+        return shiftDown ? '"' : '\'';
+
+    default:
+        return 0;
+    }
+}
+
+
+void PollWindowsChatKeyboard()
+{
+    if (
+        !gLoggedIn ||
+        !gChatInputFocused ||
+        gCompactWindow == nullptr ||
+        !XPLMGetWindowIsVisible(gCompactWindow)
+    ) {
+        return;
+    }
+
+    for (int virtualKey = 0; virtualKey < 256; virtualKey++)
+    {
+        bool isDown =
+            (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+
+        if (!isDown)
+        {
+            gWindowsChatKeyDown[virtualKey] = false;
+            continue;
+        }
+
+        if (gWindowsChatKeyDown[virtualKey])
+        {
+            continue;
+        }
+
+        gWindowsChatKeyDown[virtualKey] = true;
+
+        if (virtualKey == VK_BACK)
+        {
+            if (!gChatInputText.empty())
+            {
+                gChatInputText.pop_back();
+            }
+
+            continue;
+        }
+
+        if (virtualKey == VK_RETURN)
+        {
+            SendChatMessage();
+            continue;
+        }
+
+        if (virtualKey == VK_ESCAPE)
+        {
+            gChatInputFocused = false;
+            XPLMTakeKeyboardFocus(
+                nullptr
+            );
+            continue;
+        }
+
+        char character =
+            GetWindowsChatCharacter(virtualKey);
+
+        if (
+            character >= 32 &&
+            character <= 126 &&
+            gChatInputText.size() < 180
+        ) {
+            gChatInputText.push_back(character);
+        }
+    }
+}
+
+
+void PollCompactChatMouseFocus()
+{
+    if (
+        !gLoggedIn ||
+        gCompactWindow == nullptr ||
+        !XPLMGetWindowIsVisible(gCompactWindow)
+    ) {
+        gWindowsChatMouseDown = false;
+        return;
+    }
+
+    bool mouseDown =
+        (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+
+    bool mousePressed =
+        mouseDown && !gWindowsChatMouseDown;
+
+    bool mouseReleased =
+        !mouseDown && gWindowsChatMouseDown;
+
+    int left = 0;
+    int top = 0;
+    int right = 0;
+    int bottom = 0;
+
+    int mouseX = 0;
+    int mouseY = 0;
+    bool mouseInCompactWindow = false;
+
+    XPLMGetWindowGeometry(
+        gCompactWindow,
+        &left,
+        &top,
+        &right,
+        &bottom
+    );
+
+    if (XPLMWindowIsPoppedOut(gCompactWindow))
+    {
+        POINT cursorPoint = {};
+
+        GetCursorPos(
+            &cursorPoint
+        );
+
+        int osLeft = 0;
+        int osTop = 0;
+        int osRight = 0;
+        int osBottom = 0;
+
+        XPLMGetWindowGeometryOS(
+            gCompactWindow,
+            &osLeft,
+            &osTop,
+            &osRight,
+            &osBottom
+        );
+
+        int osMinX =
+            (std::min)(osLeft, osRight);
+        int osMaxX =
+            (std::max)(osLeft, osRight);
+        int osMinY =
+            (std::min)(osTop, osBottom);
+        int osMaxY =
+            (std::max)(osTop, osBottom);
+
+        int osWidth =
+            (std::max)(1, osMaxX - osMinX);
+        int osHeight =
+            (std::max)(1, osMaxY - osMinY);
+
+        mouseInCompactWindow =
+            cursorPoint.x >= osMinX &&
+            cursorPoint.x <= osMaxX &&
+            cursorPoint.y >= osMinY &&
+            cursorPoint.y <= osMaxY;
+
+        float relativeX =
+            (float)(cursorPoint.x - osMinX) / (float)osWidth;
+        float relativeYFromTop =
+            (float)(cursorPoint.y - osMinY) / (float)osHeight;
+
+        relativeX =
+            (std::max)(0.0f, (std::min)(1.0f, relativeX));
+        relativeYFromTop =
+            (std::max)(0.0f, (std::min)(1.0f, relativeYFromTop));
+
+        mouseX =
+            left + (int)(relativeX * (float)(right - left));
+
+        mouseY =
+            top - (int)(relativeYFromTop * (float)(top - bottom));
+    }
+    else
+    {
+        XPLMGetMouseLocationGlobal(
+            &mouseX,
+            &mouseY
+        );
+
+        mouseInCompactWindow =
+            PointInRect(mouseX, mouseY, { left, top, right, bottom });
+    }
+
+    CustomRect chatRect =
+        { left + 270, top - 50, right - 12, top - 300 };
+    CustomRect chatFocusRect =
+        GetCompactChatFocusRect(chatRect);
+    CustomRect chatSendRect =
+        GetCompactChatSendHitRect(chatRect);
+
+    bool mouseInChatFocus =
+        PointInRect(mouseX, mouseY, chatFocusRect);
+    bool mouseInSend =
+        PointInRect(mouseX, mouseY, chatSendRect);
+
+    if (mouseDown)
+    {
+        if (!mouseInCompactWindow)
+        {
+            if (gChatInputFocused)
+            {
+                gChatInputFocused = false;
+                gChatSendButtonPressed = false;
+
+                XPLMTakeKeyboardFocus(
+                    nullptr
+                );
+            }
+
+            gWindowsChatMouseDown =
+                mouseDown;
+
+            return;
+        }
+
+        if (mouseInSend && mousePressed)
+        {
+            gChatInputFocused = true;
+            gChatSendButtonPressed = false;
+
+            XPLMBringWindowToFront(
+                gCompactWindow
+            );
+
+            XPLMTakeKeyboardFocus(
+                gCompactWindow
+            );
+
+            SendChatMessage();
+            gChatInputFocused = false;
+
+            XPLMTakeKeyboardFocus(
+                nullptr
+            );
+
+            gWindowsChatMouseDown =
+                mouseDown;
+
+            return;
+        }
+
+        if (mouseInChatFocus || mouseInCompactWindow)
+        {
+            gChatInputFocused = true;
+            gChatSendButtonPressed = false;
+
+            XPLMBringWindowToFront(
+                gCompactWindow
+            );
+
+            XPLMTakeKeyboardFocus(
+                gCompactWindow
+            );
+
+            gWindowsChatMouseDown =
+                mouseDown;
+
+            return;
+        }
+
+        if (gChatInputFocused)
+        {
+            gChatInputFocused = false;
+            gChatSendButtonPressed = false;
+
+            XPLMTakeKeyboardFocus(
+                nullptr
+            );
+        }
+
+        return;
+    }
+
+    if (mouseReleased)
+    {
+        gChatSendButtonPressed = false;
+    }
+
+    gWindowsChatMouseDown =
+        mouseDown;
+}
+
+
 int CompactHandleMouse(
     XPLMWindowID inWindowID,
     int x,
@@ -4775,7 +5995,7 @@ int CompactHandleMouse(
     if (inMouse == xplm_MouseDown)
     {
         if (
-            PointInRect(x, y, GetCompactCloseRect(left, top, right)) ||
+            PointInWindowRect(x, y, GetCompactCloseRect(left, top, right), left, top, bottom) ||
             (
                 x >= right - 82 &&
                 x <= right &&
@@ -4788,8 +6008,18 @@ int CompactHandleMouse(
             return 1;
         }
 
-        if (gFlightplanWindow != nullptr && PointInRect(x, y, GetCompactTabRect(left, top, 2)))
+        CustomRect chatRect =
+            { left + 270, top - 50, right - 12, top - 300 };
+
+        if (gFlightplanWindow != nullptr && PointInWindowRect(x, y, GetCompactTabRect(left, top, 2), left, top, bottom))
         {
+            gChatInputFocused = false;
+            gChatSendButtonPressed = false;
+
+            XPLMTakeKeyboardFocus(
+                nullptr
+            );
+
             if (XPIsWidgetVisible(gFlightplanWindow))
             {
                 XPHideWidget(gFlightplanWindow);
@@ -4802,6 +6032,47 @@ int CompactHandleMouse(
             }
 
             return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCompactChatSendHitRect(chatRect), left, top, bottom))
+        {
+            gChatInputFocused = true;
+            gChatSendButtonPressed = false;
+
+            XPLMBringWindowToFront(
+                inWindowID
+            );
+
+            XPLMTakeKeyboardFocus(
+                inWindowID
+            );
+
+            SendChatMessage();
+            gChatInputFocused = false;
+
+            XPLMTakeKeyboardFocus(
+                nullptr
+            );
+
+            return 1;
+        }
+
+        gChatInputFocused = true;
+        gChatSendButtonPressed = false;
+
+        XPLMBringWindowToFront(
+            inWindowID
+        );
+
+        XPLMTakeKeyboardFocus(
+            inWindowID
+        );
+
+        if (gDebugEnabled)
+        {
+            XPLMDebugString(
+                "Flight Radar Plugin: Compact window focused chat input.\n"
+            );
         }
 
         if (y >= top - 38)
@@ -4831,7 +6102,11 @@ int CompactHandleMouse(
     }
     else if (inMouse == xplm_MouseUp)
     {
+        CustomRect chatRect =
+            { left + 270, top - 50, right - 12, top - 300 };
+
         gCompactWindowDragging = false;
+        gChatSendButtonPressed = false;
         return 1;
     }
 
@@ -4859,7 +6134,47 @@ int CompactHandleMouseWheel(
     void* inRefcon
 )
 {
-    return 0;
+    int left;
+    int top;
+    int right;
+    int bottom;
+
+    XPLMGetWindowGeometry(
+        inWindowID,
+        &left,
+        &top,
+        &right,
+        &bottom
+    );
+
+    CustomRect chatRect =
+        { left + 270, top - 50, right - 12, top - 300 };
+
+    if (!PointInWindowRect(x, y, chatRect, left, top, bottom))
+    {
+        return 0;
+    }
+
+    const int visibleChatLines =
+        (std::max)(1, (chatRect.top - chatRect.bottom - 110) / 24);
+    const int maxChatScrollOffset =
+        (std::max)(0, (int)gChatLines.size() - visibleChatLines);
+
+    if (maxChatScrollOffset <= 0)
+    {
+        return 1;
+    }
+
+    gChatScrollOffset =
+        (std::max)(
+            0,
+            (std::min)(
+                maxChatScrollOffset,
+                gChatScrollOffset + clicks
+            )
+        );
+
+    return 1;
 }
 
 
@@ -5923,7 +7238,7 @@ void CreateLoginWindow()
     compactParams.visible = 0;
     compactParams.drawWindowFunc = DrawCompactWindow;
     compactParams.handleMouseClickFunc = CompactHandleMouse;
-    compactParams.handleKeyFunc = nullptr;
+    compactParams.handleKeyFunc = CompactHandleKey;
     compactParams.handleCursorFunc = CompactHandleCursor;
     compactParams.handleMouseWheelFunc = CompactHandleMouseWheel;
     compactParams.refcon = nullptr;
@@ -6484,6 +7799,9 @@ void MenuHandler(
                 targetWindow
             );
 
+            gChatInputFocused = false;
+            gChatSendButtonPressed = false;
+
             if (!gLoggedIn)
             {
                 UpdateLoginWindowState();
@@ -6588,8 +7906,17 @@ float FlightLoopCallback(
 )
 {
     ProcessPositionUpdateResult();
+    ProcessChatPollResult();
+    ProcessChatSendResult();
     ProcessNetworkStatusUpdateResult();
+
+    PollCompactChatMouseFocus();
+    PollWindowsChatKeyboard();
+
     UpdateNetworkStatusIfNeeded(
+        inElapsedSinceLastCall
+    );
+    UpdateChatPolling(
         inElapsedSinceLastCall
     );
 
@@ -6875,6 +8202,12 @@ PLUGIN_API int XPluginStart(
         nullptr
     );
 
+    XPLMRegisterKeySniffer(
+        ChatKeySniffer,
+        1,
+        nullptr
+    );
+
     return 1;
 }
 
@@ -6896,6 +8229,12 @@ PLUGIN_API void XPluginStop(void)
         nullptr
     );
 
+    XPLMUnregisterKeySniffer(
+        ChatKeySniffer,
+        1,
+        nullptr
+    );
+
     if (gPositionUpdateThread.joinable())
     {
         gPositionUpdateThread.join();
@@ -6904,6 +8243,16 @@ PLUGIN_API void XPluginStop(void)
     if (gNetworkStatusThread.joinable())
     {
         gNetworkStatusThread.join();
+    }
+
+    if (gChatPollThread.joinable())
+    {
+        gChatPollThread.join();
+    }
+
+    if (gChatSendThread.joinable())
+    {
+        gChatSendThread.join();
     }
 
     if (gLoggedIn && !gAuthToken.empty())

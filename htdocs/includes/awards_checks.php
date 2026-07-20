@@ -468,6 +468,13 @@ function checkLandingActivity(
     int $landingRateFpm
 ): void {
 
+    insertUserChatSystemMessage(
+        $pdo,
+        $userId,
+        'landing',
+        'Landing rate: ' . $aircraftIcao . ' > ' . $landingRateFpm . ' fpm'
+    );
+
     if (
         $landingRateFpm >= 1000
         && !userHasAward($pdo, $userId, 'award_crash_pilot')
