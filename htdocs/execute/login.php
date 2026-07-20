@@ -6,6 +6,7 @@ error_reporting(E_ALL);
 header("Content-Type: application/json; charset=utf-8");
 
 require_once 'config.php';
+require_once '../includes/ratings.php';
 
 $username = $_POST["username"] ?? "";
 $password = $_POST["password"] ?? "";
@@ -41,6 +42,8 @@ try {
             password_hash,
             is_active,
             email_verified,
+            rating_pilot,
+            rating_atc,
             op_permission
          FROM users
          WHERE username = :username
@@ -94,6 +97,12 @@ try {
 
     $token = bin2hex(random_bytes(32));
 
+    $pilotRating =
+        getPilotRating((int)($user["rating_pilot"] ?? 0));
+
+    $atcRating =
+        getAtcRating((int)($user["rating_atc"] ?? 0));
+
     $stmt = $pdo->prepare(
         "INSERT INTO user_sessions
             (
@@ -126,6 +135,12 @@ try {
         "username" => $user["username"],
         "real_name" => $user["real_name"],
         "email" => $user["email"],
+        "pilot_rating" => (int)($user["rating_pilot"] ?? 0),
+        "pilot_rating_code" => $pilotRating["code"],
+        "pilot_rating_name" => $pilotRating["name"],
+        "atc_rating" => (int)($user["rating_atc"] ?? 0),
+        "atc_rating_code" => $atcRating["code"],
+        "atc_rating_name" => $atcRating["name"],
         "op_permission" => (int)$user["op_permission"],
         "can_use_invisible" => $canUseInvisible,
         "is_invisible" => false,

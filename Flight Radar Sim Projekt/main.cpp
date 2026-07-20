@@ -22,6 +22,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <ctime>
 #include <fstream>
 #include <string>
 #include <sstream>
@@ -175,6 +176,7 @@ struct ChatLine
 {
     int id;
     std::string frequency;
+    std::string timestamp;
     std::string sender;
     std::string type;
     std::string text;
@@ -197,6 +199,10 @@ static std::atomic<bool> gChatSendResultReady(false);
 static std::mutex gChatSendResultMutex;
 static std::string gChatSendLastResponse = "";
 static std::thread gChatSendThread;
+static std::string gCurrentPilotRatingCode = "FC0";
+static std::string gCurrentPilotRatingName = "New Flight Cadet";
+static std::string gCurrentAtcRatingCode = "TC0";
+static std::string gCurrentAtcRatingName = "New ATC Cadet";
 
 enum CustomLoginField
 {
@@ -291,6 +297,9 @@ int ChatKeySniffer(
     XPLMKeyFlags inFlags,
     char inVirtualKey,
     void* inRefcon
+);
+std::string GetLocalizedChatText(
+    const ChatLine& line
 );
 
 struct CustomRect
@@ -521,6 +530,191 @@ std::string TruncateForField(
 }
 
 
+size_t EstimateTextCharsForWidth(
+    int widthPixels
+)
+{
+    if (widthPixels <= 0)
+    {
+        return 1;
+    }
+
+    return (std::max)(
+        (size_t)1,
+        (size_t)(widthPixels / 7)
+    );
+}
+
+
+std::string TruncateForWidthFromStart(
+    const std::string& value,
+    int widthPixels
+)
+{
+    size_t maxLength =
+        EstimateTextCharsForWidth(widthPixels);
+
+    if (value.size() <= maxLength)
+    {
+        return value;
+    }
+
+    if (maxLength <= 3)
+    {
+        return value.substr(0, maxLength);
+    }
+
+    return value.substr(0, maxLength - 3) + "...";
+}
+
+
+std::string TruncateForWidthFromEnd(
+    const std::string& value,
+    int widthPixels
+)
+{
+    size_t maxLength =
+        EstimateTextCharsForWidth(widthPixels);
+
+    if (value.size() <= maxLength)
+    {
+        return value;
+    }
+
+    return value.substr(
+        value.size() - maxLength
+    );
+}
+
+
+std::string GetCurrentTimeHHmm()
+{
+    std::time_t now =
+        std::time(nullptr);
+
+    std::tm localTime = {};
+
+    localtime_s(
+        &localTime,
+        &now
+    );
+
+    char buffer[6] = {};
+
+    std::strftime(
+        buffer,
+        sizeof(buffer),
+        "%H:%M",
+        &localTime
+    );
+
+    return std::string(buffer);
+}
+
+
+std::vector<std::string> WrapTextForWidth(
+    const std::string& value,
+    int widthPixels
+)
+{
+    size_t maxLength =
+        EstimateTextCharsForWidth(widthPixels);
+
+    std::vector<std::string> rows;
+
+    if (value.empty())
+    {
+        rows.push_back("");
+        return rows;
+    }
+
+    size_t position =
+        0;
+
+    while (position < value.size())
+    {
+        while (
+            position < value.size() &&
+            value[position] == ' '
+        ) {
+            position++;
+        }
+
+        if (position >= value.size())
+        {
+            break;
+        }
+
+        size_t remaining =
+            value.size() - position;
+
+        if (remaining <= maxLength)
+        {
+            rows.push_back(
+                value.substr(position)
+            );
+
+            break;
+        }
+
+        size_t breakPosition =
+            value.rfind(
+                ' ',
+                position + maxLength
+            );
+
+        if (
+            breakPosition == std::string::npos ||
+            breakPosition <= position
+        ) {
+            breakPosition =
+                position + maxLength;
+        }
+
+        rows.push_back(
+            value.substr(
+                position,
+                breakPosition - position
+            )
+        );
+
+        position =
+            breakPosition;
+    }
+
+    if (rows.empty())
+    {
+        rows.push_back("");
+    }
+
+    return rows;
+}
+
+
+int CountWrappedChatRows(
+    const CustomRect& chatRect
+)
+{
+    int messageTextLeft =
+        chatRect.left + 82;
+    int messageTextWidth =
+        chatRect.right - messageTextLeft - 20;
+    int rowCount =
+        0;
+
+    for (const ChatLine& line : gChatLines)
+    {
+        rowCount +=
+            (int)WrapTextForWidth(
+                GetLocalizedChatText(line),
+                messageTextWidth
+            ).size();
+    }
+
+    return rowCount;
+}
+
+
 std::string TrimString(const std::string& value)
 {
     size_t start =
@@ -612,6 +806,7 @@ void LoadInternalEnglishLanguage()
 
     gText["button.connect"] = "Connect";
     gText["button.logout"] = "Logout";
+    gText["button.send"] = "Send";
     gText["button.send_flightplan"] = "Send Flightplan";
     gText["button.paste_route"] = "Paste Route";
     gText["button.clear_route"] = "Clear Route";
@@ -638,6 +833,9 @@ void LoadInternalEnglishLanguage()
     gText["status.login_failed_log"] = "Flight Radar Plugin: Login failed.\n";
     gText["status.login_first"] = "Please login first.";
     gText["status.connection_lost_auto_logout"] = "Connection lost. Logged out locally.";
+    gText["chat.connected"] = "Connected to VFN Network.";
+    gText["chat.rank_status"] = "Pilot Rank: {pilot} / ATC Rank: {atc}";
+    gText["chat.ready"] = "Ready for network operations.";
 
     gText["label.flight_rules"] = "Flight Rules:";
     gText["label.flight_type"] = "Flight Type:";
@@ -709,6 +907,10 @@ void LoadInternalEnglishLanguage()
 
 void ApplyInternalGermanLanguageFallbacks()
 {
+    gText["chat.connected"] = "Mit dem VFN Netzwerk verbunden.";
+    gText["chat.rank_status"] = "Pilotenrang: {pilot} / ATC-Rang: {atc}";
+    gText["chat.ready"] = "Bereit fuer den Netzwerkbetrieb.";
+    gText["button.send"] = "Senden";
     gText["chat.award_unlocked"] = "Award freigeschaltet";
     gText["award_first_flight"] = "Erster Flug";
     gText["award_first_landing"] = "Erste Landung";
@@ -766,6 +968,7 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "checkbox.remember_login.on=[X] Remember login\n";
             enFile << "button.connect=Connect\n";
             enFile << "button.logout=Logout\n";
+            enFile << "button.send=Send\n";
             enFile << "button.send_flightplan=Send Flightplan\n";
             enFile << "button.paste_route=Paste Route\n";
             enFile << "button.clear_route=Clear Route\n";
@@ -817,6 +1020,9 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "flightplan.error=Flightplan error: \n";
             enFile << "flightplan.saved_log=Flight Radar Plugin: Flightplan saved.\\n\n";
             enFile << "flightplan.failed_log=Flight Radar Plugin: Flightplan could not be saved.\\n\n";
+            enFile << "chat.connected=Connected to VFN Network.\n";
+            enFile << "chat.rank_status=Pilot Rank: {pilot} / ATC Rank: {atc}\n";
+            enFile << "chat.ready=Ready for network operations.\n";
             enFile << "chat.award_unlocked=Award unlocked\n";
             enFile << "award_first_flight=First Flight\n";
             enFile << "award_first_landing=First Landing\n";
@@ -875,6 +1081,7 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "checkbox.remember_login.on=[X] Login speichern\n";
             deFile << "button.connect=Verbinden\n";
             deFile << "button.logout=Logout\n";
+            deFile << "button.send=Senden\n";
             deFile << "button.send_flightplan=Flugplan senden\n";
             deFile << "button.paste_route=Route einfuegen\n";
             deFile << "button.clear_route=Route leeren\n";
@@ -926,6 +1133,9 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "flightplan.error=Flugplan Fehler: \n";
             deFile << "flightplan.saved_log=Flight Radar Plugin: Flugplan gespeichert.\\n\n";
             deFile << "flightplan.failed_log=Flight Radar Plugin: Flugplan konnte nicht gespeichert werden.\\n\n";
+            deFile << "chat.connected=Mit dem VFN Netzwerk verbunden.\n";
+            deFile << "chat.rank_status=Pilotenrang: {pilot} / ATC-Rang: {atc}\n";
+            deFile << "chat.ready=Bereit fuer den Netzwerkbetrieb.\n";
             deFile << "chat.award_unlocked=Award freigeschaltet\n";
             deFile << "award_first_flight=Erster Flug\n";
             deFile << "award_first_landing=Erste Landung\n";
@@ -1865,7 +2075,16 @@ void AddChatLine(
     bool notify
 )
 {
-    gChatLines.push_back(line);
+    ChatLine storedLine =
+        line;
+
+    if (storedLine.timestamp.empty())
+    {
+        storedLine.timestamp =
+            GetCurrentTimeHHmm();
+    }
+
+    gChatLines.push_back(storedLine);
 
     while (gChatLines.size() > 200)
     {
@@ -1884,6 +2103,78 @@ void AddChatLine(
     {
         MessageBeep(MB_ICONASTERISK);
     }
+}
+
+
+std::string ReplaceAll(
+    std::string value,
+    const std::string& search,
+    const std::string& replacement
+)
+{
+    size_t position =
+        0;
+
+    while (
+        (position = value.find(search, position)) != std::string::npos
+    ) {
+        value.replace(
+            position,
+            search.size(),
+            replacement
+        );
+
+        position +=
+            replacement.size();
+    }
+
+    return value;
+}
+
+
+void AddLoginChatSummary()
+{
+    std::string pilotRating =
+        gCurrentPilotRatingCode;
+
+    if (!gCurrentPilotRatingName.empty())
+    {
+        pilotRating +=
+            " - " + gCurrentPilotRatingName;
+    }
+
+    std::string atcRating =
+        gCurrentAtcRatingCode;
+
+    if (!gCurrentAtcRatingName.empty())
+    {
+        atcRating +=
+            " - " + gCurrentAtcRatingName;
+    }
+
+    std::string rankText =
+        T("chat.rank_status");
+
+    rankText =
+        ReplaceAll(rankText, "{pilot}", pilotRating);
+
+    rankText =
+        ReplaceAll(rankText, "{atc}", atcRating);
+
+    AddChatLine(
+        { 0, "", "", "SYSTEM", "system", T("chat.connected") },
+        false
+    );
+
+    AddChatLine(
+        { 0, "", "", "SYSTEM", "system", rankText },
+        false
+    );
+
+    AddChatLine(
+        { 0, "", "", "VFN", "system", T("chat.ready") },
+        false
+    );
 }
 
 
@@ -2835,6 +3126,10 @@ void DoLogout()
     gChatScrollOffset = 0;
     gLastChatMessageId = 0;
     gChatPollElapsed = 999.0f;
+    gCurrentPilotRatingCode = "FC0";
+    gCurrentPilotRatingName = "New Flight Cadet";
+    gCurrentAtcRatingCode = "TC0";
+    gCurrentAtcRatingName = "New ATC Cadet";
 
     if (gRememberLogin)
     {
@@ -2949,6 +3244,10 @@ void ForceLocalLogoutAfterConnectionFailures(
     gChatScrollOffset = 0;
     gLastChatMessageId = 0;
     gChatPollElapsed = 999.0f;
+    gCurrentPilotRatingCode = "FC0";
+    gCurrentPilotRatingName = "New Flight Cadet";
+    gCurrentAtcRatingCode = "TC0";
+    gCurrentAtcRatingName = "New ATC Cadet";
 
     if (gRememberLogin)
     {
@@ -3270,9 +3569,21 @@ void ProcessChatPollResult()
         ChatLine chatLine;
         chatLine.id = atoi(parts[0].c_str());
         chatLine.frequency = parts[1];
-        chatLine.sender = parts[2];
-        chatLine.type = parts[3];
-        chatLine.text = parts[4];
+
+        if (parts.size() >= 6)
+        {
+            chatLine.timestamp = parts[2];
+            chatLine.sender = parts[3];
+            chatLine.type = parts[4];
+            chatLine.text = parts[5];
+        }
+        else
+        {
+            chatLine.timestamp = "";
+            chatLine.sender = parts[2];
+            chatLine.type = parts[3];
+            chatLine.text = parts[4];
+        }
 
         bool isOwnPilotMessage =
             chatLine.type == "pilot" &&
@@ -3379,6 +3690,10 @@ void SendChatMessage()
 {
     if (!gLoggedIn || gAuthToken.empty())
     {
+        XPLMDebugString(
+            "Flight Radar Plugin: Chat send ignored, not logged in or missing token.\n"
+        );
+
         return;
     }
 
@@ -3387,6 +3702,10 @@ void SendChatMessage()
 
     if (message.empty())
     {
+        XPLMDebugString(
+            "Flight Radar Plugin: Chat send ignored, message is empty.\n"
+        );
+
         return;
     }
 
@@ -3395,8 +3714,16 @@ void SendChatMessage()
 
     if (frequency == "0.000")
     {
+        XPLMDebugString(
+            "Flight Radar Plugin: Chat send ignored, no active chat frequency.\n"
+        );
+
         return;
     }
+
+    XPLMDebugString(
+        "Flight Radar Plugin: Chat send started.\n"
+    );
 
     std::string postData =
         "token=" + UrlEncode(gAuthToken) +
@@ -3935,6 +4262,50 @@ void PerformCustomLogin()
                 "token"
             );
 
+        gCurrentPilotRatingCode =
+            ExtractJsonStringValue(
+                response,
+                "pilot_rating_code"
+            );
+
+        gCurrentPilotRatingName =
+            ExtractJsonStringValue(
+                response,
+                "pilot_rating_name"
+            );
+
+        gCurrentAtcRatingCode =
+            ExtractJsonStringValue(
+                response,
+                "atc_rating_code"
+            );
+
+        gCurrentAtcRatingName =
+            ExtractJsonStringValue(
+                response,
+                "atc_rating_name"
+            );
+
+        if (gCurrentPilotRatingCode.empty())
+        {
+            gCurrentPilotRatingCode = "FC0";
+        }
+
+        if (gCurrentPilotRatingName.empty())
+        {
+            gCurrentPilotRatingName = "New Flight Cadet";
+        }
+
+        if (gCurrentAtcRatingCode.empty())
+        {
+            gCurrentAtcRatingCode = "TC0";
+        }
+
+        if (gCurrentAtcRatingName.empty())
+        {
+            gCurrentAtcRatingName = "New ATC Cadet";
+        }
+
         gCanUseInvisible =
             (
                 response.find("\"can_use_invisible\":true")
@@ -3966,15 +4337,7 @@ void PerformCustomLogin()
         gLastChatMessageId = 0;
         gChatPollElapsed = 999.0f;
 
-        AddChatLine(
-            { 0, "", "SYSTEM", "system", "Connected to VFN Network." },
-            false
-        );
-
-        AddChatLine(
-            { 0, "", "VFN", "system", "Ready for network operations." },
-            false
-        );
+        AddLoginChatSummary();
 
         XPLMDebugString(
             T("debug.login_success")
@@ -4278,10 +4641,12 @@ void DrawCustomLoginButton(
 
     int textX =
         rect.left + ((rect.right - rect.left) / 2) - ((int)label.size() * 3);
+    int textY =
+        rect.bottom + ((rect.top - rect.bottom) / 2) - 5;
 
     DrawText(
         textX,
-        rect.bottom + 11,
+        textY,
         label,
         0.92f,
         0.96f,
@@ -4617,7 +4982,7 @@ CustomRect GetCompactChatInputRect(const CustomRect& chatRect)
     return {
         chatRect.left + 8,
         chatRect.bottom + 10,
-        chatRect.right - 100,
+        chatRect.right - 126,
         chatRect.bottom + 48
     };
 }
@@ -4626,9 +4991,9 @@ CustomRect GetCompactChatInputRect(const CustomRect& chatRect)
 CustomRect GetCompactChatSendRect(const CustomRect& chatRect)
 {
     return {
-        chatRect.right - 94,
+        chatRect.right - 116,
         chatRect.bottom + 14,
-        chatRect.right - 43,
+        chatRect.right - 38,
         chatRect.bottom + 44
     };
 }
@@ -4637,11 +5002,79 @@ CustomRect GetCompactChatSendRect(const CustomRect& chatRect)
 CustomRect GetCompactChatSendHitRect(const CustomRect& chatRect)
 {
     return {
-        chatRect.right - 102,
-        chatRect.bottom + 6,
-        chatRect.right - 34,
-        chatRect.bottom + 56
+        chatRect.right - 130,
+        chatRect.bottom,
+        chatRect.right,
+        chatRect.bottom + 66
     };
+}
+
+
+bool PointInCompactChatSendArea(
+    int x,
+    int y,
+    int windowLeft,
+    int windowTop,
+    int windowRight,
+    int windowBottom
+)
+{
+    CustomRect chatRect =
+        { windowLeft + 270, windowTop - 50, windowRight - 12, windowTop - 300 };
+    CustomRect sendRect =
+        GetCompactChatSendHitRect(chatRect);
+
+    if (
+        PointInRect(x, y, sendRect) ||
+        PointInWindowRect(x, y, sendRect, windowLeft, windowTop, windowBottom)
+    ) {
+        return true;
+    }
+
+    int width =
+        windowRight - windowLeft;
+    int height =
+        windowTop - windowBottom;
+
+    if (
+        width <= 0 ||
+        height <= 0
+    ) {
+        return false;
+    }
+
+    int localX =
+        x;
+
+    if (
+        x >= windowLeft &&
+        x <= windowRight
+    ) {
+        localX =
+            x - windowLeft;
+    }
+
+    int localYFromTop =
+        y;
+
+    if (
+        y <= windowTop &&
+        y >= windowBottom
+    ) {
+        localYFromTop =
+            windowTop - y;
+    }
+
+    bool inButtonColumn =
+        localX >= width - 230 &&
+        localX <= width - 4;
+    bool inInputRow =
+        localYFromTop >= height - 112 &&
+        localYFromTop <= height - 12;
+
+    return
+        inButtonColumn &&
+        inInputRow;
 }
 
 
@@ -5090,28 +5523,71 @@ void DrawCompactWindow(
     DrawRectOutline(chatRect, 0.14f, 0.28f, 0.38f, 0.84f);
     DrawText(chatRect.left + 14, chatRect.top - 20, "CHAT", 0.88f, 0.94f, 1.00f);
 
-    const int chatLineHeight = 24;
+    struct ChatDisplayRow
+    {
+        const ChatLine* line;
+        std::string timeText;
+        std::string senderText;
+        std::string messageText;
+        bool firstRow;
+    };
+
+    std::vector<ChatDisplayRow> displayRows;
+    int timeTextLeft =
+        chatRect.left + 14;
+    int senderTextLeft =
+        chatRect.left + 58;
+    int messageTextLeft =
+        chatRect.left + 116;
+    int messageTextWidth =
+        chatRect.right - messageTextLeft - 20;
+
+    for (const ChatLine& line : gChatLines)
+    {
+        std::vector<std::string> wrappedRows =
+            WrapTextForWidth(
+                GetLocalizedChatText(line),
+                messageTextWidth
+            );
+
+        for (size_t rowIndex = 0; rowIndex < wrappedRows.size(); rowIndex++)
+        {
+            displayRows.push_back(
+                {
+                    &line,
+                    rowIndex == 0 ? line.timestamp : "",
+                    rowIndex == 0 ? TruncateForField(line.sender + ":", 11) : "",
+                    wrappedRows[rowIndex],
+                    rowIndex == 0
+                }
+            );
+        }
+    }
+
+    const int chatLineHeight = 18;
     const int visibleChatLines =
         (std::max)(1, (chatRect.top - chatRect.bottom - 110) / chatLineHeight);
-    const int totalChatLines =
-        (int)gChatLines.size();
+    const int totalChatRows =
+        (int)displayRows.size();
     const int maxChatScrollOffset =
-        (std::max)(0, totalChatLines - visibleChatLines);
+        (std::max)(0, totalChatRows - visibleChatLines);
 
     gChatScrollOffset =
         (std::max)(0, (std::min)(gChatScrollOffset, maxChatScrollOffset));
 
     int visibleEnd =
-        (std::max)(0, totalChatLines - gChatScrollOffset);
+        (std::max)(0, totalChatRows - gChatScrollOffset);
     int visibleStart =
         (std::max)(0, visibleEnd - visibleChatLines);
     int messageY =
         chatRect.top - 52;
 
-    for (int chatIndex = visibleStart; chatIndex < visibleEnd; ++chatIndex)
+    for (int rowIndex = visibleStart; rowIndex < visibleEnd; ++rowIndex)
     {
+        const ChatDisplayRow& row =
+            displayRows[rowIndex];
         const ChatLine& line =
-            gChatLines[chatIndex];
+            *row.line;
 
         float senderRed = 0.05f;
         float senderGreen = 0.50f;
@@ -5137,24 +5613,33 @@ void DrawCompactWindow(
         }
 
         DrawText(
-            chatRect.left + 14,
+            timeTextLeft,
             messageY,
-            TruncateForField(line.sender + ":", 11),
+            row.timeText,
+            0.46f,
+            0.58f,
+            0.68f
+        );
+
+        DrawText(
+            senderTextLeft,
+            messageY,
+            row.senderText,
             senderRed,
             senderGreen,
             senderBlue
         );
 
         DrawText(
-            chatRect.left + 82,
+            messageTextLeft,
             messageY,
-            TruncateForField(GetLocalizedChatText(line), 54),
+            row.messageText,
             0.72f,
             0.80f,
             0.88f
         );
 
-        messageY -= 24;
+        messageY -= chatLineHeight;
     }
 
     if (maxChatScrollOffset > 0)
@@ -5165,7 +5650,7 @@ void DrawCompactWindow(
         DrawFilledRect(scrollTrack, 0.05f, 0.10f, 0.14f, 0.92f);
 
         float visibleRatio =
-            (float)visibleChatLines / (float)totalChatLines;
+            (float)visibleChatLines / (float)totalChatRows;
         int trackHeight =
             scrollTrack.top - scrollTrack.bottom;
         int thumbHeight =
@@ -5199,17 +5684,20 @@ void DrawCompactWindow(
     );
 
     DrawText(
-        chatRect.left + 24,
-        chatRect.bottom + 25,
+        inputRect.left + 12,
+        inputRect.bottom + ((inputRect.top - inputRect.bottom) / 2) - 5,
         gChatInputText.empty()
             ? (gChatInputFocused ? "|" : "Type your message...")
-            : TruncateForField(gChatInputText + (gChatInputFocused ? "|" : ""), 44),
+            : TruncateForWidthFromEnd(
+                gChatInputText + (gChatInputFocused ? "|" : ""),
+                inputRect.right - inputRect.left - 24
+            ),
         gChatInputText.empty() ? 0.45f : 0.86f,
         gChatInputText.empty() ? 0.56f : 0.92f,
         gChatInputText.empty() ? 0.66f : 1.00f
     );
 
-    DrawCustomLoginButton(GetCompactChatSendRect(chatRect), "SEND", true);
+    DrawCustomLoginButton(GetCompactChatSendRect(chatRect), T("button.send"), true);
 
     DrawCompactTab(GetCompactTabRect(left, top, 0), "ATC", false);
     DrawCompactTab(GetCompactTabRect(left, top, 1), "MSG", false);
@@ -5794,6 +6282,7 @@ void PollCompactChatMouseFocus()
     int mouseX = 0;
     int mouseY = 0;
     bool mouseInCompactWindow = false;
+    bool mouseInSendOsRect = false;
 
     XPLMGetWindowGeometry(
         gCompactWindow,
@@ -5844,6 +6333,47 @@ void PollCompactChatMouseFocus()
             cursorPoint.y >= osMinY &&
             cursorPoint.y <= osMaxY;
 
+        int windowWidth =
+            (std::max)(1, right - left);
+        int windowHeight =
+            (std::max)(1, top - bottom);
+        CustomRect chatRectForOs =
+            { left + 270, top - 50, right - 12, top - 300 };
+        CustomRect sendRectForOs =
+            GetCompactChatSendRect(chatRectForOs);
+
+        int sendLocalLeft =
+            sendRectForOs.left - left;
+        int sendLocalRight =
+            sendRectForOs.right - left;
+        int sendLocalTop =
+            top - sendRectForOs.top;
+        int sendLocalBottom =
+            top - sendRectForOs.bottom;
+
+        int sendOsLeft =
+            osMinX + (sendLocalLeft * osWidth / windowWidth) - 20;
+        int sendOsRight =
+            osMinX + (sendLocalRight * osWidth / windowWidth) + 20;
+        int sendOsTop =
+            osMinY + (sendLocalTop * osHeight / windowHeight) - 18;
+        int sendOsBottom =
+            osMinY + (sendLocalBottom * osHeight / windowHeight) + 18;
+
+        mouseInSendOsRect =
+            (
+                cursorPoint.x >= sendOsLeft &&
+                cursorPoint.x <= sendOsRight &&
+                cursorPoint.y >= sendOsTop &&
+                cursorPoint.y <= sendOsBottom
+            ) ||
+            (
+                cursorPoint.x >= osMaxX - 250 &&
+                cursorPoint.x <= osMaxX - 10 &&
+                cursorPoint.y >= osMaxY - 170 &&
+                cursorPoint.y <= osMaxY - 45
+            );
+
         float relativeX =
             (float)(cursorPoint.x - osMinX) / (float)osWidth;
         float relativeYFromTop =
@@ -5875,13 +6405,12 @@ void PollCompactChatMouseFocus()
         { left + 270, top - 50, right - 12, top - 300 };
     CustomRect chatFocusRect =
         GetCompactChatFocusRect(chatRect);
-    CustomRect chatSendRect =
-        GetCompactChatSendHitRect(chatRect);
 
     bool mouseInChatFocus =
         PointInRect(mouseX, mouseY, chatFocusRect);
     bool mouseInSend =
-        PointInRect(mouseX, mouseY, chatSendRect);
+        mouseInSendOsRect ||
+        PointInCompactChatSendArea(mouseX, mouseY, left, top, right, bottom);
 
     if (mouseDown)
     {
@@ -5905,19 +6434,17 @@ void PollCompactChatMouseFocus()
 
         if (mouseInSend && mousePressed)
         {
-            gChatInputFocused = true;
             gChatSendButtonPressed = false;
+
+            XPLMDebugString(
+                "Flight Radar Plugin: Chat send button clicked by mouse poll.\n"
+            );
 
             XPLMBringWindowToFront(
                 gCompactWindow
             );
 
-            XPLMTakeKeyboardFocus(
-                gCompactWindow
-            );
-
             SendChatMessage();
-            gChatInputFocused = false;
 
             XPLMTakeKeyboardFocus(
                 nullptr
@@ -6010,6 +6537,15 @@ int CompactHandleMouse(
 
         CustomRect chatRect =
             { left + 270, top - 50, right - 12, top - 300 };
+        CustomRect chatSendRect =
+            GetCompactChatSendRect(chatRect);
+        CustomRect chatSendHitRect =
+            {
+                chatSendRect.left - 8,
+                chatSendRect.top + 8,
+                chatSendRect.right + 8,
+                chatSendRect.bottom - 8
+            };
 
         if (gFlightplanWindow != nullptr && PointInWindowRect(x, y, GetCompactTabRect(left, top, 2), left, top, bottom))
         {
@@ -6034,21 +6570,25 @@ int CompactHandleMouse(
             return 1;
         }
 
-        if (PointInWindowRect(x, y, GetCompactChatSendHitRect(chatRect), left, top, bottom))
+        if (
+            PointInRect(x, y, chatSendRect) ||
+            PointInRect(x, y, chatSendHitRect) ||
+            PointInWindowRect(x, y, chatSendRect, left, top, bottom) ||
+            PointInWindowRect(x, y, chatSendHitRect, left, top, bottom) ||
+            PointInCompactChatSendArea(x, y, left, top, right, bottom)
+        )
         {
-            gChatInputFocused = true;
             gChatSendButtonPressed = false;
+
+            XPLMDebugString(
+                "Flight Radar Plugin: Chat send button clicked.\n"
+            );
 
             XPLMBringWindowToFront(
                 inWindowID
             );
 
-            XPLMTakeKeyboardFocus(
-                inWindowID
-            );
-
             SendChatMessage();
-            gChatInputFocused = false;
 
             XPLMTakeKeyboardFocus(
                 nullptr
@@ -6155,10 +6695,12 @@ int CompactHandleMouseWheel(
         return 0;
     }
 
+    const int chatLineHeight =
+        18;
     const int visibleChatLines =
-        (std::max)(1, (chatRect.top - chatRect.bottom - 110) / 24);
+        (std::max)(1, (chatRect.top - chatRect.bottom - 110) / chatLineHeight);
     const int maxChatScrollOffset =
-        (std::max)(0, (int)gChatLines.size() - visibleChatLines);
+        (std::max)(0, CountWrappedChatRows(chatRect) - visibleChatLines);
 
     if (maxChatScrollOffset <= 0)
     {
@@ -6627,6 +7169,50 @@ int LoginWindowHandler(
                         "token"
                     );
 
+                gCurrentPilotRatingCode =
+                    ExtractJsonStringValue(
+                        response,
+                        "pilot_rating_code"
+                    );
+
+                gCurrentPilotRatingName =
+                    ExtractJsonStringValue(
+                        response,
+                        "pilot_rating_name"
+                    );
+
+                gCurrentAtcRatingCode =
+                    ExtractJsonStringValue(
+                        response,
+                        "atc_rating_code"
+                    );
+
+                gCurrentAtcRatingName =
+                    ExtractJsonStringValue(
+                        response,
+                        "atc_rating_name"
+                    );
+
+                if (gCurrentPilotRatingCode.empty())
+                {
+                    gCurrentPilotRatingCode = "FC0";
+                }
+
+                if (gCurrentPilotRatingName.empty())
+                {
+                    gCurrentPilotRatingName = "New Flight Cadet";
+                }
+
+                if (gCurrentAtcRatingCode.empty())
+                {
+                    gCurrentAtcRatingCode = "TC0";
+                }
+
+                if (gCurrentAtcRatingName.empty())
+                {
+                    gCurrentAtcRatingName = "New ATC Cadet";
+                }
+
                 gCanUseInvisible =
                     (
                         response.find("\"can_use_invisible\":true")
@@ -6650,6 +7236,16 @@ int LoginWindowHandler(
 
                     return 1;
                 }
+
+                gChatLines.clear();
+                gChatInputText = "";
+                gChatInputFocused = false;
+                gChatSendButtonPressed = false;
+                gChatScrollOffset = 0;
+                gLastChatMessageId = 0;
+                gChatPollElapsed = 999.0f;
+
+                AddLoginChatSummary();
 
                 XPLMDebugString(
                     T("debug.login_success")

@@ -173,50 +173,7 @@ try {
         $initialMaxSeenId =
             (int)$maxStmt->fetchColumn();
 
-        $initialMessageStmt = $pdo->prepare(
-            "SELECT
-                id,
-                frequency,
-                sender_callsign,
-                message_type,
-                message_text
-             FROM chat_messages
-             WHERE recipient_user_id = :user_id
-             ORDER BY id ASC
-             LIMIT 10"
-        );
-
-        $initialMessageStmt->execute([
-            'user_id' =>
-                $userId
-        ]);
-
         echo "OK\n";
-
-        foreach ($initialMessageStmt->fetchAll(PDO::FETCH_ASSOC) as $message) {
-            $messageId =
-                (int)$message['id'];
-
-            if ($messageId > $initialMaxSeenId) {
-                $initialMaxSeenId =
-                    $messageId;
-            }
-
-            $messageText =
-                str_replace(
-                    ["\r", "\n", "\t", '|'],
-                    ' ',
-                    (string)$message['message_text']
-                );
-
-            echo
-                $messageId . '|' .
-                (string)($message['frequency'] ?? '') . '|' .
-                str_replace('|', ' ', (string)$message['sender_callsign']) . '|' .
-                str_replace('|', ' ', (string)$message['message_type']) . '|' .
-                $messageText . "\n";
-        }
-
         echo "LAST|" . $initialMaxSeenId . "\n";
         exit;
     }
@@ -230,7 +187,8 @@ try {
             sender_longitude,
             sender_callsign,
             message_type,
-            message_text
+            message_text,
+            DATE_FORMAT(created_at, '%H:%i') AS message_time
          FROM chat_messages
          WHERE id > :since_id
            AND (
@@ -308,6 +266,7 @@ try {
         echo
             $messageId . '|' .
             $messageFrequency . '|' .
+            (string)($message['message_time'] ?? '') . '|' .
             str_replace('|', ' ', (string)$message['sender_callsign']) . '|' .
             str_replace('|', ' ', (string)$message['message_type']) . '|' .
             $messageText . "\n";
@@ -322,7 +281,8 @@ try {
             frequency,
             sender_callsign,
             message_type,
-            message_text
+            message_text,
+            DATE_FORMAT(created_at, '%H:%i') AS message_time
          FROM chat_messages
          WHERE recipient_user_id = :user_id
            AND id > :since_id
@@ -361,6 +321,7 @@ try {
         echo
             $messageId . '|' .
             (string)($message['frequency'] ?? '') . '|' .
+            (string)($message['message_time'] ?? '') . '|' .
             str_replace('|', ' ', (string)$message['sender_callsign']) . '|' .
             str_replace('|', ' ', (string)$message['message_type']) . '|' .
             $messageText . "\n";
