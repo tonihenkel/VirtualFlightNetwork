@@ -5616,9 +5616,9 @@ void DrawCompactWindow(
             timeTextLeft,
             messageY,
             row.timeText,
-            0.46f,
-            0.58f,
-            0.68f
+            0.72f,
+            0.82f,
+            0.92f
         );
 
         DrawText(
