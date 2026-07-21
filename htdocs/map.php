@@ -115,7 +115,8 @@ if (!isset($showRatings)) {
             text-align: center;
         }
 
-        #pilotInfoPanel {
+        #pilotInfoPanel,
+        #airportTrafficPanel {
             position: absolute;
 
             top: 82px;
@@ -139,6 +140,15 @@ if (!isset($showRatings)) {
 
         #pilotInfoPanel.open {
             transform: translateX(0);
+        }
+
+        #airportTrafficPanel.open {
+            transform: translateX(0);
+        }
+
+        #airportTrafficPanel .panel-route {
+            grid-template-columns: 1fr;
+            text-align: left;
         }
 
         .panel-header {
@@ -327,6 +337,94 @@ if (!isset($showRatings)) {
             margin-bottom: 12px;
             font-size: 13px;
             line-height: 1.45;
+        }
+
+        .airport-summary {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .airport-tab-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0;
+            margin-bottom: 12px;
+        }
+
+        .airport-tab-button {
+            border: 0;
+            background: white;
+            color: #1737a6;
+            padding: 12px 8px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .airport-tab-button.active {
+            background: #1737a6;
+            color: white;
+        }
+
+        .airport-traffic-list {
+            display: grid;
+            gap: 10px;
+        }
+
+        .airport-traffic-card {
+            background: white;
+            border-radius: 8px;
+            padding: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+            cursor: pointer;
+        }
+
+        .airport-traffic-card:hover {
+            background: #f7f9ff;
+        }
+
+        .airport-traffic-main {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: flex-start;
+        }
+
+        .airport-traffic-callsign {
+            color: #1737a6;
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        .airport-traffic-aircraft {
+            color: #111;
+            font-weight: bold;
+            font-size: 13px;
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .airport-traffic-route {
+            margin-top: 5px;
+            color: #111;
+            font-weight: bold;
+            font-size: 15px;
+        }
+
+        .airport-traffic-meta {
+            margin-top: 4px;
+            color: #666;
+            font-size: 12px;
+        }
+
+        .airport-traffic-empty {
+            background: white;
+            border-radius: 8px;
+            color: #666;
+            padding: 14px;
+            font-size: 14px;
+            text-align: center;
         }
 
         .rating-container {
@@ -641,6 +739,58 @@ if ($statusMessage !== '') {
     </div>
 </div>
 
+<div id="airportTrafficPanel">
+    <div class="panel-header">
+        <span id="airportPanelIcao">----</span>
+        <span class="panel-close" onclick="closeAirportTrafficPanel()">×</span>
+    </div>
+
+    <div class="panel-route">
+        <div>
+            <div id="airportPanelName">
+                <?php echo htmlspecialchars(t("map_unknown_airport")); ?>
+            </div>
+            <div class="panel-airport-name">
+                <?php echo htmlspecialchars(t("map_airport_traffic")); ?>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel-content">
+        <div class="panel-grid airport-summary">
+            <div class="panel-stat">
+                <div class="panel-stat-value" id="airportPanelInboundCount">0</div>
+                <div class="panel-stat-label"><?php echo htmlspecialchars(t("map_airport_inbound")); ?></div>
+            </div>
+
+            <div class="panel-stat">
+                <div class="panel-stat-value" id="airportPanelOutboundCount">0</div>
+                <div class="panel-stat-label"><?php echo htmlspecialchars(t("map_airport_outbound")); ?></div>
+            </div>
+        </div>
+
+        <div class="airport-tab-buttons">
+            <button
+                type="button"
+                class="airport-tab-button active"
+                id="airportInboundTab"
+                onclick="setAirportTrafficTab('inbound')">
+                <?php echo htmlspecialchars(t("map_airport_inbound")); ?>
+            </button>
+
+            <button
+                type="button"
+                class="airport-tab-button"
+                id="airportOutboundTab"
+                onclick="setAirportTrafficTab('outbound')">
+                <?php echo htmlspecialchars(t("map_airport_outbound")); ?>
+            </button>
+        </div>
+
+        <div id="airportTrafficList" class="airport-traffic-list"></div>
+    </div>
+</div>
+
 <div id="map"></div>
 
 <?php require_once 'includes/auth_modals.php'; ?>
@@ -700,7 +850,15 @@ if ($statusMessage !== '') {
                 "panel_radio" => t("map_panel_radio"),
                 "panel_update" => t("map_panel_update"),
                 "panel_last_update" => t("map_panel_last_update"),
-                "login_required_more_info" => t("map_login_required_more_info")
+                "login_required_more_info" => t("map_login_required_more_info"),
+
+                "airport_traffic" => t("map_airport_traffic"),
+                "airport_inbound" => t("map_airport_inbound"),
+                "airport_outbound" => t("map_airport_outbound"),
+                "airport_no_inbound" => t("map_airport_no_inbound"),
+                "airport_no_outbound" => t("map_airport_no_outbound"),
+                "airport_aircraft" => t("map_airport_aircraft"),
+                "airport_departure_time" => t("map_airport_departure_time")
             ],
             JSON_UNESCAPED_UNICODE
         );
@@ -730,6 +888,9 @@ if ($statusMessage !== '') {
     const pilotInfoPanel =
         document.getElementById('pilotInfoPanel');
 
+    const airportTrafficPanel =
+        document.getElementById('airportTrafficPanel');
+
     const pilotMarkers = {};
 
     const pilotTracks = {};
@@ -740,7 +901,15 @@ if ($statusMessage !== '') {
 
     const airportMarkers = {};
 
+    const trafficAirportMarkers = {};
+
+    let airportTrafficData = {};
+
     let selectedCallsign = null;
+
+    let selectedAirportCode = null;
+
+    let selectedAirportTab = 'inbound';
 
     function escapeHtml(value)
     {
@@ -1095,6 +1264,210 @@ if ($statusMessage !== '') {
             lat,
             lon
         ];
+    }
+
+    function createAirportTrafficMarker()
+    {
+        return {
+            radius: 4,
+            color: '#ffffff',
+            weight: 2,
+            fillColor: '#000000',
+            fillOpacity: 1,
+            opacity: 1
+        };
+    }
+
+    function getAirportTrafficEntry(pilot, airportType)
+    {
+        const flightplan =
+            getFlightplan(pilot);
+
+        const departureCode =
+            getAirportCode(
+                flightplan.departure_airport
+            );
+
+        const arrivalCode =
+            getAirportCode(
+                flightplan.arrival_airport
+            );
+
+        return {
+            callsign: pilot.callsign || '----',
+            aircraft: pilot.aircraft_icao || '----',
+            route: departureCode + ' - ' + arrivalCode,
+            departure_time: flightplan.departure_time || '',
+            pilot: pilot,
+            type: airportType
+        };
+    }
+
+    function ensureAirportTrafficBucket(traffic, code, info)
+    {
+        if (!traffic[code])
+        {
+            traffic[code] = {
+                code: code,
+                info: info,
+                inbound: [],
+                outbound: []
+            };
+        }
+
+        if (
+            !traffic[code].info &&
+            info
+        )
+        {
+            traffic[code].info = info;
+        }
+
+        return traffic[code];
+    }
+
+    function addAirportTrafficEntry(traffic, pilot, airportType)
+    {
+        const flightplan =
+            getFlightplan(pilot);
+
+        const code =
+            airportType === 'inbound'
+            ? getAirportCode(flightplan.arrival_airport)
+            : getAirportCode(flightplan.departure_airport);
+
+        const info =
+            airportType === 'inbound'
+            ? flightplan.arrival_airport_info
+            : flightplan.departure_airport_info;
+
+        if (
+            code === 'ZZZZ' ||
+            !getAirportLatLng(info)
+        )
+        {
+            return;
+        }
+
+        const bucket =
+            ensureAirportTrafficBucket(
+                traffic,
+                code,
+                info
+            );
+
+        bucket[airportType].push(
+            getAirportTrafficEntry(
+                pilot,
+                airportType
+            )
+        );
+    }
+
+    function buildAirportTrafficData(pilots)
+    {
+        const traffic = {};
+
+        pilots.forEach(pilot =>
+        {
+            addAirportTrafficEntry(
+                traffic,
+                pilot,
+                'inbound'
+            );
+
+            addAirportTrafficEntry(
+                traffic,
+                pilot,
+                'outbound'
+            );
+        });
+
+        return traffic;
+    }
+
+    function updateAirportTrafficMarkers()
+    {
+        Object.keys(trafficAirportMarkers).forEach(code =>
+        {
+            map.removeLayer(
+                trafficAirportMarkers[code]
+            );
+
+            delete trafficAirportMarkers[code];
+        });
+
+        Object.keys(airportTrafficData).forEach(code =>
+        {
+            const airport =
+                airportTrafficData[code];
+
+            const latLng =
+                getAirportLatLng(
+                    airport.info
+                );
+
+            if (!latLng)
+            {
+                return;
+            }
+
+            const marker =
+                L.circleMarker(
+                    latLng,
+                    createAirportTrafficMarker()
+                ).addTo(map);
+
+            const inboundCount =
+                airport.inbound.length;
+
+            const outboundCount =
+                airport.outbound.length;
+
+            marker.bindTooltip(
+                '<b>'
+                + escapeHtml(code)
+                + '</b><br>'
+                + escapeHtml(getAirportName(airport.info))
+                + '<br>'
+                + escapeHtml(MAP_TEXT.airport_inbound)
+                + ': '
+                + inboundCount
+                + ' | '
+                + escapeHtml(MAP_TEXT.airport_outbound)
+                + ': '
+                + outboundCount,
+                {
+                    permanent: false,
+                    direction: 'top'
+                }
+            );
+
+            marker.on(
+                'click',
+                function()
+                {
+                    openAirportTrafficPanel(code);
+                }
+            );
+
+            trafficAirportMarkers[code] =
+                marker;
+        });
+
+        if (selectedAirportCode)
+        {
+            if (airportTrafficData[selectedAirportCode])
+            {
+                updateAirportTrafficPanel(
+                    selectedAirportCode
+                );
+            }
+            else
+            {
+                closeAirportTrafficPanel();
+            }
+        }
     }
 
     function createAirportIcon(label, airportType)
@@ -1486,10 +1859,186 @@ if ($statusMessage !== '') {
         }
     }
 
+    function renderAirportTrafficList(airport)
+    {
+        const listElement =
+            document.getElementById('airportTrafficList');
+
+        const entries =
+            airport[selectedAirportTab] || [];
+
+        if (entries.length === 0)
+        {
+            listElement.innerHTML =
+                '<div class="airport-traffic-empty">'
+                + escapeHtml(
+                    selectedAirportTab === 'inbound'
+                    ? MAP_TEXT.airport_no_inbound
+                    : MAP_TEXT.airport_no_outbound
+                )
+                + '</div>';
+
+            return;
+        }
+
+        listElement.innerHTML =
+            entries
+                .map(function(entry, index)
+                {
+                    const timeHtml =
+                        entry.departure_time
+                        ? `
+                            <div class="airport-traffic-meta">
+                                ${escapeHtml(MAP_TEXT.airport_departure_time)}:
+                                ${escapeHtml(entry.departure_time)}
+                            </div>
+                        `
+                        : '';
+
+                    return `
+                        <div
+                            class="airport-traffic-card"
+                            onclick="openAirportTrafficPilot(${index})">
+                            <div class="airport-traffic-main">
+                                <div class="airport-traffic-callsign">
+                                    ${escapeHtml(entry.callsign)}
+                                </div>
+                                <div class="airport-traffic-aircraft">
+                                    ${escapeHtml(entry.aircraft)}
+                                </div>
+                            </div>
+                            <div class="airport-traffic-route">
+                                ${escapeHtml(entry.route)}
+                            </div>
+                            ${timeHtml}
+                        </div>
+                    `;
+                })
+                .join('');
+    }
+
+    function updateAirportTrafficPanel(code)
+    {
+        const airport =
+            airportTrafficData[code];
+
+        if (!airport)
+        {
+            return;
+        }
+
+        document.getElementById('airportPanelIcao').innerText =
+            code;
+
+        document.getElementById('airportPanelName').innerText =
+            getAirportName(
+                airport.info
+            );
+
+        document.getElementById('airportPanelInboundCount').innerText =
+            airport.inbound.length;
+
+        document.getElementById('airportPanelOutboundCount').innerText =
+            airport.outbound.length;
+
+        document
+            .getElementById('airportInboundTab')
+            .classList
+            .toggle(
+                'active',
+                selectedAirportTab === 'inbound'
+            );
+
+        document
+            .getElementById('airportOutboundTab')
+            .classList
+            .toggle(
+                'active',
+                selectedAirportTab === 'outbound'
+            );
+
+        renderAirportTrafficList(airport);
+    }
+
+    function openAirportTrafficPanel(code)
+    {
+        selectedAirportCode =
+            code;
+
+        selectedCallsign =
+            null;
+
+        pilotInfoPanel.classList.remove('open');
+
+        resetMarkerZIndexes();
+
+        removeAllTracks();
+
+        removeAirportRouteOverlays();
+
+        updateAirportTrafficPanel(code);
+
+        airportTrafficPanel.classList.add('open');
+    }
+
+    function closeAirportTrafficPanel()
+    {
+        selectedAirportCode =
+            null;
+
+        airportTrafficPanel.classList.remove('open');
+    }
+
+    function setAirportTrafficTab(tab)
+    {
+        selectedAirportTab =
+            tab;
+
+        if (selectedAirportCode)
+        {
+            updateAirportTrafficPanel(
+                selectedAirportCode
+            );
+        }
+    }
+
+    function openAirportTrafficPilot(index)
+    {
+        if (!selectedAirportCode)
+        {
+            return;
+        }
+
+        const airport =
+            airportTrafficData[selectedAirportCode];
+
+        if (!airport)
+        {
+            return;
+        }
+
+        const entry =
+            (airport[selectedAirportTab] || [])[index];
+
+        if (
+            entry &&
+            entry.pilot
+        )
+        {
+            closeAirportTrafficPanel();
+
+            openPilotPanel(
+                entry.pilot
+            );
+        }
+    }
+
     function openPilotPanel(pilot)
     {
         selectedCallsign =
             pilot.callsign;
+
+        closeAirportTrafficPanel();
 
         updatePilotPanel(pilot);
 
@@ -1737,6 +2286,11 @@ if ($statusMessage !== '') {
 
             const activeCallsigns = [];
 
+            airportTrafficData =
+                buildAirportTrafficData(
+                    data.pilots || []
+                );
+
             data.pilots.forEach(pilot =>
             {
                 const callsign =
@@ -1859,6 +2413,8 @@ if ($statusMessage !== '') {
                     }
                 }
             });
+
+            updateAirportTrafficMarkers();
 
             const totalCount =
                 Number(data.total_count ?? data.count ?? 0);

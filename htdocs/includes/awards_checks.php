@@ -7,10 +7,10 @@ function checkFirstFlight(
     int $userId,
     string $departureAirport,
     string $arrivalAirport
-): void {
+): bool {
 
     if (userHasAward($pdo, $userId, 'award_first_flight')) {
-        return;
+        return false;
     }
 
     if (
@@ -21,7 +21,7 @@ function checkFirstFlight(
             0
         )
     ) {
-        return;
+        return false;
     }
 
     $activityValue =
@@ -63,7 +63,7 @@ function checkFirstFlight(
             ]);
         }
 
-        return;
+        return true;
     }
 
     logActivity(
@@ -74,6 +74,8 @@ function checkFirstFlight(
         $activityValue,
         0
     );
+
+    return true;
 }
 
 function checkLandingAwards(

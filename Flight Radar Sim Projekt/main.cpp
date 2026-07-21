@@ -215,7 +215,43 @@ enum CustomLoginField
 static CustomLoginField gCustomLoginFocusedField =
     CustomLoginFieldNone;
 
+enum CustomFlightplanField
+{
+    CustomFlightplanFieldNone = 0,
+    CustomFlightplanFieldDepartureTime,
+    CustomFlightplanFieldDepartureAirport,
+    CustomFlightplanFieldArrivalAirport,
+    CustomFlightplanFieldAlternate1Airport,
+    CustomFlightplanFieldAlternate2Airport,
+    CustomFlightplanFieldRoute,
+    CustomFlightplanFieldCruisingLevel,
+    CustomFlightplanFieldCruisingSpeed,
+    CustomFlightplanFieldRemarks
+};
+
+static CustomFlightplanField gCustomFlightplanFocusedField =
+    CustomFlightplanFieldNone;
+
 static XPWidgetID gFlightplanWindow = nullptr;
+static XPLMWindowID gCustomFlightplanWindow = nullptr;
+static bool gCustomFlightplanDragging = false;
+static bool gCustomFlightplanPoppedOut = false;
+static int gCustomFlightplanDragOffsetX = 0;
+static int gCustomFlightplanDragOffsetY = 0;
+static char gLastFlightplanKey = 0;
+static char gLastFlightplanVirtualKey = 0;
+static float gLastFlightplanKeyTime = -1.0f;
+
+static std::string gFlightplanDepartureTimeText = "";
+static std::string gFlightplanDepartureAirportText = "";
+static std::string gFlightplanArrivalAirportText = "ZZZZ";
+static std::string gFlightplanAlternate1AirportText = "ZZZZ";
+static std::string gFlightplanAlternate2AirportText = "ZZZZ";
+static std::string gFlightplanRouteText = "";
+static std::string gFlightplanCruisingLevelText = "FL350";
+static std::string gFlightplanCruisingSpeedText = "";
+static std::string gFlightplanRemarksText = "";
+static std::string gFlightplanStatusText = "";
 
 static XPWidgetID gFlightRulesLabel = nullptr;
 static XPWidgetID gFlightTypeLabel = nullptr;
@@ -265,7 +301,12 @@ static XPLMDataRef gCom3 = nullptr;
 
 static XPLMDataRef gTransponder = nullptr;
 static XPLMDataRef gTransponderMode = nullptr;
+static XPLMCommandRef gTransponderStandbyCommand = nullptr;
+static XPLMCommandRef gTransponderOnCommand = nullptr;
 static XPLMCommandRef gTransponderIdentCommand = nullptr;
+static XPLMCommandRef gG1000XpdrStbyCommands[3] = {};
+static XPLMCommandRef gG1000XpdrOnCommands[3] = {};
+static XPLMCommandRef gG1000XpdrIdentCommands[3] = {};
 static float gTransponderIdentUntil = -1.0f;
 
 static XPLMDataRef gOnGround = nullptr;
@@ -282,8 +323,14 @@ static int gNightFlightSeconds = 0;
 static int gTotalFlightSeconds = 0;
 static double gNightFlightSecondAccumulator = 0.0;
 
+void SetTransponderMode(int mode);
+
 
 void UpdateFlightplanWindowState();
+void SetFlightplanStatus(
+    const std::string& value
+);
+void SyncCustomFlightplanToWidgets();
 void SetCustomLoginStatus(
     const std::string& value
 );
@@ -2720,6 +2767,58 @@ int ExtractJsonIntValue(
 }
 
 
+bool ExtractJsonBoolValue(
+    const std::string& response,
+    const std::string& keyName,
+    bool fallbackValue
+)
+{
+    std::string key =
+        "\"" + keyName + "\"";
+
+    size_t keyPos =
+        response.find(key);
+
+    if (keyPos == std::string::npos)
+    {
+        return fallbackValue;
+    }
+
+    size_t colonPos =
+        response.find(":", keyPos);
+
+    if (colonPos == std::string::npos)
+    {
+        return fallbackValue;
+    }
+
+    size_t valuePos =
+        colonPos + 1;
+
+    while (
+        valuePos < response.size() &&
+        std::isspace(
+            static_cast<unsigned char>(response[valuePos])
+        )
+    )
+    {
+        valuePos++;
+    }
+
+    if (response.compare(valuePos, 4, "true") == 0)
+    {
+        return true;
+    }
+
+    if (response.compare(valuePos, 5, "false") == 0)
+    {
+        return false;
+    }
+
+    return fallbackValue;
+}
+
+
 std::string ExtractMessageFromResponse(
     const std::string& response
 )
@@ -3031,7 +3130,10 @@ void UpdateLoginWindowState()
 
 void UpdateFlightplanWindowState()
 {
-    if (gFlightplanWindow == nullptr)
+    if (
+        gFlightplanWindow == nullptr &&
+        gCustomFlightplanWindow == nullptr
+    )
     {
         return;
     }
@@ -3069,15 +3171,21 @@ void UpdateFlightplanWindowState()
 
         UpdateCloseAfterSendButtonCaption();
         UpdateFlightplanSelectionButtonCaptions();
-
-        XPSetWidgetDescriptor(
-            gFlightplanStatusCaption,
-            T("flightplan.ready")
-        );
     }
     else
     {
-        XPHideWidget(gFlightplanWindow);
+        if (gFlightplanWindow != nullptr)
+        {
+            XPHideWidget(gFlightplanWindow);
+        }
+
+        if (gCustomFlightplanWindow != nullptr)
+        {
+            XPLMSetWindowIsVisible(
+                gCustomFlightplanWindow,
+                0
+            );
+        }
     }
 }
 
@@ -3831,13 +3939,14 @@ void SendFlightplan()
 {
     if (!gLoggedIn || gAuthToken.empty())
     {
-        XPSetWidgetDescriptor(
-            gFlightplanStatusCaption,
+        SetFlightplanStatus(
             T("status.login_first")
         );
 
         return;
     }
+
+    SyncCustomFlightplanToWidgets();
 
     std::string flightRules =
         GetSelectedFlightRulesCode();
@@ -3846,48 +3955,47 @@ void SendFlightplan()
         GetSelectedFlightTypeCode();
 
     std::string departureTime =
-        GetWidgetText(gDepartureTimeField);
+        gFlightplanDepartureTimeText;
 
     std::string departureAirport =
         NormalizeAirportCode(
-            GetWidgetText(gDepartureAirportField)
+            gFlightplanDepartureAirportText
         );
 
     std::string arrivalAirport =
         NormalizeAirportCode(
-            GetWidgetText(gArrivalAirportField)
+            gFlightplanArrivalAirportText
         );
 
     std::string alternate1Airport =
         NormalizeAirportCode(
-            GetWidgetText(gAlternate1AirportField)
+            gFlightplanAlternate1AirportText
         );
 
     std::string alternate2Airport =
         NormalizeAirportCode(
-            GetWidgetText(gAlternate2AirportField)
+            gFlightplanAlternate2AirportText
         );
 
     std::string routeText =
         ToUpperString(
-            GetWidgetText(gRouteField)
+            gFlightplanRouteText
         );
 
     std::string cruisingLevel =
         ToUpperString(
-            GetWidgetText(gCruisingLevelField)
+            gFlightplanCruisingLevelText
         );
 
     std::string cruisingSpeed =
         ToUpperString(
-            GetWidgetText(gCruisingSpeedField)
+            gFlightplanCruisingSpeedText
         );
 
     std::string remarks =
-        GetWidgetText(gRemarksField);
+        gFlightplanRemarksText;
 
-    XPSetWidgetDescriptor(
-        gFlightplanStatusCaption,
+    SetFlightplanStatus(
         T("flightplan.sending")
     );
 
@@ -3921,8 +4029,7 @@ void SendFlightplan()
 
     if (ResponseIsSuccess(response))
     {
-        XPSetWidgetDescriptor(
-            gFlightplanStatusCaption,
+        SetFlightplanStatus(
             T("flightplan.saved")
         );
 
@@ -3930,11 +4037,50 @@ void SendFlightplan()
             T("flightplan.saved_log")
         );
 
+        if (
+            ExtractJsonBoolValue(
+                response,
+                "first_flight_awarded",
+                false
+            )
+        )
+        {
+            int awardChatMessageId =
+                ExtractJsonIntValue(
+                    response,
+                    "award_chat_message_id",
+                    0
+                );
+
+            AddChatLine(
+                {
+                    awardChatMessageId,
+                    "",
+                    "",
+                    "VFN",
+                    "award",
+                    "award:award_first_flight"
+                },
+                true
+            );
+        }
+
         if (gCloseFlightplanAfterSend)
         {
-            XPHideWidget(
-                gFlightplanWindow
-            );
+            if (gCustomFlightplanWindow != nullptr)
+            {
+                XPLMSetWindowIsVisible(
+                    gCustomFlightplanWindow,
+                    0
+                );
+            }
+
+            if (gFlightplanWindow != nullptr)
+            {
+                XPHideWidget(
+                    gFlightplanWindow
+                );
+            }
         }
     }
     else
@@ -3945,9 +4091,8 @@ void SendFlightplan()
         std::string status =
             std::string(T("flightplan.error")) + message;
 
-        XPSetWidgetDescriptor(
-            gFlightplanStatusCaption,
-            status.c_str()
+        SetFlightplanStatus(
+            status
         );
 
         XPLMDebugString(
@@ -4255,6 +4400,7 @@ void PerformCustomLogin()
         gCurrentCallsign = callsign;
         gPositionUpdateFailureCount = 0;
         ResetNightFlightTracking();
+        SetTransponderMode(1);
 
         gAuthToken =
             ExtractJsonStringValue(
@@ -4653,6 +4799,397 @@ void DrawCustomLoginButton(
         1.00f
     );
 }
+
+CustomRect GetCustomFlightplanCloseRect(int left, int top, int right)
+{
+    return { right - 44, top - 36, right - 4, top - 2 };
+}
+
+
+CustomRect GetCustomFlightplanPopoutRect(int left, int top, int right)
+{
+    return { right - 82, top - 36, right - 48, top - 2 };
+}
+
+
+CustomRect GetCustomFlightplanRulesRect(int left, int top)
+{
+    return { left + 28, top - 92, left + 174, top - 122 };
+}
+
+
+CustomRect GetCustomFlightplanTypeRect(int left, int top)
+{
+    return { left + 198, top - 92, left + 360, top - 122 };
+}
+
+
+CustomRect GetCustomFlightplanDepartureTimeRect(int left, int top)
+{
+    return { left + 28, top - 158, left + 174, top - 188 };
+}
+
+
+CustomRect GetCustomFlightplanDepartureAirportRect(int left, int top)
+{
+    return { left + 28, top - 216, left + 174, top - 246 };
+}
+
+
+CustomRect GetCustomFlightplanArrivalAirportRect(int left, int top)
+{
+    return { left + 198, top - 216, left + 360, top - 246 };
+}
+
+
+CustomRect GetCustomFlightplanAlternate1AirportRect(int left, int top)
+{
+    return { left + 28, top - 274, left + 174, top - 304 };
+}
+
+
+CustomRect GetCustomFlightplanAlternate2AirportRect(int left, int top)
+{
+    return { left + 198, top - 274, left + 360, top - 304 };
+}
+
+
+CustomRect GetCustomFlightplanCruisingLevelRect(int left, int top)
+{
+    return { left + 28, top - 332, left + 174, top - 362 };
+}
+
+
+CustomRect GetCustomFlightplanCruisingSpeedRect(int left, int top)
+{
+    return { left + 198, top - 332, left + 360, top - 362 };
+}
+
+
+CustomRect GetCustomFlightplanRouteRect(int left, int top, int right)
+{
+    return { left + 390, top - 92, right - 28, top - 260 };
+}
+
+
+CustomRect GetCustomFlightplanRemarksRect(int left, int top, int right)
+{
+    return { left + 28, top - 416, right - 28, top - 486 };
+}
+
+
+CustomRect GetCustomFlightplanPasteRouteRect(int left, int top)
+{
+    return { left + 390, top - 276, left + 590, top - 308 };
+}
+
+
+CustomRect GetCustomFlightplanClearRouteRect(int left, int top, int right)
+{
+    return { left + 606, top - 276, right - 28, top - 308 };
+}
+
+
+CustomRect GetCustomFlightplanCloseAfterSendRect(int left, int top)
+{
+    return { left + 28, top - 508, left + 260, top - 540 };
+}
+
+
+CustomRect GetCustomFlightplanSendRect(int left, int top, int right)
+{
+    return { right - 260, top - 508, right - 28, top - 540 };
+}
+
+
+std::string GetFlightplanFieldValue(
+    CustomFlightplanField field
+)
+{
+    switch (field)
+    {
+    case CustomFlightplanFieldDepartureTime:
+        return gFlightplanDepartureTimeText;
+
+    case CustomFlightplanFieldDepartureAirport:
+        return gFlightplanDepartureAirportText;
+
+    case CustomFlightplanFieldArrivalAirport:
+        return gFlightplanArrivalAirportText;
+
+    case CustomFlightplanFieldAlternate1Airport:
+        return gFlightplanAlternate1AirportText;
+
+    case CustomFlightplanFieldAlternate2Airport:
+        return gFlightplanAlternate2AirportText;
+
+    case CustomFlightplanFieldRoute:
+        return gFlightplanRouteText;
+
+    case CustomFlightplanFieldCruisingLevel:
+        return gFlightplanCruisingLevelText;
+
+    case CustomFlightplanFieldCruisingSpeed:
+        return gFlightplanCruisingSpeedText;
+
+    case CustomFlightplanFieldRemarks:
+        return gFlightplanRemarksText;
+
+    default:
+        return "";
+    }
+}
+
+
+std::string* GetFlightplanFieldPointer(
+    CustomFlightplanField field
+)
+{
+    switch (field)
+    {
+    case CustomFlightplanFieldDepartureTime:
+        return &gFlightplanDepartureTimeText;
+
+    case CustomFlightplanFieldDepartureAirport:
+        return &gFlightplanDepartureAirportText;
+
+    case CustomFlightplanFieldArrivalAirport:
+        return &gFlightplanArrivalAirportText;
+
+    case CustomFlightplanFieldAlternate1Airport:
+        return &gFlightplanAlternate1AirportText;
+
+    case CustomFlightplanFieldAlternate2Airport:
+        return &gFlightplanAlternate2AirportText;
+
+    case CustomFlightplanFieldRoute:
+        return &gFlightplanRouteText;
+
+    case CustomFlightplanFieldCruisingLevel:
+        return &gFlightplanCruisingLevelText;
+
+    case CustomFlightplanFieldCruisingSpeed:
+        return &gFlightplanCruisingSpeedText;
+
+    case CustomFlightplanFieldRemarks:
+        return &gFlightplanRemarksText;
+
+    default:
+        return nullptr;
+    }
+}
+
+
+void SyncCustomFlightplanToWidgets()
+{
+    if (gDepartureTimeField != nullptr)
+    {
+        XPSetWidgetDescriptor(gDepartureTimeField, gFlightplanDepartureTimeText.c_str());
+    }
+
+    if (gDepartureAirportField != nullptr)
+    {
+        XPSetWidgetDescriptor(gDepartureAirportField, gFlightplanDepartureAirportText.c_str());
+    }
+
+    if (gArrivalAirportField != nullptr)
+    {
+        XPSetWidgetDescriptor(gArrivalAirportField, gFlightplanArrivalAirportText.c_str());
+    }
+
+    if (gAlternate1AirportField != nullptr)
+    {
+        XPSetWidgetDescriptor(gAlternate1AirportField, gFlightplanAlternate1AirportText.c_str());
+    }
+
+    if (gAlternate2AirportField != nullptr)
+    {
+        XPSetWidgetDescriptor(gAlternate2AirportField, gFlightplanAlternate2AirportText.c_str());
+    }
+
+    if (gRouteField != nullptr)
+    {
+        XPSetWidgetDescriptor(gRouteField, gFlightplanRouteText.c_str());
+    }
+
+    if (gCruisingLevelField != nullptr)
+    {
+        XPSetWidgetDescriptor(gCruisingLevelField, gFlightplanCruisingLevelText.c_str());
+    }
+
+    if (gCruisingSpeedField != nullptr)
+    {
+        XPSetWidgetDescriptor(gCruisingSpeedField, gFlightplanCruisingSpeedText.c_str());
+    }
+
+    if (gRemarksField != nullptr)
+    {
+        XPSetWidgetDescriptor(gRemarksField, gFlightplanRemarksText.c_str());
+    }
+}
+
+
+void SetFlightplanStatus(
+    const std::string& value
+)
+{
+    gFlightplanStatusText =
+        value;
+
+    if (gFlightplanStatusCaption != nullptr)
+    {
+        XPSetWidgetDescriptor(
+            gFlightplanStatusCaption,
+            value.c_str()
+        );
+    }
+}
+
+
+void DrawCustomFlightplanInput(
+    const CustomRect& rect,
+    const std::string& label,
+    CustomFlightplanField field,
+    int maxDisplayChars,
+    bool uppercase
+)
+{
+    bool focused =
+        gCustomFlightplanFocusedField == field;
+
+    DrawText(
+        rect.left,
+        rect.top + 9,
+        label,
+        0.82f,
+        0.88f,
+        0.95f
+    );
+
+    DrawFilledRect(
+        rect,
+        0.025f,
+        0.080f,
+        0.115f,
+        0.98f
+    );
+
+    DrawRectOutline(
+        rect,
+        focused ? 0.14f : 0.22f,
+        focused ? 0.60f : 0.36f,
+        focused ? 1.00f : 0.46f,
+        focused ? 1.00f : 0.95f
+    );
+
+    std::string value =
+        GetFlightplanFieldValue(field);
+
+    if (uppercase)
+    {
+        value =
+            ToUpperString(value);
+    }
+
+    value =
+        TruncateForField(
+            value,
+            (size_t)maxDisplayChars
+        );
+
+    DrawText(
+        rect.left + 10,
+        rect.bottom + 9,
+        value,
+        value.empty() ? 0.46f : 0.86f,
+        value.empty() ? 0.54f : 0.91f,
+        value.empty() ? 0.62f : 0.96f
+    );
+
+    if (focused)
+    {
+        int cursorX =
+            rect.left + 12 + ((int)value.size() * 7);
+
+        DrawLine(
+            cursorX,
+            rect.bottom + 7,
+            cursorX,
+            rect.top - 7,
+            0.80f,
+            0.92f,
+            1.00f,
+            0.95f
+        );
+    }
+}
+
+
+void DrawCustomFlightplanTextArea(
+    const CustomRect& rect,
+    const std::string& label,
+    CustomFlightplanField field
+)
+{
+    bool focused =
+        gCustomFlightplanFocusedField == field;
+
+    DrawText(
+        rect.left,
+        rect.top + 9,
+        label,
+        0.82f,
+        0.88f,
+        0.95f
+    );
+
+    DrawFilledRect(
+        rect,
+        0.025f,
+        0.080f,
+        0.115f,
+        0.98f
+    );
+
+    DrawRectOutline(
+        rect,
+        focused ? 0.14f : 0.22f,
+        focused ? 0.60f : 0.36f,
+        focused ? 1.00f : 0.46f,
+        focused ? 1.00f : 0.95f
+    );
+
+    std::vector<std::string> rows =
+        WrapTextForWidth(
+            GetFlightplanFieldValue(field),
+            rect.right - rect.left - 20
+        );
+
+    int maxRows =
+        (rect.top - rect.bottom - 14) / 16;
+
+    for (
+        int row = 0;
+        row < (int)rows.size() && row < maxRows;
+        row++
+    )
+    {
+        DrawText(
+            rect.left + 10,
+            rect.top - 22 - (row * 16),
+            rows[row],
+            rows[row].empty() ? 0.46f : 0.86f,
+            rows[row].empty() ? 0.54f : 0.91f,
+            rows[row].empty() ? 0.62f : 0.96f
+        );
+    }
+}
+
+
+void DrawCustomFlightplanWindow(
+    XPLMWindowID inWindowID,
+    void* inRefcon
+);
 
 
 void DrawCustomLoginWindow(
@@ -5382,6 +5919,118 @@ void DrawCompactTransponderMode(
 }
 
 
+CustomRect GetCompactTransponderStbyRect(const CustomRect& rect)
+{
+    int modeTop =
+        rect.bottom + 32;
+
+    return { rect.left + 14, modeTop, rect.left + 61, modeTop - 22 };
+}
+
+
+CustomRect GetCompactTransponderOnRect(const CustomRect& rect)
+{
+    int modeTop =
+        rect.bottom + 32;
+
+    return { rect.left + 70, modeTop, rect.left + 109, modeTop - 22 };
+}
+
+
+CustomRect GetCompactTransponderIdentRect(const CustomRect& rect)
+{
+    int modeTop =
+        rect.bottom + 32;
+
+    return { rect.left + 118, modeTop, rect.left + 176, modeTop - 22 };
+}
+
+
+void SetTransponderMode(int mode)
+{
+    if (gTransponderMode != nullptr)
+    {
+        XPLMSetDatai(
+            gTransponderMode,
+            mode
+        );
+    }
+
+    XPLMCommandRef command =
+        nullptr;
+
+    if (mode == 1)
+    {
+        command =
+            gTransponderStandbyCommand;
+    }
+    else if (mode == 2)
+    {
+        command =
+            gTransponderOnCommand;
+    }
+
+    if (command != nullptr)
+    {
+        XPLMCommandOnce(
+            command
+        );
+    }
+}
+
+
+void TriggerTransponderIdent()
+{
+    gTransponderIdentUntil =
+        XPLMGetElapsedTime() + 8.0f;
+
+    if (gTransponderIdentCommand != nullptr)
+    {
+        XPLMCommandOnce(
+            gTransponderIdentCommand
+        );
+    }
+}
+
+
+void PulseG1000XpdrSoftkey(int mode)
+{
+    XPLMCommandRef* commands =
+        nullptr;
+
+    if (mode == 1)
+    {
+        commands =
+            gG1000XpdrStbyCommands;
+    }
+    else if (mode == 2)
+    {
+        commands =
+            gG1000XpdrOnCommands;
+    }
+    else if (mode == 4)
+    {
+        commands =
+            gG1000XpdrIdentCommands;
+    }
+
+    if (commands == nullptr)
+    {
+        return;
+    }
+
+    for (int index = 0; index < 3; ++index)
+    {
+        if (commands[index] != nullptr)
+        {
+            XPLMCommandOnce(
+                commands[index]
+            );
+        }
+    }
+}
+
+
 void DrawCompactTransponderPanel(
     const CustomRect& rect,
     int code,
@@ -5431,23 +6080,20 @@ void DrawCompactTransponderPanel(
             "IDENT";
     }
 
-    int modeTop =
-        rect.bottom + 32;
-
     DrawCompactTransponderMode(
-        { rect.left + 14, modeTop, rect.left + 61, modeTop - 22 },
+        GetCompactTransponderStbyRect(rect),
         "STBY",
         activeMode == "STBY"
     );
 
     DrawCompactTransponderMode(
-        { rect.left + 70, modeTop, rect.left + 109, modeTop - 22 },
+        GetCompactTransponderOnRect(rect),
         "ON",
         activeMode == "ON"
     );
 
     DrawCompactTransponderMode(
-        { rect.left + 118, modeTop, rect.left + 176, modeTop - 22 },
+        GetCompactTransponderIdentRect(rect),
         "IDENT",
         activeMode == "IDENT"
     );
@@ -6546,8 +7192,19 @@ int CompactHandleMouse(
                 chatSendRect.right + 8,
                 chatSendRect.bottom - 8
             };
+        CustomRect transponderRect =
+            { left + 12, top - 230, left + 255, top - 300 };
 
-        if (gFlightplanWindow != nullptr && PointInWindowRect(x, y, GetCompactTabRect(left, top, 2), left, top, bottom))
+        if (
+            PointInWindowRect(
+                x,
+                y,
+                GetCompactTransponderStbyRect(transponderRect),
+                left,
+                top,
+                bottom
+            )
+        )
         {
             gChatInputFocused = false;
             gChatSendButtonPressed = false;
@@ -6556,14 +7213,92 @@ int CompactHandleMouse(
                 nullptr
             );
 
-            if (XPIsWidgetVisible(gFlightplanWindow))
+            SetTransponderMode(1);
+            PulseG1000XpdrSoftkey(1);
+            return 1;
+        }
+
+        if (
+            PointInWindowRect(
+                x,
+                y,
+                GetCompactTransponderOnRect(transponderRect),
+                left,
+                top,
+                bottom
+            )
+        )
+        {
+            gChatInputFocused = false;
+            gChatSendButtonPressed = false;
+
+            XPLMTakeKeyboardFocus(
+                nullptr
+            );
+
+            SetTransponderMode(2);
+            PulseG1000XpdrSoftkey(2);
+            return 1;
+        }
+
+        if (
+            PointInWindowRect(
+                x,
+                y,
+                GetCompactTransponderIdentRect(transponderRect),
+                left,
+                top,
+                bottom
+            )
+        )
+        {
+            gChatInputFocused = false;
+            gChatSendButtonPressed = false;
+
+            XPLMTakeKeyboardFocus(
+                nullptr
+            );
+
+            SetTransponderMode(2);
+            TriggerTransponderIdent();
+            PulseG1000XpdrSoftkey(4);
+            return 1;
+        }
+
+        if (gCustomFlightplanWindow != nullptr && PointInWindowRect(x, y, GetCompactTabRect(left, top, 2), left, top, bottom))
+        {
+            gChatInputFocused = false;
+            gChatSendButtonPressed = false;
+            gCustomFlightplanFocusedField =
+                CustomFlightplanFieldNone;
+
+            XPLMTakeKeyboardFocus(
+                nullptr
+            );
+
+            if (gFlightplanWindow != nullptr)
             {
                 XPHideWidget(gFlightplanWindow);
             }
+
+            if (XPLMGetWindowIsVisible(gCustomFlightplanWindow))
+            {
+                XPLMSetWindowIsVisible(
+                    gCustomFlightplanWindow,
+                    0
+                );
+            }
             else
             {
-                XPShowWidget(gFlightplanWindow);
-                XPBringRootWidgetToFront(gFlightplanWindow);
+                XPLMSetWindowIsVisible(
+                    gCustomFlightplanWindow,
+                    1
+                );
+
+                XPLMBringWindowToFront(
+                    gCustomFlightplanWindow
+                );
+
                 UpdateFlightplanWindowState();
             }
 
@@ -7162,6 +7897,7 @@ int LoginWindowHandler(
                 gCurrentCallsign = callsign;
                 gPositionUpdateFailureCount = 0;
                 ResetNightFlightTracking();
+                SetTransponderMode(1);
 
                 gAuthToken =
                     ExtractJsonStringValue(
@@ -7477,6 +8213,781 @@ int FlightplanWindowHandler(
         }
     }
 
+    return 0;
+}
+
+
+void DrawCustomFlightplanHeader(
+    int left,
+    int top,
+    int right
+)
+{
+    DrawFilledRect(
+        { left + 1, top - 34, right - 1, top - 1 },
+        0.018f,
+        0.075f,
+        0.115f,
+        1.00f
+    );
+
+    DrawFilledRect(
+        { left + 3, top - 36, right - 3, top - 34 },
+        0.10f,
+        0.45f,
+        0.85f,
+        0.80f
+    );
+
+    DrawFilledRect(
+        { left + 17, top - 24, left + 23, top - 9 },
+        0.00f,
+        0.32f,
+        0.72f,
+        1.00f
+    );
+
+    DrawFilledRect(
+        { left + 25, top - 24, left + 30, top - 9 },
+        0.04f,
+        0.52f,
+        1.00f,
+        1.00f
+    );
+
+    DrawText(
+        left + 36,
+        top - 18,
+        "VFN",
+        0.76f,
+        0.90f,
+        1.00f
+    );
+
+    DrawText(
+        left + 78,
+        top - 18,
+        T("window.flightplan.title"),
+        0.94f,
+        0.97f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        GetCustomFlightplanPopoutRect(left, top, right),
+        0.18f,
+        0.38f,
+        0.52f,
+        0.85f
+    );
+
+    DrawText(
+        right - 72,
+        top - 22,
+        gCustomFlightplanPoppedOut ? "IN" : "POP",
+        0.72f,
+        0.80f,
+        0.88f
+    );
+
+    DrawRectOutline(
+        GetCustomFlightplanCloseRect(left, top, right),
+        0.18f,
+        0.38f,
+        0.52f,
+        0.85f
+    );
+
+    DrawText(
+        right - 21,
+        top - 22,
+        "X",
+        0.72f,
+        0.80f,
+        0.88f
+    );
+}
+
+
+void DrawCustomFlightplanWindow(
+    XPLMWindowID inWindowID,
+    void* inRefcon
+)
+{
+    int left;
+    int top;
+    int right;
+    int bottom;
+
+    XPLMGetWindowGeometry(
+        inWindowID,
+        &left,
+        &top,
+        &right,
+        &bottom
+    );
+
+    gCustomFlightplanPoppedOut =
+        XPLMWindowIsPoppedOut(
+            inWindowID
+        ) != 0;
+
+    XPLMSetGraphicsState(
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+    );
+
+    CustomRect windowRect =
+    {
+        left,
+        top,
+        right,
+        bottom
+    };
+
+    XPLMDrawTranslucentDarkBox(
+        left,
+        top,
+        right,
+        bottom
+    );
+
+    DrawFilledRect(
+        windowRect,
+        0.145f,
+        0.157f,
+        0.173f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        windowRect,
+        0.36f,
+        0.55f,
+        0.66f,
+        0.98f
+    );
+
+    DrawRectOutline(
+        { left + 2, top - 2, right - 2, bottom + 2 },
+        0.06f,
+        0.17f,
+        0.25f,
+        1.00f
+    );
+
+    DrawCustomFlightplanHeader(
+        left,
+        top,
+        right
+    );
+
+    DrawFilledRect(
+        { left + 12, top - 50, right - 12, bottom + 18 },
+        0.145f,
+        0.157f,
+        0.173f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        { left + 12, top - 50, right - 12, bottom + 18 },
+        0.14f,
+        0.33f,
+        0.46f,
+        0.92f
+    );
+
+    DrawText(
+        left + 28,
+        top - 64,
+        "1. FLIGHT INFO",
+        0.13f,
+        0.58f,
+        1.00f
+    );
+
+    DrawText(
+        left + 390,
+        top - 64,
+        "2. ROUTE",
+        0.13f,
+        0.58f,
+        1.00f
+    );
+
+    DrawCustomLoginButton(
+        GetCustomFlightplanRulesRect(left, top),
+        GetSelectedFlightRulesCaption(),
+        false
+    );
+
+    DrawCustomLoginButton(
+        GetCustomFlightplanTypeRect(left, top),
+        GetSelectedFlightTypeCaption(),
+        false
+    );
+
+    DrawCustomFlightplanInput(
+        GetCustomFlightplanDepartureTimeRect(left, top),
+        T("label.departure_time"),
+        CustomFlightplanFieldDepartureTime,
+        10,
+        false
+    );
+
+    DrawCustomFlightplanInput(
+        GetCustomFlightplanDepartureAirportRect(left, top),
+        T("label.departure_airport"),
+        CustomFlightplanFieldDepartureAirport,
+        6,
+        true
+    );
+
+    DrawCustomFlightplanInput(
+        GetCustomFlightplanArrivalAirportRect(left, top),
+        T("label.arrival_airport"),
+        CustomFlightplanFieldArrivalAirport,
+        6,
+        true
+    );
+
+    DrawCustomFlightplanInput(
+        GetCustomFlightplanAlternate1AirportRect(left, top),
+        T("label.alternate1_airport"),
+        CustomFlightplanFieldAlternate1Airport,
+        6,
+        true
+    );
+
+    DrawCustomFlightplanInput(
+        GetCustomFlightplanAlternate2AirportRect(left, top),
+        T("label.alternate2_airport"),
+        CustomFlightplanFieldAlternate2Airport,
+        6,
+        true
+    );
+
+    DrawCustomFlightplanInput(
+        GetCustomFlightplanCruisingLevelRect(left, top),
+        T("label.cruising_level"),
+        CustomFlightplanFieldCruisingLevel,
+        8,
+        true
+    );
+
+    DrawCustomFlightplanInput(
+        GetCustomFlightplanCruisingSpeedRect(left, top),
+        T("label.cruising_speed"),
+        CustomFlightplanFieldCruisingSpeed,
+        8,
+        true
+    );
+
+    DrawCustomFlightplanTextArea(
+        GetCustomFlightplanRouteRect(left, top, right),
+        T("label.route"),
+        CustomFlightplanFieldRoute
+    );
+
+    DrawCustomLoginButton(
+        GetCustomFlightplanPasteRouteRect(left, top),
+        T("button.paste_route"),
+        false
+    );
+
+    DrawCustomLoginButton(
+        GetCustomFlightplanClearRouteRect(left, top, right),
+        T("button.clear_route"),
+        false
+    );
+
+    DrawCustomFlightplanTextArea(
+        GetCustomFlightplanRemarksRect(left, top, right),
+        T("label.remarks"),
+        CustomFlightplanFieldRemarks
+    );
+
+    DrawCustomLoginButton(
+        GetCustomFlightplanCloseAfterSendRect(left, top),
+        gCloseFlightplanAfterSend
+            ? T("checkbox.close_after_send.on")
+            : T("checkbox.close_after_send.off"),
+        false
+    );
+
+    DrawCustomLoginButton(
+        GetCustomFlightplanSendRect(left, top, right),
+        T("button.send_flightplan"),
+        true
+    );
+
+    if (!gFlightplanStatusText.empty())
+    {
+        DrawText(
+            left + 28,
+            bottom + 32,
+            TruncateForWidthFromStart(
+                gFlightplanStatusText,
+                right - left - 330
+            ),
+            0.35f,
+            0.95f,
+            0.45f
+        );
+    }
+}
+
+
+void ToggleCustomFlightplanPopout()
+{
+    if (gCustomFlightplanWindow == nullptr)
+    {
+        return;
+    }
+
+    if (XPLMWindowIsPoppedOut(gCustomFlightplanWindow))
+    {
+        XPLMSetWindowPositioningMode(
+            gCustomFlightplanWindow,
+            xplm_WindowPositionFree,
+            -1
+        );
+
+        XPLMSetWindowGeometry(
+            gCustomFlightplanWindow,
+            520,
+            800,
+            1280,
+            185
+        );
+
+        gCustomFlightplanPoppedOut = false;
+        return;
+    }
+
+    XPLMSetWindowPositioningMode(
+        gCustomFlightplanWindow,
+        xplm_WindowPopOut,
+        -1
+    );
+
+    XPLMSetWindowResizingLimits(
+        gCustomFlightplanWindow,
+        760,
+        615,
+        1100,
+        800
+    );
+
+    gCustomFlightplanPoppedOut = true;
+}
+
+
+void AppendToFocusedFlightplanField(
+    char inKey
+)
+{
+    std::string* value =
+        GetFlightplanFieldPointer(
+            gCustomFlightplanFocusedField
+        );
+
+    if (value == nullptr)
+    {
+        return;
+    }
+
+    if (value->size() >= 512)
+    {
+        return;
+    }
+
+    if (
+        gCustomFlightplanFocusedField == CustomFlightplanFieldDepartureAirport ||
+        gCustomFlightplanFocusedField == CustomFlightplanFieldArrivalAirport ||
+        gCustomFlightplanFocusedField == CustomFlightplanFieldAlternate1Airport ||
+        gCustomFlightplanFocusedField == CustomFlightplanFieldAlternate2Airport ||
+        gCustomFlightplanFocusedField == CustomFlightplanFieldRoute ||
+        gCustomFlightplanFocusedField == CustomFlightplanFieldCruisingLevel ||
+        gCustomFlightplanFocusedField == CustomFlightplanFieldCruisingSpeed
+    )
+    {
+        inKey =
+            (char)std::toupper(
+                (unsigned char)inKey
+            );
+    }
+
+    value->push_back(
+        inKey
+    );
+}
+
+
+void BackspaceFocusedFlightplanField()
+{
+    std::string* value =
+        GetFlightplanFieldPointer(
+            gCustomFlightplanFocusedField
+        );
+
+    if (
+        value != nullptr &&
+        !value->empty()
+    )
+    {
+        value->pop_back();
+    }
+}
+
+
+void FocusNextCustomFlightplanField()
+{
+    int next =
+        (int)gCustomFlightplanFocusedField + 1;
+
+    if (
+        next > (int)CustomFlightplanFieldRemarks ||
+        next <= (int)CustomFlightplanFieldNone
+    )
+    {
+        next =
+            (int)CustomFlightplanFieldDepartureTime;
+    }
+
+    gCustomFlightplanFocusedField =
+        (CustomFlightplanField)next;
+}
+
+
+void FocusCustomFlightplanField(
+    XPLMWindowID window,
+    CustomFlightplanField field
+)
+{
+    gCustomFlightplanFocusedField =
+        field;
+
+    XPLMBringWindowToFront(
+        window
+    );
+
+    XPLMTakeKeyboardFocus(
+        window
+    );
+}
+
+
+void CustomFlightplanHandleKey(
+    XPLMWindowID inWindowID,
+    char inKey,
+    XPLMKeyFlags inFlags,
+    char inVirtualKey,
+    void* inRefcon,
+    int losingFocus
+)
+{
+    if (losingFocus)
+    {
+        gCustomFlightplanFocusedField =
+            CustomFlightplanFieldNone;
+        return;
+    }
+
+    if ((inFlags & xplm_UpFlag) != 0)
+    {
+        return;
+    }
+
+    if (gCustomFlightplanFocusedField == CustomFlightplanFieldNone)
+    {
+        return;
+    }
+
+    float now =
+        XPLMGetElapsedTime();
+
+    bool duplicate =
+        inKey == gLastFlightplanKey &&
+        inVirtualKey == gLastFlightplanVirtualKey &&
+        now - gLastFlightplanKeyTime < 0.08f;
+
+    if (duplicate)
+    {
+        return;
+    }
+
+    gLastFlightplanKey =
+        inKey;
+    gLastFlightplanVirtualKey =
+        inVirtualKey;
+    gLastFlightplanKeyTime =
+        now;
+
+    if (inVirtualKey == XPLM_VK_BACK || inKey == 8)
+    {
+        BackspaceFocusedFlightplanField();
+        return;
+    }
+
+    if (inVirtualKey == XPLM_VK_TAB || inKey == 9)
+    {
+        FocusNextCustomFlightplanField();
+        return;
+    }
+
+    if (inVirtualKey == XPLM_VK_RETURN || inKey == 13)
+    {
+        SendFlightplan();
+        return;
+    }
+
+    if (
+        inKey >= 32 &&
+        inKey <= 126
+    )
+    {
+        AppendToFocusedFlightplanField(
+            inKey
+        );
+    }
+}
+
+
+int CustomFlightplanHandleMouse(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    XPLMMouseStatus inMouse,
+    void* inRefcon
+)
+{
+    int left;
+    int top;
+    int right;
+    int bottom;
+
+    XPLMGetWindowGeometry(
+        inWindowID,
+        &left,
+        &top,
+        &right,
+        &bottom
+    );
+
+    if (inMouse == xplm_MouseDown)
+    {
+        gCustomFlightplanFocusedField =
+            CustomFlightplanFieldNone;
+
+        if (PointInRect(x, y, GetCustomFlightplanCloseRect(left, top, right)))
+        {
+            XPLMSetWindowIsVisible(
+                inWindowID,
+                0
+            );
+            return 1;
+        }
+
+        if (PointInRect(x, y, GetCustomFlightplanPopoutRect(left, top, right)))
+        {
+            ToggleCustomFlightplanPopout();
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCustomFlightplanRulesRect(left, top), left, top, bottom))
+        {
+            gSelectedFlightRulesIndex++;
+
+            if (gSelectedFlightRulesIndex > 3)
+            {
+                gSelectedFlightRulesIndex = 0;
+            }
+
+            UpdateFlightplanSelectionButtonCaptions();
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCustomFlightplanTypeRect(left, top), left, top, bottom))
+        {
+            gSelectedFlightTypeIndex++;
+
+            if (gSelectedFlightTypeIndex > 4)
+            {
+                gSelectedFlightTypeIndex = 0;
+            }
+
+            UpdateFlightplanSelectionButtonCaptions();
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCustomFlightplanDepartureTimeRect(left, top), left, top, bottom))
+        {
+            FocusCustomFlightplanField(inWindowID, CustomFlightplanFieldDepartureTime);
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCustomFlightplanDepartureAirportRect(left, top), left, top, bottom))
+        {
+            FocusCustomFlightplanField(inWindowID, CustomFlightplanFieldDepartureAirport);
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCustomFlightplanArrivalAirportRect(left, top), left, top, bottom))
+        {
+            FocusCustomFlightplanField(inWindowID, CustomFlightplanFieldArrivalAirport);
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCustomFlightplanAlternate1AirportRect(left, top), left, top, bottom))
+        {
+            FocusCustomFlightplanField(inWindowID, CustomFlightplanFieldAlternate1Airport);
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCustomFlightplanAlternate2AirportRect(left, top), left, top, bottom))
+        {
+            FocusCustomFlightplanField(inWindowID, CustomFlightplanFieldAlternate2Airport);
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCustomFlightplanCruisingLevelRect(left, top), left, top, bottom))
+        {
+            FocusCustomFlightplanField(inWindowID, CustomFlightplanFieldCruisingLevel);
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCustomFlightplanCruisingSpeedRect(left, top), left, top, bottom))
+        {
+            FocusCustomFlightplanField(inWindowID, CustomFlightplanFieldCruisingSpeed);
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCustomFlightplanRouteRect(left, top, right), left, top, bottom))
+        {
+            FocusCustomFlightplanField(inWindowID, CustomFlightplanFieldRoute);
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCustomFlightplanRemarksRect(left, top, right), left, top, bottom))
+        {
+            FocusCustomFlightplanField(inWindowID, CustomFlightplanFieldRemarks);
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCustomFlightplanPasteRouteRect(left, top), left, top, bottom))
+        {
+            std::string clipboardText =
+                GetClipboardText();
+
+            if (!clipboardText.empty())
+            {
+                gFlightplanRouteText =
+                    clipboardText;
+
+                SetFlightplanStatus(
+                    T("flightplan.ready")
+                );
+            }
+
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCustomFlightplanClearRouteRect(left, top, right), left, top, bottom))
+        {
+            gFlightplanRouteText =
+                "";
+
+            SetFlightplanStatus(
+                T("flightplan.ready")
+            );
+
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCustomFlightplanCloseAfterSendRect(left, top), left, top, bottom))
+        {
+            gCloseFlightplanAfterSend =
+                !gCloseFlightplanAfterSend;
+
+            UpdateCloseAfterSendButtonCaption();
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCustomFlightplanSendRect(left, top, right), left, top, bottom))
+        {
+            SendFlightplan();
+            return 1;
+        }
+
+        if (y > top - 42)
+        {
+            gCustomFlightplanDragging = true;
+            gCustomFlightplanDragOffsetX = x - left;
+            gCustomFlightplanDragOffsetY = top - y;
+            return 1;
+        }
+    }
+    else if (inMouse == xplm_MouseDrag && gCustomFlightplanDragging)
+    {
+        int width =
+            right - left;
+
+        int height =
+            top - bottom;
+
+        int newLeft =
+            x - gCustomFlightplanDragOffsetX;
+
+        int newTop =
+            y + gCustomFlightplanDragOffsetY;
+
+        XPLMSetWindowGeometry(
+            inWindowID,
+            newLeft,
+            newTop,
+            newLeft + width,
+            newTop - height
+        );
+
+        return 1;
+    }
+    else if (inMouse == xplm_MouseUp)
+    {
+        gCustomFlightplanDragging = false;
+        return 1;
+    }
+
+    return 1;
+}
+
+
+int CustomFlightplanHandleCursor(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    void* inRefcon
+)
+{
+    return xplm_CursorDefault;
+}
+
+
+int CustomFlightplanHandleMouseWheel(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    int wheel,
+    int clicks,
+    void* inRefcon
+)
+{
     return 0;
 }
 
@@ -8356,6 +9867,48 @@ void CreateFlightplanWindow()
     );
 
     XPHideWidget(gFlightplanWindow);
+
+    XPLMCreateWindow_t customFlightplanParams = {};
+    customFlightplanParams.structSize = sizeof(customFlightplanParams);
+    customFlightplanParams.left = 520;
+    customFlightplanParams.top = 800;
+    customFlightplanParams.right = 1280;
+    customFlightplanParams.bottom = 185;
+    customFlightplanParams.visible = 0;
+    customFlightplanParams.drawWindowFunc = DrawCustomFlightplanWindow;
+    customFlightplanParams.handleMouseClickFunc = CustomFlightplanHandleMouse;
+    customFlightplanParams.handleKeyFunc = CustomFlightplanHandleKey;
+    customFlightplanParams.handleCursorFunc = CustomFlightplanHandleCursor;
+    customFlightplanParams.handleMouseWheelFunc = CustomFlightplanHandleMouseWheel;
+    customFlightplanParams.refcon = nullptr;
+    customFlightplanParams.decorateAsFloatingWindow =
+        xplm_WindowDecorationRoundRectangle;
+    customFlightplanParams.layer =
+        xplm_WindowLayerFloatingWindows;
+    customFlightplanParams.handleRightClickFunc = CustomFlightplanHandleMouse;
+
+    gCustomFlightplanWindow =
+        XPLMCreateWindowEx(
+            &customFlightplanParams
+        );
+
+    if (gCustomFlightplanWindow != nullptr)
+    {
+        XPLMSetWindowTitle(
+            gCustomFlightplanWindow,
+            T("window.flightplan.title")
+        );
+
+        XPLMSetWindowResizingLimits(
+            gCustomFlightplanWindow,
+            760,
+            615,
+            1100,
+            800
+        );
+    }
+
+    SetFlightplanStatus("");
 }
 
 
@@ -8410,7 +9963,7 @@ void MenuHandler(
 
     if (item == 2)
     {
-        if (gFlightplanWindow == nullptr)
+        if (gCustomFlightplanWindow == nullptr)
         {
             return;
         }
@@ -8436,16 +9989,22 @@ void MenuHandler(
             return;
         }
 
-        if (XPIsWidgetVisible(gFlightplanWindow))
+        if (XPLMGetWindowIsVisible(gCustomFlightplanWindow))
         {
-            XPHideWidget(gFlightplanWindow);
+            XPLMSetWindowIsVisible(
+                gCustomFlightplanWindow,
+                0
+            );
         }
         else
         {
-            XPShowWidget(gFlightplanWindow);
+            XPLMSetWindowIsVisible(
+                gCustomFlightplanWindow,
+                1
+            );
 
-            XPBringRootWidgetToFront(
-                gFlightplanWindow
+            XPLMBringWindowToFront(
+                gCustomFlightplanWindow
             );
 
             UpdateFlightplanWindowState();
@@ -8777,9 +10336,58 @@ PLUGIN_API int XPluginStart(
             );
     }
 
+    gTransponderStandbyCommand =
+        XPLMFindCommand(
+            "sim/transponder/transponder_standby"
+        );
+
+    gTransponderOnCommand =
+        XPLMFindCommand(
+            "sim/transponder/transponder_on"
+        );
+
     gTransponderIdentCommand =
         XPLMFindCommand(
             "sim/transponder/transponder_ident"
+        );
+
+    gG1000XpdrStbyCommands[0] =
+        XPLMFindCommand(
+            "sim/GPS/g1000n1_softkey1"
+        );
+    gG1000XpdrStbyCommands[1] =
+        XPLMFindCommand(
+            "sim/GPS/g1000n2_softkey1"
+        );
+    gG1000XpdrStbyCommands[2] =
+        XPLMFindCommand(
+            "sim/GPS/g1000n3_softkey1"
+        );
+
+    gG1000XpdrOnCommands[0] =
+        XPLMFindCommand(
+            "sim/GPS/g1000n1_softkey2"
+        );
+    gG1000XpdrOnCommands[1] =
+        XPLMFindCommand(
+            "sim/GPS/g1000n2_softkey2"
+        );
+    gG1000XpdrOnCommands[2] =
+        XPLMFindCommand(
+            "sim/GPS/g1000n3_softkey2"
+        );
+
+    gG1000XpdrIdentCommands[0] =
+        XPLMFindCommand(
+            "sim/GPS/g1000n1_softkey10"
+        );
+    gG1000XpdrIdentCommands[1] =
+        XPLMFindCommand(
+            "sim/GPS/g1000n2_softkey10"
+        );
+    gG1000XpdrIdentCommands[2] =
+        XPLMFindCommand(
+            "sim/GPS/g1000n3_softkey10"
         );
 
     if (gTransponderIdentCommand != nullptr)
@@ -8791,6 +10399,8 @@ PLUGIN_API int XPluginStart(
             nullptr
         );
     }
+
+    SetTransponderMode(1);
 
     XPLMRegisterFlightLoopCallback(
         FlightLoopCallback,
@@ -8882,6 +10492,15 @@ PLUGIN_API void XPluginStop(void)
         );
 
         gFlightplanWindow = nullptr;
+    }
+
+    if (gCustomFlightplanWindow != nullptr)
+    {
+        XPLMDestroyWindow(
+            gCustomFlightplanWindow
+        );
+
+        gCustomFlightplanWindow = nullptr;
     }
 
     if (gCustomLoginWindow != nullptr)

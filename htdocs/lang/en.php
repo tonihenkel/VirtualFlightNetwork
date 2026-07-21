@@ -281,6 +281,27 @@
         'map_login_required_more_info' =>
         'Please log in to view more flight information.',
 
+        'map_airport_traffic' =>
+            'Airport Traffic',
+
+        'map_airport_inbound' =>
+            'Inbound',
+
+        'map_airport_outbound' =>
+            'Outbound',
+
+        'map_airport_no_inbound' =>
+            'No inbound flights for this airport.',
+
+        'map_airport_no_outbound' =>
+            'No outbound flights for this airport.',
+
+        'map_airport_aircraft' =>
+            'Aircraft',
+
+        'map_airport_departure_time' =>
+            'Departure Time',
+
         /*
             Imprint
         */

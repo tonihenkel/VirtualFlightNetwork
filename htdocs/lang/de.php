@@ -281,6 +281,27 @@ return [
     'map_login_required_more_info' =>
         'Bitte logge dich ein, um weitere Fluginformationen anzuzeigen.',
 
+    'map_airport_traffic' =>
+        'Flughafenverkehr',
+
+    'map_airport_inbound' =>
+        'Ankünfte',
+
+    'map_airport_outbound' =>
+        'Abflüge',
+
+    'map_airport_no_inbound' =>
+        'Keine Ankünfte für diesen Flughafen.',
+
+    'map_airport_no_outbound' =>
+        'Keine Abflüge für diesen Flughafen.',
+
+    'map_airport_aircraft' =>
+        'Flugzeug',
+
+    'map_airport_departure_time' =>
+        'Abflugzeit',
+
     /*
         Impressum
     */

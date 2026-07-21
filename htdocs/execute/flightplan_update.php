@@ -223,16 +223,41 @@ try {
         "remarks" => $remarks
     ]);
 
-    checkFirstFlight(
+    $firstFlightAwarded =
+        checkFirstFlight(
         $pdo,
         (int)$session["user_id"],
         $departure_airport,
         $arrival_airport
     );
 
+    $awardChatMessageId =
+        0;
+
+    if ($firstFlightAwarded) {
+        $awardChatStmt = $pdo->prepare(
+            "SELECT id
+             FROM chat_messages
+             WHERE recipient_user_id = :user_id
+               AND message_type = 'award'
+               AND message_text = 'award:award_first_flight'
+             ORDER BY id DESC
+             LIMIT 1"
+        );
+
+        $awardChatStmt->execute([
+            "user_id" => (int)$session["user_id"]
+        ]);
+
+        $awardChatMessageId =
+            (int)$awardChatStmt->fetchColumn();
+    }
+
     echo json_encode([
         "success" => true,
         "message" => "Flightplan gespeichert.",
+        "first_flight_awarded" => $firstFlightAwarded,
+        "award_chat_message_id" => $awardChatMessageId,
         "flightplan" => [
             "callsign" => $callsign,
             "flight_rules" => $flight_rules,
