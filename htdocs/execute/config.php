@@ -21,6 +21,13 @@ $showRatings = true;
 // Reichweite fuer frequenzgebundene Chat-Nachrichten ausser UNICOM 122.800.
 $chatFrequencyRangeNm = 200.0;
 
+// Offizielle METAR-Daten fuer automatische D-ATIS Wetterdaten.
+$aviationWeatherMetarCacheUrl =
+    "https://aviationweather.gov/data/cache/metars.cache.xml.gz";
+$noaaMetarStationBaseUrl =
+    "https://tgftp.nws.noaa.gov/data/observations/metar/stations/";
+$metarCacheSeconds = 1800;
+
 // Browser-Titelname
 $projectName = "Flight Radar Sim Project";
 

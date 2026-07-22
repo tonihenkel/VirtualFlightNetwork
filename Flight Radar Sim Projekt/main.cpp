@@ -111,6 +111,9 @@ gServerAddress + "/execute/chat_send.php";
 static const std::string gChatPollUrl =
 gServerAddress + "/execute/chat_poll.php";
 
+static const std::string gDatisUrl =
+gServerAddress + "/execute/datis.php";
+
 static bool gLoggedIn = false;
 
 static std::string gCurrentUsername = "";
@@ -150,6 +153,9 @@ static XPLMWindowID gCustomLoginWindow = nullptr;
 static XPLMWindowID gCompactWindow = nullptr;
 static XPLMWindowID gLogoutConfirmWindow = nullptr;
 static XPLMWindowID gSettingsWindow = nullptr;
+static XPLMWindowID gAtcWindow = nullptr;
+static XPLMWindowID gMessagesWindow = nullptr;
+static XPLMWindowID gDatisWindow = nullptr;
 static XPLMWindowID gKickNoticeWindow = nullptr;
 static std::string gKickNoticeMessage = "";
 static bool gCustomLoginDragging = false;
@@ -242,6 +248,32 @@ static std::string gCurrentPilotRatingName = "New Flight Cadet";
 static std::string gCurrentAtcRatingCode = "TC0";
 static std::string gCurrentAtcRatingName = "New ATC Cadet";
 
+struct DatisData
+{
+    bool hasData;
+    bool loading;
+    std::string airport;
+    std::string source;
+    std::string info;
+    std::string time;
+    std::string wind;
+    std::string visibility;
+    std::string weather;
+    std::string tempDew;
+    std::string qnh;
+    std::string runway;
+    std::string message;
+};
+
+static DatisData gDatisData = {};
+static std::string gLastDatisAirport = "";
+static float gDatisRefreshElapsed = 999.0f;
+static std::atomic<bool> gDatisFetchInProgress(false);
+static std::atomic<bool> gDatisFetchResultReady(false);
+static std::mutex gDatisFetchResultMutex;
+static std::string gDatisFetchLastResponse = "";
+static std::thread gDatisFetchThread;
+
 enum CustomLoginField
 {
     CustomLoginFieldNone = 0,
@@ -286,6 +318,16 @@ static int gFrequencyWindowDragOffsetY = 0;
 static bool gSettingsWindowDragging = false;
 static int gSettingsWindowDragOffsetX = 0;
 static int gSettingsWindowDragOffsetY = 0;
+static bool gAtcWindowDragging = false;
+static int gAtcWindowDragOffsetX = 0;
+static int gAtcWindowDragOffsetY = 0;
+static bool gMessagesWindowDragging = false;
+static int gMessagesWindowDragOffsetX = 0;
+static int gMessagesWindowDragOffsetY = 0;
+static int gMessagesTab = 0;
+static bool gDatisWindowDragging = false;
+static int gDatisWindowDragOffsetX = 0;
+static int gDatisWindowDragOffsetY = 0;
 static bool gKickNoticeDragging = false;
 static int gKickNoticeDragOffsetX = 0;
 static int gKickNoticeDragOffsetY = 0;
@@ -903,6 +945,9 @@ void LoadInternalEnglishLanguage()
     gText["window.flightplan.title"] = "Flightplan";
     gText["window.frequency.title"] = "Radio Frequency";
     gText["window.settings.title"] = "Settings";
+    gText["window.atc.title"] = "ATC Online";
+    gText["window.messages.title"] = "Messages";
+    gText["window.datis.title"] = "D-ATIS";
 
     gText["label.username"] = "Username:";
     gText["label.password"] = "Password:";
@@ -932,6 +977,30 @@ void LoadInternalEnglishLanguage()
     gText["settings.language_saved"] = "Language saved.";
     gText["settings.language_de"] = "Deutsch";
     gText["settings.language_en"] = "English";
+    gText["messages.title"] = "Messages";
+    gText["messages.inbox"] = "Inbox";
+    gText["messages.sent"] = "Sent";
+    gText["messages.supervisor"] = "Supervisor";
+    gText["messages.empty"] = "No messages.";
+    gText["atc.title"] = "ATC Online";
+    gText["atc.search"] = "Search...";
+    gText["atc.empty"] = "No ATC online.";
+    gText["datis.title"] = "D-ATIS";
+    gText["datis.unavailable"] = "No D-ATIS available.";
+    gText["datis.airport"] = "Airport";
+    gText["datis.info"] = "Info";
+    gText["datis.time"] = "Time";
+    gText["datis.wind"] = "Wind";
+    gText["datis.visibility"] = "Visibility";
+    gText["datis.weather"] = "Weather";
+    gText["datis.temp_dew"] = "Temp / Dew";
+    gText["datis.qnh"] = "QNH";
+    gText["datis.runway"] = "Runway";
+    gText["datis.api_pending"] = "No destination airport entered.";
+    gText["datis.loading"] = "Loading D-ATIS...";
+    gText["datis.source"] = "Source";
+    gText["datis.source_atc"] = "Controller D-ATIS";
+    gText["datis.source_metar"] = "Auto METAR";
 
     gText["menu.title"] = "Flight Radar Sim Project";
     gText["menu.login"] = "Open / Close Main Window";
@@ -1031,6 +1100,9 @@ void ApplyInternalGermanLanguageFallbacks()
 {
     gText["window.frequency.title"] = "Funkfrequenz";
     gText["window.settings.title"] = "Einstellungen";
+    gText["window.atc.title"] = "ATC Online";
+    gText["window.messages.title"] = "Nachrichten";
+    gText["window.datis.title"] = "D-ATIS";
     gText["button.set_frequency"] = "Frequenz setzen";
     gText["button.cancel"] = "Abbrechen";
     gText["button.settings"] = "Einstellungen";
@@ -1066,6 +1138,30 @@ void ApplyInternalGermanLanguageFallbacks()
     gText["settings.language_saved"] = "Sprache gespeichert.";
     gText["settings.language_de"] = "Deutsch";
     gText["settings.language_en"] = "Englisch";
+    gText["messages.title"] = "Nachrichten";
+    gText["messages.inbox"] = "Eingang";
+    gText["messages.sent"] = "Gesendet";
+    gText["messages.supervisor"] = "Supervisor";
+    gText["messages.empty"] = "Keine Nachrichten.";
+    gText["atc.title"] = "ATC Online";
+    gText["atc.search"] = "Suchen...";
+    gText["atc.empty"] = "Keine ATC online.";
+    gText["datis.title"] = "D-ATIS";
+    gText["datis.unavailable"] = "Keine D-ATIS verfuegbar.";
+    gText["datis.airport"] = "Flughafen";
+    gText["datis.info"] = "Info";
+    gText["datis.time"] = "Zeit";
+    gText["datis.wind"] = "Wind";
+    gText["datis.visibility"] = "Sicht";
+    gText["datis.weather"] = "Wetter";
+    gText["datis.temp_dew"] = "Temp / Taupunkt";
+    gText["datis.qnh"] = "QNH";
+    gText["datis.runway"] = "Runway";
+    gText["datis.api_pending"] = "Kein Zielflughafen eingegeben.";
+    gText["datis.loading"] = "D-ATIS wird geladen...";
+    gText["datis.source"] = "Quelle";
+    gText["datis.source_atc"] = "Controller D-ATIS";
+    gText["datis.source_metar"] = "Auto-METAR";
 }
 
 
@@ -1103,6 +1199,9 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "window.flightplan.title=Flightplan\n";
             enFile << "window.frequency.title=Radio Frequency\n";
             enFile << "window.settings.title=Settings\n";
+            enFile << "window.atc.title=ATC Online\n";
+            enFile << "window.messages.title=Messages\n";
+            enFile << "window.datis.title=D-ATIS\n";
             enFile << "label.username=Username:\n";
             enFile << "label.password=Password:\n";
             enFile << "label.callsign=Callsign:\n";
@@ -1129,6 +1228,30 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "settings.language_saved=Language saved.\n";
             enFile << "settings.language_de=Deutsch\n";
             enFile << "settings.language_en=English\n";
+            enFile << "messages.title=Messages\n";
+            enFile << "messages.inbox=Inbox\n";
+            enFile << "messages.sent=Sent\n";
+            enFile << "messages.supervisor=Supervisor\n";
+            enFile << "messages.empty=No messages.\n";
+            enFile << "atc.title=ATC Online\n";
+            enFile << "atc.search=Search...\n";
+            enFile << "atc.empty=No ATC online.\n";
+            enFile << "datis.title=D-ATIS\n";
+            enFile << "datis.unavailable=No D-ATIS available.\n";
+            enFile << "datis.airport=Airport\n";
+            enFile << "datis.info=Info\n";
+            enFile << "datis.time=Time\n";
+            enFile << "datis.wind=Wind\n";
+            enFile << "datis.visibility=Visibility\n";
+            enFile << "datis.weather=Weather\n";
+            enFile << "datis.temp_dew=Temp / Dew\n";
+            enFile << "datis.qnh=QNH\n";
+            enFile << "datis.runway=Runway\n";
+            enFile << "datis.api_pending=No destination airport entered.\n";
+            enFile << "datis.loading=Loading D-ATIS...\n";
+            enFile << "datis.source=Source\n";
+            enFile << "datis.source_atc=Controller D-ATIS\n";
+            enFile << "datis.source_metar=Auto METAR\n";
             enFile << "menu.title=Flight Radar Sim Project\n";
             enFile << "menu.login=Open / Close Main Window\n";
             enFile << "menu.main=Open / Close Main Window\n";
@@ -1234,6 +1357,9 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "window.flightplan.title=Flugplan\n";
             deFile << "window.frequency.title=Funkfrequenz\n";
             deFile << "window.settings.title=Einstellungen\n";
+            deFile << "window.atc.title=ATC Online\n";
+            deFile << "window.messages.title=Nachrichten\n";
+            deFile << "window.datis.title=D-ATIS\n";
             deFile << "label.username=Benutzer:\n";
             deFile << "label.password=Passwort:\n";
             deFile << "label.callsign=Callsign:\n";
@@ -1260,6 +1386,30 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "settings.language_saved=Sprache gespeichert.\n";
             deFile << "settings.language_de=Deutsch\n";
             deFile << "settings.language_en=Englisch\n";
+            deFile << "messages.title=Nachrichten\n";
+            deFile << "messages.inbox=Eingang\n";
+            deFile << "messages.sent=Gesendet\n";
+            deFile << "messages.supervisor=Supervisor\n";
+            deFile << "messages.empty=Keine Nachrichten.\n";
+            deFile << "atc.title=ATC Online\n";
+            deFile << "atc.search=Suchen...\n";
+            deFile << "atc.empty=Keine ATC online.\n";
+            deFile << "datis.title=D-ATIS\n";
+            deFile << "datis.unavailable=Keine D-ATIS verfuegbar.\n";
+            deFile << "datis.airport=Flughafen\n";
+            deFile << "datis.info=Info\n";
+            deFile << "datis.time=Zeit\n";
+            deFile << "datis.wind=Wind\n";
+            deFile << "datis.visibility=Sicht\n";
+            deFile << "datis.weather=Wetter\n";
+            deFile << "datis.temp_dew=Temp / Taupunkt\n";
+            deFile << "datis.qnh=QNH\n";
+            deFile << "datis.runway=Runway\n";
+            deFile << "datis.api_pending=Kein Zielflughafen eingegeben.\n";
+            deFile << "datis.loading=D-ATIS wird geladen...\n";
+            deFile << "datis.source=Quelle\n";
+            deFile << "datis.source_atc=Controller D-ATIS\n";
+            deFile << "datis.source_metar=Auto-METAR\n";
             deFile << "menu.title=Flight Radar Sim Project\n";
             deFile << "menu.main=Hauptfenster oeffnen / schliessen\n";
             deFile << "menu.login=Hauptfenster oeffnen / schliessen\n";
@@ -7718,6 +7868,30 @@ void ApplyPluginLanguageSelection(
             T("window.settings.title")
         );
     }
+
+    if (gAtcWindow != nullptr)
+    {
+        XPLMSetWindowTitle(
+            gAtcWindow,
+            T("window.atc.title")
+        );
+    }
+
+    if (gMessagesWindow != nullptr)
+    {
+        XPLMSetWindowTitle(
+            gMessagesWindow,
+            T("window.messages.title")
+        );
+    }
+
+    if (gDatisWindow != nullptr)
+    {
+        XPLMSetWindowTitle(
+            gDatisWindow,
+            T("window.datis.title")
+        );
+    }
 }
 
 
@@ -8150,6 +8324,1679 @@ void ShowSettingsWindow()
 
     XPLMBringWindowToFront(
         gSettingsWindow
+    );
+}
+
+
+CustomRect GetAtcCloseRect(int left, int top, int right)
+{
+    return { right - 36, top - 32, right - 6, top - 4 };
+}
+
+
+CustomRect GetAtcSearchRect(
+    int left,
+    int top,
+    int right
+)
+{
+    return { left + 18, top - 76, right - 18, top - 108 };
+}
+
+
+CustomRect GetAtcListRect(
+    int left,
+    int top,
+    int right,
+    int bottom
+)
+{
+    return { left + 18, top - 118, right - 18, bottom + 18 };
+}
+
+
+void DrawAtcWindow(
+    XPLMWindowID inWindowID,
+    void* inRefcon
+)
+{
+    int left;
+    int top;
+    int right;
+    int bottom;
+
+    XPLMGetWindowGeometry(
+        inWindowID,
+        &left,
+        &top,
+        &right,
+        &bottom
+    );
+
+    XPLMSetGraphicsState(
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+    );
+
+    XPLMDrawTranslucentDarkBox(
+        left,
+        top,
+        right,
+        bottom
+    );
+
+    DrawFilledRect(
+        { left, top, right, bottom },
+        0.015f,
+        0.040f,
+        0.065f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        { left, top, right, bottom },
+        0.18f,
+        0.36f,
+        0.50f,
+        1.00f
+    );
+
+    DrawFilledRect(
+        { left, top, right, top - 38 },
+        0.018f,
+        0.075f,
+        0.115f,
+        1.00f
+    );
+
+    DrawFilledRect(
+        { left + 3, top - 40, right - 3, top - 38 },
+        0.10f,
+        0.45f,
+        0.85f,
+        0.86f
+    );
+
+    DrawRectOutline(
+        { left, top, right, top - 38 },
+        0.05f,
+        0.42f,
+        0.88f,
+        0.95f
+    );
+
+    DrawCompactHeaderLogo(
+        left + 4,
+        top - 3
+    );
+
+    DrawText(
+        left + 90,
+        top - 21,
+        T("atc.title"),
+        0.88f,
+        0.94f,
+        1.00f
+    );
+
+    DrawText(
+        right - 24,
+        top - 21,
+        "X",
+        0.72f,
+        0.80f,
+        0.88f
+    );
+
+    CustomRect searchRect =
+        GetAtcSearchRect(
+            left,
+            top,
+            right
+        );
+
+    DrawFilledRect(
+        searchRect,
+        0.010f,
+        0.030f,
+        0.050f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        searchRect,
+        0.14f,
+        0.28f,
+        0.38f,
+        0.84f
+    );
+
+    DrawText(
+        searchRect.left + 14,
+        searchRect.top - 21,
+        T("atc.search"),
+        0.45f,
+        0.56f,
+        0.66f
+    );
+
+    CustomRect listRect =
+        GetAtcListRect(
+            left,
+            top,
+            right,
+            bottom
+        );
+
+    DrawFilledRect(
+        listRect,
+        0.010f,
+        0.030f,
+        0.050f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        listRect,
+        0.14f,
+        0.28f,
+        0.38f,
+        0.84f
+    );
+
+    DrawText(
+        listRect.left + 18,
+        listRect.top - 32,
+        T("atc.empty"),
+        0.62f,
+        0.70f,
+        0.80f
+    );
+}
+
+
+int AtcHandleCursor(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    void* inRefcon
+)
+{
+    return xplm_CursorDefault;
+}
+
+
+int AtcHandleMouseWheel(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    int wheel,
+    int clicks,
+    void* inRefcon
+)
+{
+    return 1;
+}
+
+
+int AtcHandleMouse(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    XPLMMouseStatus inMouse,
+    void* inRefcon
+)
+{
+    int left;
+    int top;
+    int right;
+    int bottom;
+
+    XPLMGetWindowGeometry(
+        inWindowID,
+        &left,
+        &top,
+        &right,
+        &bottom
+    );
+
+    if (inMouse == xplm_MouseDown)
+    {
+        if (PointInWindowRect(x, y, GetAtcCloseRect(left, top, right), left, top, bottom))
+        {
+            XPLMSetWindowIsVisible(
+                inWindowID,
+                0
+            );
+
+            return 1;
+        }
+
+        if (y >= top - 38)
+        {
+            gAtcWindowDragging = true;
+            gAtcWindowDragOffsetX = x - left;
+            gAtcWindowDragOffsetY = top - y;
+            return 1;
+        }
+    }
+    else if (inMouse == xplm_MouseDrag && gAtcWindowDragging)
+    {
+        int width =
+            right - left;
+
+        int height =
+            top - bottom;
+
+        int newLeft =
+            x - gAtcWindowDragOffsetX;
+
+        int newTop =
+            y + gAtcWindowDragOffsetY;
+
+        XPLMSetWindowGeometry(
+            inWindowID,
+            newLeft,
+            newTop,
+            newLeft + width,
+            newTop - height
+        );
+
+        return 1;
+    }
+    else if (inMouse == xplm_MouseUp)
+    {
+        gAtcWindowDragging = false;
+        return 1;
+    }
+
+    return 1;
+}
+
+
+void CreateAtcWindow()
+{
+    if (gAtcWindow != nullptr)
+    {
+        return;
+    }
+
+    XPLMCreateWindow_t params = {};
+    params.structSize = sizeof(params);
+    params.left = 130;
+    params.top = 650;
+    params.right = 470;
+    params.bottom = 330;
+    params.visible = 0;
+    params.drawWindowFunc = DrawAtcWindow;
+    params.handleMouseClickFunc = AtcHandleMouse;
+    params.handleCursorFunc = AtcHandleCursor;
+    params.handleMouseWheelFunc = AtcHandleMouseWheel;
+    params.refcon = nullptr;
+    params.decorateAsFloatingWindow =
+        xplm_WindowDecorationRoundRectangle;
+    params.layer =
+        xplm_WindowLayerFloatingWindows;
+    params.handleRightClickFunc = AtcHandleMouse;
+
+    gAtcWindow =
+        XPLMCreateWindowEx(
+            &params
+        );
+
+    if (gAtcWindow != nullptr)
+    {
+        XPLMSetWindowTitle(
+            gAtcWindow,
+            T("window.atc.title")
+        );
+
+        XPLMSetWindowResizingLimits(
+            gAtcWindow,
+            340,
+            320,
+            340,
+            320
+        );
+    }
+}
+
+
+void ShowAtcWindow()
+{
+    CreateAtcWindow();
+
+    if (gAtcWindow == nullptr)
+    {
+        return;
+    }
+
+    int windowLeft =
+        130;
+    int windowTop =
+        650;
+
+    if (gCompactWindow != nullptr)
+    {
+        int compactLeft;
+        int compactTop;
+        int compactRight;
+        int compactBottom;
+
+        XPLMGetWindowGeometry(
+            gCompactWindow,
+            &compactLeft,
+            &compactTop,
+            &compactRight,
+            &compactBottom
+        );
+
+        windowLeft =
+            compactLeft + 20;
+        windowTop =
+            compactTop - 28;
+    }
+
+    XPLMSetWindowGeometry(
+        gAtcWindow,
+        windowLeft,
+        windowTop,
+        windowLeft + 340,
+        windowTop - 320
+    );
+
+    XPLMSetWindowIsVisible(
+        gAtcWindow,
+        1
+    );
+
+    XPLMBringWindowToFront(
+        gAtcWindow
+    );
+}
+
+
+CustomRect GetMessagesCloseRect(int left, int top, int right)
+{
+    return { right - 36, top - 32, right - 6, top - 4 };
+}
+
+
+CustomRect GetMessagesTabRect(
+    int left,
+    int top,
+    int index
+)
+{
+    const int tabLeft =
+        left + 24 + (index * 112);
+
+    return { tabLeft, top - 62, tabLeft + 104, top - 94 };
+}
+
+
+CustomRect GetMessagesListRect(
+    int left,
+    int top,
+    int right,
+    int bottom
+)
+{
+    return { left + 18, top - 106, right - 18, bottom + 18 };
+}
+
+
+bool TextStartsWith(
+    const std::string& text,
+    const std::string& prefix
+)
+{
+    return text.rfind(prefix, 0) == 0;
+}
+
+
+bool IsMessagesLineVisible(
+    const ChatLine& line,
+    int tab
+)
+{
+    const std::string text =
+        GetLocalizedChatText(line);
+
+    if (tab == 0)
+    {
+        return (
+            line.type == "private" ||
+            TextStartsWith(text, "[PM] ")
+        );
+    }
+
+    if (tab == 1)
+    {
+        return (
+            line.sender == gCurrentCallsign ||
+            line.sender == "MSG" ||
+            TextStartsWith(text, "An ")
+        );
+    }
+
+    return (
+        line.sender == "STAFF" ||
+        line.sender == "SUPERVISOR" ||
+        TextStartsWith(text, "[STAFF] ") ||
+        TextStartsWith(text, "An Staff:")
+    );
+}
+
+
+std::vector<ChatLine> GetFilteredMessagesLines()
+{
+    std::vector<ChatLine> lines;
+
+    for (auto it = gChatLines.rbegin(); it != gChatLines.rend(); ++it)
+    {
+        if (!IsMessagesLineVisible(*it, gMessagesTab))
+        {
+            continue;
+        }
+
+        lines.push_back(*it);
+
+        if (lines.size() >= 30)
+        {
+            break;
+        }
+    }
+
+    std::reverse(
+        lines.begin(),
+        lines.end()
+    );
+
+    return lines;
+}
+
+
+void DrawMessagesTab(
+    const CustomRect& rect,
+    const std::string& label,
+    bool active
+)
+{
+    DrawFilledRect(
+        rect,
+        active ? 0.06f : 0.020f,
+        active ? 0.22f : 0.065f,
+        active ? 0.50f : 0.095f,
+        0.96f
+    );
+
+    DrawRectOutline(
+        rect,
+        active ? 0.08f : 0.18f,
+        active ? 0.56f : 0.36f,
+        active ? 1.00f : 0.50f,
+        0.95f
+    );
+
+    DrawText(
+        rect.left + 18,
+        rect.top - 22,
+        label,
+        0.88f,
+        0.94f,
+        1.00f
+    );
+}
+
+
+void DrawMessagesWindow(
+    XPLMWindowID inWindowID,
+    void* inRefcon
+)
+{
+    int left;
+    int top;
+    int right;
+    int bottom;
+
+    XPLMGetWindowGeometry(
+        inWindowID,
+        &left,
+        &top,
+        &right,
+        &bottom
+    );
+
+    XPLMSetGraphicsState(
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+    );
+
+    XPLMDrawTranslucentDarkBox(
+        left,
+        top,
+        right,
+        bottom
+    );
+
+    DrawFilledRect(
+        { left, top, right, bottom },
+        0.015f,
+        0.040f,
+        0.065f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        { left, top, right, bottom },
+        0.18f,
+        0.36f,
+        0.50f,
+        1.00f
+    );
+
+    DrawFilledRect(
+        { left, top, right, top - 38 },
+        0.018f,
+        0.075f,
+        0.115f,
+        1.00f
+    );
+
+    DrawFilledRect(
+        { left + 3, top - 40, right - 3, top - 38 },
+        0.10f,
+        0.45f,
+        0.85f,
+        0.86f
+    );
+
+    DrawRectOutline(
+        { left, top, right, top - 38 },
+        0.05f,
+        0.42f,
+        0.88f,
+        0.95f
+    );
+
+    DrawCompactHeaderLogo(
+        left + 4,
+        top - 3
+    );
+
+    DrawText(
+        left + 90,
+        top - 21,
+        T("messages.title"),
+        0.88f,
+        0.94f,
+        1.00f
+    );
+
+    DrawText(
+        right - 24,
+        top - 21,
+        "X",
+        0.72f,
+        0.80f,
+        0.88f
+    );
+
+    DrawMessagesTab(
+        GetMessagesTabRect(left, top, 0),
+        T("messages.inbox"),
+        gMessagesTab == 0
+    );
+
+    DrawMessagesTab(
+        GetMessagesTabRect(left, top, 1),
+        T("messages.sent"),
+        gMessagesTab == 1
+    );
+
+    DrawMessagesTab(
+        GetMessagesTabRect(left, top, 2),
+        T("messages.supervisor"),
+        gMessagesTab == 2
+    );
+
+    CustomRect listRect =
+        GetMessagesListRect(
+            left,
+            top,
+            right,
+            bottom
+        );
+
+    DrawFilledRect(
+        listRect,
+        0.010f,
+        0.030f,
+        0.050f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        listRect,
+        0.14f,
+        0.28f,
+        0.38f,
+        0.84f
+    );
+
+    std::vector<ChatLine> lines =
+        GetFilteredMessagesLines();
+
+    if (lines.empty())
+    {
+        DrawText(
+            listRect.left + 18,
+            listRect.top - 32,
+            T("messages.empty"),
+            0.62f,
+            0.70f,
+            0.80f
+        );
+
+        return;
+    }
+
+    int y =
+        listRect.top - 26;
+
+    const int maxTextWidth =
+        listRect.right - listRect.left - 112;
+
+    for (const ChatLine& line : lines)
+    {
+        if (y < listRect.bottom + 22)
+        {
+            break;
+        }
+
+        std::string sender =
+            line.sender == "ANNOUNCEMENT"
+                ? "ANNOUNCE"
+                : TruncateForField(line.sender, 12);
+
+        DrawText(
+            listRect.left + 14,
+            y,
+            line.timestamp,
+            0.72f,
+            0.82f,
+            0.92f
+        );
+
+        DrawText(
+            listRect.left + 60,
+            y,
+            sender + ":",
+            line.sender == "ANNOUNCEMENT" ? 1.00f : 0.05f,
+            line.sender == "ANNOUNCEMENT" ? 0.18f : 0.50f,
+            line.sender == "ANNOUNCEMENT" ? 0.14f : 1.00f
+        );
+
+        std::vector<std::string> wrapped =
+            WrapTextForWidth(
+                GetLocalizedChatText(line),
+                maxTextWidth
+            );
+
+        const int rowsToDraw =
+            (std::min)(2, (int)wrapped.size());
+
+        for (int rowIndex = 0; rowIndex < rowsToDraw; ++rowIndex)
+        {
+            DrawText(
+                listRect.left + 142,
+                y - (rowIndex * 16),
+                wrapped[rowIndex],
+                line.sender == "ANNOUNCEMENT" ? 1.00f : 0.72f,
+                line.sender == "ANNOUNCEMENT" ? 0.42f : 0.80f,
+                line.sender == "ANNOUNCEMENT" ? 0.32f : 0.88f
+            );
+        }
+
+        y -= 22 + ((std::max)(0, rowsToDraw - 1) * 16);
+    }
+}
+
+
+int MessagesHandleCursor(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    void* inRefcon
+)
+{
+    return xplm_CursorDefault;
+}
+
+
+int MessagesHandleMouseWheel(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    int wheel,
+    int clicks,
+    void* inRefcon
+)
+{
+    return 1;
+}
+
+
+int MessagesHandleMouse(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    XPLMMouseStatus inMouse,
+    void* inRefcon
+)
+{
+    int left;
+    int top;
+    int right;
+    int bottom;
+
+    XPLMGetWindowGeometry(
+        inWindowID,
+        &left,
+        &top,
+        &right,
+        &bottom
+    );
+
+    if (inMouse == xplm_MouseDown)
+    {
+        if (PointInWindowRect(x, y, GetMessagesCloseRect(left, top, right), left, top, bottom))
+        {
+            XPLMSetWindowIsVisible(
+                inWindowID,
+                0
+            );
+
+            return 1;
+        }
+
+        for (int index = 0; index < 3; ++index)
+        {
+            if (PointInWindowRect(x, y, GetMessagesTabRect(left, top, index), left, top, bottom))
+            {
+                gMessagesTab =
+                    index;
+
+                return 1;
+            }
+        }
+
+        if (y >= top - 38)
+        {
+            gMessagesWindowDragging = true;
+            gMessagesWindowDragOffsetX = x - left;
+            gMessagesWindowDragOffsetY = top - y;
+            return 1;
+        }
+    }
+    else if (inMouse == xplm_MouseDrag && gMessagesWindowDragging)
+    {
+        int width =
+            right - left;
+
+        int height =
+            top - bottom;
+
+        int newLeft =
+            x - gMessagesWindowDragOffsetX;
+
+        int newTop =
+            y + gMessagesWindowDragOffsetY;
+
+        XPLMSetWindowGeometry(
+            inWindowID,
+            newLeft,
+            newTop,
+            newLeft + width,
+            newTop - height
+        );
+
+        return 1;
+    }
+    else if (inMouse == xplm_MouseUp)
+    {
+        gMessagesWindowDragging = false;
+        return 1;
+    }
+
+    return 1;
+}
+
+
+void CreateMessagesWindow()
+{
+    if (gMessagesWindow != nullptr)
+    {
+        return;
+    }
+
+    XPLMCreateWindow_t params = {};
+    params.structSize = sizeof(params);
+    params.left = 130;
+    params.top = 650;
+    params.right = 570;
+    params.bottom = 330;
+    params.visible = 0;
+    params.drawWindowFunc = DrawMessagesWindow;
+    params.handleMouseClickFunc = MessagesHandleMouse;
+    params.handleCursorFunc = MessagesHandleCursor;
+    params.handleMouseWheelFunc = MessagesHandleMouseWheel;
+    params.refcon = nullptr;
+    params.decorateAsFloatingWindow =
+        xplm_WindowDecorationRoundRectangle;
+    params.layer =
+        xplm_WindowLayerFloatingWindows;
+    params.handleRightClickFunc = MessagesHandleMouse;
+
+    gMessagesWindow =
+        XPLMCreateWindowEx(
+            &params
+        );
+
+    if (gMessagesWindow != nullptr)
+    {
+        XPLMSetWindowTitle(
+            gMessagesWindow,
+            T("window.messages.title")
+        );
+
+        XPLMSetWindowResizingLimits(
+            gMessagesWindow,
+            440,
+            320,
+            440,
+            320
+        );
+    }
+}
+
+
+void ShowMessagesWindow()
+{
+    CreateMessagesWindow();
+
+    if (gMessagesWindow == nullptr)
+    {
+        return;
+    }
+
+    int windowLeft =
+        130;
+    int windowTop =
+        650;
+
+    if (gCompactWindow != nullptr)
+    {
+        int compactLeft;
+        int compactTop;
+        int compactRight;
+        int compactBottom;
+
+        XPLMGetWindowGeometry(
+            gCompactWindow,
+            &compactLeft,
+            &compactTop,
+            &compactRight,
+            &compactBottom
+        );
+
+        windowLeft =
+            compactLeft + 260;
+        windowTop =
+            compactTop - 28;
+    }
+
+    XPLMSetWindowGeometry(
+        gMessagesWindow,
+        windowLeft,
+        windowTop,
+        windowLeft + 440,
+        windowTop - 320
+    );
+
+    XPLMSetWindowIsVisible(
+        gMessagesWindow,
+        1
+    );
+
+    XPLMBringWindowToFront(
+        gMessagesWindow
+    );
+}
+
+
+CustomRect GetDatisCloseRect(int left, int top, int right)
+{
+    return { right - 36, top - 32, right - 6, top - 4 };
+}
+
+
+std::string GetDatisAirportCode()
+{
+    std::string arrival =
+        NormalizeAirportCode(
+            gFlightplanArrivalAirportText
+        );
+
+    if (
+        arrival.length() == 4 &&
+        arrival != "ZZZZ"
+    ) {
+        return arrival;
+    }
+
+    std::string departure =
+        NormalizeAirportCode(
+            gFlightplanDepartureAirportText
+        );
+
+    if (
+        departure.length() == 4 &&
+        departure != "ZZZZ"
+    ) {
+        return departure;
+    }
+
+    return "";
+}
+
+std::string GetDatisSourceLabel()
+{
+    if (gDatisData.source == "atc")
+    {
+        return T("datis.source_atc");
+    }
+
+    if (
+        gDatisData.source == "metar" ||
+        gDatisData.source == "weather"
+    )
+    {
+        return T("datis.source_metar");
+    }
+
+    return "-";
+}
+
+
+void ResetDatisDataForAirport(
+    const std::string& airport
+)
+{
+    gDatisData.hasData = false;
+    gDatisData.loading = false;
+    gDatisData.airport = airport;
+    gDatisData.source = "";
+    gDatisData.info = "-";
+    gDatisData.time = "-";
+    gDatisData.wind = "-";
+    gDatisData.visibility = "-";
+    gDatisData.weather = "-";
+    gDatisData.tempDew = "-";
+    gDatisData.qnh = "-";
+    gDatisData.runway = "-";
+    gDatisData.message = "";
+}
+
+
+void StartDatisFetchWorker(
+    const std::string& airport
+)
+{
+    if (
+        !gLoggedIn ||
+        gAuthToken.empty() ||
+        airport.empty()
+    ) {
+        return;
+    }
+
+    if (gDatisFetchInProgress.exchange(true))
+    {
+        return;
+    }
+
+    if (gDatisFetchThread.joinable())
+    {
+        gDatisFetchThread.join();
+    }
+
+    gDatisData.loading = true;
+    gDatisData.airport = airport;
+
+    std::string postData =
+        "token=" + UrlEncode(gAuthToken) +
+        "&airport=" + UrlEncode(airport);
+
+    gDatisFetchThread =
+        std::thread(
+        [postData]()
+        {
+            std::string response =
+                HttpPost(
+                    gDatisUrl,
+                    postData
+                );
+
+            {
+                std::lock_guard<std::mutex> lock(
+                    gDatisFetchResultMutex
+                );
+
+                gDatisFetchLastResponse =
+                    response;
+            }
+
+            gDatisFetchResultReady.store(true);
+            gDatisFetchInProgress.store(false);
+        }
+    );
+}
+
+
+void ProcessDatisFetchResult()
+{
+    if (!gDatisFetchResultReady.exchange(false))
+    {
+        return;
+    }
+
+    std::string response;
+
+    {
+        std::lock_guard<std::mutex> lock(
+            gDatisFetchResultMutex
+        );
+
+        response =
+            gDatisFetchLastResponse;
+    }
+
+    if (
+        !gDatisFetchInProgress.load() &&
+        gDatisFetchThread.joinable()
+    ) {
+        gDatisFetchThread.join();
+    }
+
+    gDatisData.loading = false;
+
+    if (!ResponseIsSuccess(response))
+    {
+        gDatisData.hasData = false;
+        gDatisData.message =
+            ExtractMessageFromResponse(response);
+
+        if (gDatisData.message.empty())
+        {
+            gDatisData.message =
+                T("datis.unavailable");
+        }
+
+        return;
+    }
+
+    gDatisData.hasData = true;
+    gDatisData.airport =
+        ExtractJsonStringValue(response, "airport");
+    gDatisData.source =
+        ExtractJsonStringValue(response, "source");
+    gDatisData.info =
+        ExtractJsonStringValue(response, "info");
+    gDatisData.time =
+        ExtractJsonStringValue(response, "time");
+    gDatisData.wind =
+        ExtractJsonStringValue(response, "wind");
+    gDatisData.visibility =
+        ExtractJsonStringValue(response, "visibility");
+    gDatisData.weather =
+        ExtractJsonStringValue(response, "weather");
+    gDatisData.tempDew =
+        ExtractJsonStringValue(response, "temp_dew");
+    gDatisData.qnh =
+        ExtractJsonStringValue(response, "qnh");
+    gDatisData.runway =
+        ExtractJsonStringValue(response, "runway");
+    gDatisData.message =
+        ExtractJsonStringValue(response, "message");
+
+    if (gDatisData.airport.empty())
+    {
+        gDatisData.airport =
+            gLastDatisAirport;
+    }
+}
+
+
+void UpdateDatisFetch(
+    float elapsedSeconds
+)
+{
+    if (
+        gDatisWindow == nullptr ||
+        !XPLMGetWindowIsVisible(gDatisWindow)
+    ) {
+        return;
+    }
+
+    std::string airport =
+        GetDatisAirportCode();
+
+    if (airport.empty())
+    {
+        ResetDatisDataForAirport("");
+        gLastDatisAirport = "";
+        return;
+    }
+
+    gDatisRefreshElapsed +=
+        elapsedSeconds;
+
+    if (
+        airport != gLastDatisAirport ||
+        gDatisRefreshElapsed >= 300.0f
+    ) {
+        gLastDatisAirport =
+            airport;
+        gDatisRefreshElapsed =
+            0.0f;
+
+        ResetDatisDataForAirport(
+            airport
+        );
+
+        StartDatisFetchWorker(
+            airport
+        );
+    }
+}
+
+
+void DrawDatisValueRow(
+    int labelX,
+    int valueX,
+    int y,
+    const std::string& label,
+    const std::string& value
+)
+{
+    DrawText(
+        labelX,
+        y,
+        label,
+        0.62f,
+        0.70f,
+        0.80f
+    );
+
+    DrawText(
+        valueX,
+        y,
+        value,
+        0.88f,
+        0.94f,
+        1.00f
+    );
+}
+
+
+void DrawDatisWindow(
+    XPLMWindowID inWindowID,
+    void* inRefcon
+)
+{
+    int left;
+    int top;
+    int right;
+    int bottom;
+
+    XPLMGetWindowGeometry(
+        inWindowID,
+        &left,
+        &top,
+        &right,
+        &bottom
+    );
+
+    XPLMSetGraphicsState(
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+    );
+
+    XPLMDrawTranslucentDarkBox(
+        left,
+        top,
+        right,
+        bottom
+    );
+
+    DrawFilledRect(
+        { left, top, right, bottom },
+        0.015f,
+        0.040f,
+        0.065f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        { left, top, right, bottom },
+        0.18f,
+        0.36f,
+        0.50f,
+        1.00f
+    );
+
+    DrawFilledRect(
+        { left, top, right, top - 38 },
+        0.018f,
+        0.075f,
+        0.115f,
+        1.00f
+    );
+
+    DrawFilledRect(
+        { left + 3, top - 40, right - 3, top - 38 },
+        0.10f,
+        0.45f,
+        0.85f,
+        0.86f
+    );
+
+    DrawRectOutline(
+        { left, top, right, top - 38 },
+        0.05f,
+        0.42f,
+        0.88f,
+        0.95f
+    );
+
+    DrawCompactHeaderLogo(
+        left + 4,
+        top - 3
+    );
+
+    DrawText(
+        left + 90,
+        top - 21,
+        T("datis.title"),
+        0.88f,
+        0.94f,
+        1.00f
+    );
+
+    DrawText(
+        right - 24,
+        top - 21,
+        "X",
+        0.72f,
+        0.80f,
+        0.88f
+    );
+
+    std::string airportCode =
+        GetDatisAirportCode();
+
+    std::string displayAirport =
+        gDatisData.airport.empty()
+            ? airportCode
+            : gDatisData.airport;
+
+    CustomRect airportHeader =
+        { left + 18, top - 62, right - 18, top - 94 };
+
+    DrawFilledRect(
+        airportHeader,
+        displayAirport.empty() ? 0.18f : 0.05f,
+        displayAirport.empty() ? 0.18f : 0.34f,
+        displayAirport.empty() ? 0.18f : 0.09f,
+        0.96f
+    );
+
+    DrawRectOutline(
+        airportHeader,
+        displayAirport.empty() ? 0.36f : 0.13f,
+        displayAirport.empty() ? 0.36f : 0.42f,
+        displayAirport.empty() ? 0.36f : 0.18f,
+        0.96f
+    );
+
+    std::string airportHeaderText =
+        displayAirport.empty()
+            ? std::string(T("datis.unavailable"))
+            : displayAirport + " - " + T("datis.title");
+
+    DrawText(
+        airportHeader.left + 18,
+        airportHeader.top - 21,
+        airportHeaderText,
+        0.90f,
+        0.98f,
+        0.90f
+    );
+
+    CustomRect infoRect =
+        { left + 18, top - 108, right - 18, bottom + 18 };
+
+    DrawFilledRect(
+        infoRect,
+        0.010f,
+        0.030f,
+        0.050f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        infoRect,
+        0.14f,
+        0.28f,
+        0.38f,
+        0.84f
+    );
+
+    const int labelX =
+        infoRect.left + 18;
+    const int valueX =
+        infoRect.left + 116;
+    int rowY =
+        infoRect.top - 30;
+
+    DrawDatisValueRow(labelX, valueX, rowY, T("datis.airport"), displayAirport.empty() ? std::string("-") : displayAirport);
+    rowY -= 28;
+    DrawDatisValueRow(labelX, valueX, rowY, T("datis.source"), GetDatisSourceLabel());
+    rowY -= 28;
+    DrawDatisValueRow(labelX, valueX, rowY, T("datis.info"), gDatisData.info.empty() ? "-" : gDatisData.info);
+    rowY -= 28;
+    DrawDatisValueRow(labelX, valueX, rowY, T("datis.time"), gDatisData.time.empty() ? "-" : gDatisData.time);
+    rowY -= 28;
+    DrawDatisValueRow(labelX, valueX, rowY, T("datis.wind"), gDatisData.wind.empty() ? "-" : gDatisData.wind);
+    rowY -= 28;
+    DrawDatisValueRow(labelX, valueX, rowY, T("datis.visibility"), gDatisData.visibility.empty() ? "-" : gDatisData.visibility);
+    rowY -= 28;
+    DrawDatisValueRow(labelX, valueX, rowY, T("datis.weather"), gDatisData.weather.empty() ? "-" : gDatisData.weather);
+    rowY -= 28;
+    DrawDatisValueRow(labelX, valueX, rowY, T("datis.temp_dew"), gDatisData.tempDew.empty() ? "-" : gDatisData.tempDew);
+    rowY -= 28;
+    DrawDatisValueRow(labelX, valueX, rowY, T("datis.qnh"), gDatisData.qnh.empty() ? "-" : gDatisData.qnh);
+    rowY -= 28;
+    DrawDatisValueRow(labelX, valueX, rowY, T("datis.runway"), gDatisData.runway.empty() ? "-" : gDatisData.runway);
+
+    std::string statusText =
+        gDatisData.loading
+            ? T("datis.loading")
+            : gDatisData.message;
+
+    std::vector<std::string> messageLines =
+        WrapTextForWidth(
+            statusText.empty() ? std::string(T("datis.api_pending")) : statusText,
+            infoRect.right - infoRect.left - 36
+        );
+
+    int messageY =
+        infoRect.bottom + 50;
+
+    for (size_t i = 0; i < messageLines.size() && i < 3; ++i)
+    {
+        DrawText(
+            infoRect.left + 18,
+            messageY - static_cast<int>(i) * 18,
+            messageLines[i],
+            0.62f,
+            0.70f,
+            0.80f
+        );
+    }
+
+}
+
+
+int DatisHandleCursor(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    void* inRefcon
+)
+{
+    return xplm_CursorDefault;
+}
+
+
+int DatisHandleMouseWheel(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    int wheel,
+    int clicks,
+    void* inRefcon
+)
+{
+    return 1;
+}
+
+
+int DatisHandleMouse(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    XPLMMouseStatus inMouse,
+    void* inRefcon
+)
+{
+    int left;
+    int top;
+    int right;
+    int bottom;
+
+    XPLMGetWindowGeometry(
+        inWindowID,
+        &left,
+        &top,
+        &right,
+        &bottom
+    );
+
+    if (inMouse == xplm_MouseDown)
+    {
+        if (PointInWindowRect(x, y, GetDatisCloseRect(left, top, right), left, top, bottom))
+        {
+            XPLMSetWindowIsVisible(
+                inWindowID,
+                0
+            );
+
+            return 1;
+        }
+
+        if (y >= top - 38)
+        {
+            gDatisWindowDragging = true;
+            gDatisWindowDragOffsetX = x - left;
+            gDatisWindowDragOffsetY = top - y;
+            return 1;
+        }
+    }
+    else if (inMouse == xplm_MouseDrag && gDatisWindowDragging)
+    {
+        int width =
+            right - left;
+
+        int height =
+            top - bottom;
+
+        int newLeft =
+            x - gDatisWindowDragOffsetX;
+
+        int newTop =
+            y + gDatisWindowDragOffsetY;
+
+        XPLMSetWindowGeometry(
+            inWindowID,
+            newLeft,
+            newTop,
+            newLeft + width,
+            newTop - height
+        );
+
+        return 1;
+    }
+    else if (inMouse == xplm_MouseUp)
+    {
+        gDatisWindowDragging = false;
+        return 1;
+    }
+
+    return 1;
+}
+
+
+void CreateDatisWindow()
+{
+    if (gDatisWindow != nullptr)
+    {
+        return;
+    }
+
+    XPLMCreateWindow_t params = {};
+    params.structSize = sizeof(params);
+    params.left = 130;
+    params.top = 650;
+    params.right = 500;
+    params.bottom = 180;
+    params.visible = 0;
+    params.drawWindowFunc = DrawDatisWindow;
+    params.handleMouseClickFunc = DatisHandleMouse;
+    params.handleCursorFunc = DatisHandleCursor;
+    params.handleMouseWheelFunc = DatisHandleMouseWheel;
+    params.refcon = nullptr;
+    params.decorateAsFloatingWindow =
+        xplm_WindowDecorationRoundRectangle;
+    params.layer =
+        xplm_WindowLayerFloatingWindows;
+    params.handleRightClickFunc = DatisHandleMouse;
+
+    gDatisWindow =
+        XPLMCreateWindowEx(
+            &params
+        );
+
+    if (gDatisWindow != nullptr)
+    {
+        XPLMSetWindowTitle(
+            gDatisWindow,
+            T("window.datis.title")
+        );
+
+        XPLMSetWindowResizingLimits(
+            gDatisWindow,
+            370,
+            470,
+            370,
+            470
+        );
+    }
+}
+
+
+void ShowDatisWindow()
+{
+    CreateDatisWindow();
+
+    if (gDatisWindow == nullptr)
+    {
+        return;
+    }
+
+    int windowLeft =
+        130;
+    int windowTop =
+        650;
+
+    if (gCompactWindow != nullptr)
+    {
+        int compactLeft;
+        int compactTop;
+        int compactRight;
+        int compactBottom;
+
+        XPLMGetWindowGeometry(
+            gCompactWindow,
+            &compactLeft,
+            &compactTop,
+            &compactRight,
+            &compactBottom
+        );
+
+        windowLeft =
+            compactLeft + 380;
+        windowTop =
+            compactTop - 28;
+    }
+
+    XPLMSetWindowGeometry(
+        gDatisWindow,
+        windowLeft,
+        windowTop,
+        windowLeft + 370,
+        windowTop - 470
+    );
+
+    XPLMSetWindowIsVisible(
+        gDatisWindow,
+        1
+    );
+
+    std::string airport =
+        GetDatisAirportCode();
+
+    if (airport != gLastDatisAirport)
+    {
+        gLastDatisAirport =
+            airport;
+        gDatisRefreshElapsed =
+            0.0f;
+
+        ResetDatisDataForAirport(
+            airport
+        );
+    }
+
+    if (
+        !airport.empty() &&
+        !gDatisFetchInProgress.load() &&
+        !gDatisData.hasData
+    ) {
+        StartDatisFetchWorker(
+            airport
+        );
+    }
+
+    XPLMBringWindowToFront(
+        gDatisWindow
     );
 }
 
@@ -8685,10 +10532,22 @@ void DrawCompactWindow(
 
     DrawCustomLoginButton(GetCompactChatSendRect(chatRect), T("button.send"), true);
 
-    DrawCompactTab(GetCompactTabRect(left, top, 0), "ATC", false);
-    DrawCompactTab(GetCompactTabRect(left, top, 1), "MSG", false);
+    DrawCompactTab(
+        GetCompactTabRect(left, top, 0),
+        "ATC",
+        gAtcWindow != nullptr && XPLMGetWindowIsVisible(gAtcWindow)
+    );
+    DrawCompactTab(
+        GetCompactTabRect(left, top, 1),
+        "MSG",
+        gMessagesWindow != nullptr && XPLMGetWindowIsVisible(gMessagesWindow)
+    );
     DrawCompactTab(GetCompactTabRect(left, top, 2), "FP", false);
-    DrawCompactTab(GetCompactTabRect(left, top, 3), "D-ATIS", false);
+    DrawCompactTab(
+        GetCompactTabRect(left, top, 3),
+        "D-ATIS",
+        gDatisWindow != nullptr && XPLMGetWindowIsVisible(gDatisWindow)
+    );
     DrawCompactTab(GetCompactTabRect(left, top, 4), T("button.settings"), false);
 }
 
@@ -9993,6 +11852,84 @@ int CompactHandleMouse(
                 );
 
                 UpdateFlightplanWindowState();
+            }
+
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCompactTabRect(left, top, 0), left, top, bottom))
+        {
+            gChatInputFocused = false;
+            gChatSendButtonPressed = false;
+
+            XPLMTakeKeyboardFocus(
+                nullptr
+            );
+
+            if (
+                gAtcWindow != nullptr &&
+                XPLMGetWindowIsVisible(gAtcWindow)
+            ) {
+                XPLMSetWindowIsVisible(
+                    gAtcWindow,
+                    0
+                );
+            }
+            else
+            {
+                ShowAtcWindow();
+            }
+
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCompactTabRect(left, top, 1), left, top, bottom))
+        {
+            gChatInputFocused = false;
+            gChatSendButtonPressed = false;
+
+            XPLMTakeKeyboardFocus(
+                nullptr
+            );
+
+            if (
+                gMessagesWindow != nullptr &&
+                XPLMGetWindowIsVisible(gMessagesWindow)
+            ) {
+                XPLMSetWindowIsVisible(
+                    gMessagesWindow,
+                    0
+                );
+            }
+            else
+            {
+                ShowMessagesWindow();
+            }
+
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCompactTabRect(left, top, 3), left, top, bottom))
+        {
+            gChatInputFocused = false;
+            gChatSendButtonPressed = false;
+
+            XPLMTakeKeyboardFocus(
+                nullptr
+            );
+
+            if (
+                gDatisWindow != nullptr &&
+                XPLMGetWindowIsVisible(gDatisWindow)
+            ) {
+                XPLMSetWindowIsVisible(
+                    gDatisWindow,
+                    0
+                );
+            }
+            else
+            {
+                ShowDatisWindow();
             }
 
             return 1;
@@ -12764,6 +14701,7 @@ float FlightLoopCallback(
     ProcessPositionUpdateResult();
     ProcessChatPollResult();
     ProcessChatSendResult();
+    ProcessDatisFetchResult();
     ProcessNetworkStatusUpdateResult();
 
     PollCompactChatMouseFocus();
@@ -12773,6 +14711,9 @@ float FlightLoopCallback(
         inElapsedSinceLastCall
     );
     UpdateChatPolling(
+        inElapsedSinceLastCall
+    );
+    UpdateDatisFetch(
         inElapsedSinceLastCall
     );
 
@@ -13172,6 +15113,11 @@ PLUGIN_API void XPluginStop(void)
         gChatSendThread.join();
     }
 
+    if (gDatisFetchThread.joinable())
+    {
+        gDatisFetchThread.join();
+    }
+
     if (gLoggedIn && !gAuthToken.empty())
     {
         std::string postData =
@@ -13257,6 +15203,33 @@ PLUGIN_API void XPluginStop(void)
         );
 
         gSettingsWindow = nullptr;
+    }
+
+    if (gAtcWindow != nullptr)
+    {
+        XPLMDestroyWindow(
+            gAtcWindow
+        );
+
+        gAtcWindow = nullptr;
+    }
+
+    if (gMessagesWindow != nullptr)
+    {
+        XPLMDestroyWindow(
+            gMessagesWindow
+        );
+
+        gMessagesWindow = nullptr;
+    }
+
+    if (gDatisWindow != nullptr)
+    {
+        XPLMDestroyWindow(
+            gDatisWindow
+        );
+
+        gDatisWindow = nullptr;
     }
 
     if (gKickNoticeWindow != nullptr)
