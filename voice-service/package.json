@@ -1,0 +1,15 @@
+{
+  "name": "vfn-voice-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Realtime voice routing service for the VFN Network pilot client.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "mysql2": "^3.11.3",
+    "ws": "^8.18.0"
+  }
+}

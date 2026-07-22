@@ -254,7 +254,7 @@ catch (Exception $e)
 
 .modal-box {
     width: 100%;
-    max-width: 430px;
+    max-width: 500px;
 
     background:
         rgba(15,20,30,0.96);
@@ -422,11 +422,14 @@ catch (Exception $e)
 
 .vfn-dropdown {
     position: relative;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .vfn-dropdown-selected {
 
     width: 100%;
+    box-sizing: border-box;
 
     padding: 14px 16px;
 
@@ -457,6 +460,7 @@ catch (Exception $e)
     top: calc(100% + 4px);
 
     max-height: 250px;
+    box-sizing: border-box;
 
     overflow-y: auto;
 

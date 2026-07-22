@@ -33,6 +33,8 @@ function renderFlag(string $language): string
 
 
 $unreadActivityCount = 0;
+$headerOpPermission =
+    (int)($_SESSION['web_op_permission'] ?? 0);
 
 if (isset($_SESSION['web_user_id'])) {
     try {
@@ -62,6 +64,23 @@ if (isset($_SESSION['web_user_id'])) {
 
         $unreadActivityCount =
             (int)$unreadActivityStmt->fetchColumn();
+
+        $opPermissionStmt = $headerPdo->prepare(
+            "SELECT op_permission
+             FROM users
+             WHERE id = :user_id
+             LIMIT 1"
+        );
+
+        $opPermissionStmt->execute([
+            'user_id' => (int)$_SESSION['web_user_id']
+        ]);
+
+        $headerOpPermission =
+            (int)$opPermissionStmt->fetchColumn();
+
+        $_SESSION['web_op_permission'] =
+            $headerOpPermission;
 
     } catch (Exception $e) {
         $unreadActivityCount = 0;
@@ -390,6 +409,12 @@ if (isset($_SESSION['web_user_id'])) {
         </a>
 
         <?php if (isset($_SESSION['web_user_id'])): ?>
+
+            <?php if ($headerOpPermission > 1): ?>
+                <a href="admin.php">
+                    <?php echo htmlspecialchars(t('nav_admin_panel')); ?>
+                </a>
+            <?php endif; ?>
 
             <span style="color:#00ffcc;font-weight:bold;">
             <a href="profile.php?id=<?php echo (int)$_SESSION['web_user_id']; ?>"

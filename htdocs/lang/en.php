@@ -734,4 +734,160 @@
         'description_award_founder_home' =>
             'You flew within 5 NM of the VFN founder\'s home.',
 
+        'nav_admin_panel' =>
+            'Admin Panel',
+
+        'admin_title' =>
+            'Admin Panel',
+
+        'admin_subtitle' =>
+            'Network monitoring, frequency monitoring, and staff tools.',
+
+        'admin_login_required' =>
+            'Please log in to use the Admin Panel.',
+
+        'admin_access_denied' =>
+            'You do not have access to the Admin Panel.',
+
+        'admin_tab_chat' =>
+            'Chat / Frequency Monitoring',
+
+        'admin_tab_activity' =>
+            'Staff Activity',
+
+        'admin_tab_voice' =>
+            'Voice Monitor',
+
+        'admin_monitor_title' =>
+            'Frequency Monitoring',
+
+        'admin_monitor_text' =>
+            'Tune one or more frequencies to monitor the live radio chat.',
+
+        'admin_frequency' =>
+            'Frequency',
+
+        'admin_add_frequency' =>
+            'Add Frequency',
+
+        'admin_add_unicom' =>
+            'Tune UNICOM',
+
+        'admin_all_frequencies' =>
+            'All Frequencies',
+
+        'admin_all_frequencies_active' =>
+            'All frequencies active',
+
+        'admin_permission_all_required' =>
+            'Monitoring all frequencies at once is available from OP-Level 4.',
+
+        'admin_monitored_frequencies' =>
+            'Monitored Frequencies',
+
+        'admin_no_frequencies' =>
+            'No frequency is monitored yet.',
+
+        'admin_live_messages' =>
+            'Live Messages',
+
+        'admin_no_messages' =>
+            'No messages yet.',
+
+        'admin_time' =>
+            'Time',
+
+        'admin_sender' =>
+            'Sender',
+
+        'admin_type' =>
+            'Type',
+
+        'admin_message' =>
+            'Message',
+
+        'admin_staff_activity_title' =>
+            'Staff Activity',
+
+        'admin_staff_activity_text' =>
+            'Kicks, bans, announcements, and other staff-relevant events.',
+
+        'admin_no_activity' =>
+            'No staff activity available.',
+
+        'admin_activity_announcement' =>
+            'Announcement',
+
+        'admin_all_online_pilots' =>
+            'All online pilots',
+
+        'admin_voice_title' =>
+            'Browser Voice Monitor',
+
+        'admin_voice_text' =>
+            'This area prepares voice monitoring for browser access.',
+
+        'admin_voice_frequency' =>
+            'Voice Frequency',
+
+        'admin_voice_connect' =>
+            'Connect Voice Monitor',
+
+        'admin_voice_device_default' =>
+            'System default',
+
+        'admin_voice_input_device' =>
+            'Input device',
+
+        'admin_voice_output_device' =>
+            'Output device',
+
+        'admin_voice_device_input_prefix' =>
+            'Microphone:',
+
+        'admin_voice_device_output_prefix' =>
+            'Playback:',
+
+        'admin_voice_refresh_devices' =>
+            'Refresh devices',
+
+        'admin_voice_device_permission_hint' =>
+            'Allow browser microphone access to select devices.',
+
+        'admin_voice_push_to_talk' =>
+            'Transmit / PTT',
+
+        'admin_voice_transmit_prepared' =>
+            'Transmit on this frequency is prepared.',
+
+        'admin_voice_tx_level' =>
+            'Transmit',
+
+        'admin_voice_rx_level' =>
+            'Receive',
+
+        'admin_voice_receiver' =>
+            'Receiver',
+
+        'admin_voice_browser_ready' =>
+            'Browser receiver prepared',
+
+        'admin_voice_service' =>
+            'Voice Service',
+
+        'admin_voice_placeholder' =>
+            'WebSocket integration for the voice service is prepared for this area.',
+
+        'admin_invalid_frequency' =>
+            'Invalid frequency.',
+
+        'admin_loading' =>
+            'Loading data...',
+
+        'admin_server_error' =>
+            'Server error.',
+
+        'admin_system' =>
+            'System',
+
     ];

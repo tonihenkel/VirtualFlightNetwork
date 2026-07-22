@@ -35,6 +35,8 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <mmsystem.h>
+#include <mmdeviceapi.h>
+#include <functiondiscoverykeys_devpkey.h>
 #include <objidl.h>
 #include <olectl.h>
 #include <winhttp.h>
@@ -242,6 +244,8 @@ static std::atomic<bool> gChatSendResultReady(false);
 static std::mutex gChatSendResultMutex;
 static std::string gChatSendLastResponse = "";
 static bool gLastChatSendWasCommand = false;
+static std::string gPendingChatEchoFrequency = "";
+static std::string gPendingChatEchoText = "";
 static std::thread gChatSendThread;
 static std::string gCurrentPilotRatingCode = "FC0";
 static std::string gCurrentPilotRatingName = "New Flight Cadet";
@@ -332,6 +336,8 @@ static bool gKickNoticeDragging = false;
 static int gKickNoticeDragOffsetX = 0;
 static int gKickNoticeDragOffsetY = 0;
 static bool gSettingsLanguageDropdownOpen = false;
+static bool gSettingsVoiceInputDropdownOpen = false;
+static bool gSettingsVoiceOutputDropdownOpen = false;
 static char gLastFrequencyKey = 0;
 static char gLastFrequencyVirtualKey = 0;
 static float gLastFrequencyKeyTime = -1.0f;
@@ -402,10 +408,26 @@ static XPLMDataRef gTransponderMode = nullptr;
 static XPLMCommandRef gTransponderStandbyCommand = nullptr;
 static XPLMCommandRef gTransponderOnCommand = nullptr;
 static XPLMCommandRef gTransponderIdentCommand = nullptr;
+static XPLMCommandRef gVoicePttCommand = nullptr;
 static XPLMCommandRef gG1000XpdrStbyCommands[3] = {};
 static XPLMCommandRef gG1000XpdrOnCommands[3] = {};
 static XPLMCommandRef gG1000XpdrIdentCommands[3] = {};
 static float gTransponderIdentUntil = -1.0f;
+static bool gVoicePttActive = false;
+static int gVoiceTransmitCom = 1;
+static float gVoiceLastRxCom1Until = -1.0f;
+static float gVoiceLastRxCom2Until = -1.0f;
+
+struct VoiceAudioDevice
+{
+    std::string id;
+    std::string name;
+};
+
+static std::vector<VoiceAudioDevice> gVoiceInputDevices;
+static std::vector<VoiceAudioDevice> gVoiceOutputDevices;
+static std::string gSelectedVoiceInputDeviceId = "default";
+static std::string gSelectedVoiceOutputDeviceId = "default";
 
 static XPLMDataRef gOnGround = nullptr;
 
@@ -977,6 +999,12 @@ void LoadInternalEnglishLanguage()
     gText["settings.language_saved"] = "Language saved.";
     gText["settings.language_de"] = "Deutsch";
     gText["settings.language_en"] = "English";
+    gText["settings.voice"] = "Voice radio";
+    gText["settings.voice_ptt"] = "PTT command";
+    gText["settings.voice_ptt_hint"] = "Assign this command in X-Plane controls.";
+    gText["settings.voice_input"] = "Input device";
+    gText["settings.voice_output"] = "Output device";
+    gText["settings.voice_default_device"] = "System default";
     gText["messages.title"] = "Messages";
     gText["messages.inbox"] = "Inbox";
     gText["messages.sent"] = "Sent";
@@ -1138,6 +1166,12 @@ void ApplyInternalGermanLanguageFallbacks()
     gText["settings.language_saved"] = "Sprache gespeichert.";
     gText["settings.language_de"] = "Deutsch";
     gText["settings.language_en"] = "Englisch";
+    gText["settings.voice"] = "Sprachfunk";
+    gText["settings.voice_ptt"] = "PTT-Kommando";
+    gText["settings.voice_ptt_hint"] = "Dieses Kommando in X-Plane Steuerung belegen.";
+    gText["settings.voice_input"] = "Eingabegeraet";
+    gText["settings.voice_output"] = "Ausgabegeraet";
+    gText["settings.voice_default_device"] = "Systemstandard";
     gText["messages.title"] = "Nachrichten";
     gText["messages.inbox"] = "Eingang";
     gText["messages.sent"] = "Gesendet";
@@ -1228,6 +1262,12 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "settings.language_saved=Language saved.\n";
             enFile << "settings.language_de=Deutsch\n";
             enFile << "settings.language_en=English\n";
+            enFile << "settings.voice=Voice radio\n";
+            enFile << "settings.voice_ptt=PTT command\n";
+            enFile << "settings.voice_ptt_hint=Assign this command in X-Plane controls.\n";
+            enFile << "settings.voice_input=Input device\n";
+            enFile << "settings.voice_output=Output device\n";
+            enFile << "settings.voice_default_device=System default\n";
             enFile << "messages.title=Messages\n";
             enFile << "messages.inbox=Inbox\n";
             enFile << "messages.sent=Sent\n";
@@ -1386,6 +1426,12 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "settings.language_saved=Sprache gespeichert.\n";
             deFile << "settings.language_de=Deutsch\n";
             deFile << "settings.language_en=Englisch\n";
+            deFile << "settings.voice=Sprachfunk\n";
+            deFile << "settings.voice_ptt=PTT-Kommando\n";
+            deFile << "settings.voice_ptt_hint=Dieses Kommando in X-Plane Steuerung belegen.\n";
+            deFile << "settings.voice_input=Eingabegeraet\n";
+            deFile << "settings.voice_output=Ausgabegeraet\n";
+            deFile << "settings.voice_default_device=Systemstandard\n";
             deFile << "messages.title=Nachrichten\n";
             deFile << "messages.inbox=Eingang\n";
             deFile << "messages.sent=Gesendet\n";
@@ -2189,6 +2235,8 @@ void LoadConfig()
 {
     gDebugEnabled = false;
     gConfiguredLanguage = "";
+    gSelectedVoiceInputDeviceId = "default";
+    gSelectedVoiceOutputDeviceId = "default";
 
     CreateDefaultConfigIfMissing();
 
@@ -2224,6 +2272,26 @@ void LoadConfig()
         else if (line == "language=auto")
         {
             gConfiguredLanguage = "";
+        }
+        else if (line.rfind("voice_input_device=", 0) == 0)
+        {
+            gSelectedVoiceInputDeviceId =
+                line.substr(19);
+
+            if (gSelectedVoiceInputDeviceId.empty())
+            {
+                gSelectedVoiceInputDeviceId = "default";
+            }
+        }
+        else if (line.rfind("voice_output_device=", 0) == 0)
+        {
+            gSelectedVoiceOutputDeviceId =
+                line.substr(20);
+
+            if (gSelectedVoiceOutputDeviceId.empty())
+            {
+                gSelectedVoiceOutputDeviceId = "default";
+            }
         }
     }
 
@@ -2774,6 +2842,8 @@ void SaveConfig()
             : "auto"
         )
         << "\n";
+    configFile << "voice_input_device=" << gSelectedVoiceInputDeviceId << "\n";
+    configFile << "voice_output_device=" << gSelectedVoiceOutputDeviceId << "\n";
 
     configFile.close();
 }
@@ -4568,13 +4638,13 @@ void ProcessChatPollResult()
             chatLine.type == "pilot" &&
             chatLine.sender == gCurrentCallsign;
 
-        AddChatLine(
-            chatLine,
-            !isOwnPilotMessage
-        );
-
         if (!isOwnPilotMessage)
         {
+            AddChatLine(
+                chatLine,
+                true
+            );
+
             gotNewLine = true;
         }
     }
@@ -4708,7 +4778,20 @@ void ProcessChatSendResult()
         );
 
         gLastChatSendWasCommand = false;
+        gPendingChatEchoFrequency = "";
+        gPendingChatEchoText = "";
         return;
+    }
+
+    if (
+        success &&
+        !gLastChatSendWasCommand &&
+        !gPendingChatEchoText.empty()
+    ) {
+        AddChatLine(
+            { 0, gPendingChatEchoFrequency, "", gCurrentCallsign, "pilot", gPendingChatEchoText },
+            false
+        );
     }
 
     if (!success || gLastChatSendWasCommand)
@@ -4728,6 +4811,8 @@ void ProcessChatSendResult()
     }
 
     gLastChatSendWasCommand = false;
+    gPendingChatEchoFrequency = "";
+    gPendingChatEchoText = "";
 }
 
 
@@ -4773,6 +4858,19 @@ void SendChatMessage()
     gLastChatSendWasCommand =
         !message.empty() &&
         message[0] == '/';
+
+    if (!gLastChatSendWasCommand)
+    {
+        gPendingChatEchoFrequency =
+            frequency;
+        gPendingChatEchoText =
+            message;
+    }
+    else
+    {
+        gPendingChatEchoFrequency = "";
+        gPendingChatEchoText = "";
+    }
 
     std::string postData =
         "token=" + UrlEncode(gAuthToken) +
@@ -6660,32 +6758,33 @@ void DrawCompactTab(
 
 void DrawCompactGreenButton(
     const CustomRect& rect,
-    const std::string& label
+    const std::string& label,
+    bool active = true
 )
 {
     DrawFilledRect(
         rect,
-        0.05f,
-        0.34f,
-        0.09f,
-        0.96f
+        active ? 0.05f : 0.035f,
+        active ? 0.34f : 0.10f,
+        active ? 0.09f : 0.13f,
+        active ? 0.96f : 0.72f
     );
 
     DrawRectOutline(
         rect,
-        0.13f,
-        0.42f,
-        0.18f,
-        0.96f
+        active ? 0.13f : 0.10f,
+        active ? 0.42f : 0.22f,
+        active ? 0.18f : 0.28f,
+        active ? 0.96f : 0.82f
     );
 
     DrawText(
         rect.left + 9,
         rect.top - 17,
         label,
-        0.90f,
-        0.98f,
-        0.90f
+        active ? 0.90f : 0.62f,
+        active ? 0.98f : 0.72f,
+        active ? 0.90f : 0.80f
     );
 }
 
@@ -6694,7 +6793,9 @@ void DrawCompactRadioPanel(
     const CustomRect& rect,
     const std::string& label,
     const std::string& value,
-    const std::string& subLabel
+    const std::string& subLabel,
+    bool rxActive = false,
+    bool txActive = false
 )
 {
     DrawFilledRect(
@@ -6782,12 +6883,14 @@ void DrawCompactRadioPanel(
 
     DrawCompactGreenButton(
         { rect.right - 47, rect.top - 24, rect.right - 14, rect.top - 49 },
-        "RX"
+        "RX",
+        rxActive
     );
 
     DrawCompactGreenButton(
         { rect.right - 47, rect.top - 54, rect.right - 14, rect.top - 79 },
-        "TX"
+        "TX",
+        txActive
     );
 }
 
@@ -7471,6 +7574,266 @@ void ShowFrequencyWindow(int targetCom)
 }
 
 
+std::string WideToUtf8(
+    const std::wstring& value
+)
+{
+    if (value.empty())
+    {
+        return "";
+    }
+
+    int size =
+        WideCharToMultiByte(
+            CP_UTF8,
+            0,
+            value.c_str(),
+            -1,
+            nullptr,
+            0,
+            nullptr,
+            nullptr
+        );
+
+    if (size <= 1)
+    {
+        return "";
+    }
+
+    std::string result(
+        (size_t)size - 1,
+        '\0'
+    );
+
+    WideCharToMultiByte(
+        CP_UTF8,
+        0,
+        value.c_str(),
+        -1,
+        &result[0],
+        size,
+        nullptr,
+        nullptr
+    );
+
+    return result;
+}
+
+
+std::string TruncateMiddleForWidth(
+    const std::string& value,
+    int widthPixels
+)
+{
+    size_t maxLength =
+        EstimateTextCharsForWidth(widthPixels);
+
+    if (value.size() <= maxLength)
+    {
+        return value;
+    }
+
+    if (maxLength <= 3)
+    {
+        return value.substr(0, maxLength);
+    }
+
+    size_t leftPart =
+        (maxLength - 3) / 2;
+
+    size_t rightPart =
+        maxLength - 3 - leftPart;
+
+    return value.substr(0, leftPart)
+        + "..."
+        + value.substr(value.size() - rightPart);
+}
+
+
+void RefreshVoiceAudioDevices()
+{
+    gVoiceInputDevices.clear();
+    gVoiceOutputDevices.clear();
+
+    gVoiceInputDevices.push_back(
+        { "default", T("settings.voice_default_device") }
+    );
+
+    gVoiceOutputDevices.push_back(
+        { "default", T("settings.voice_default_device") }
+    );
+
+    HRESULT initResult =
+        CoInitializeEx(
+            nullptr,
+            COINIT_MULTITHREADED
+        );
+
+    bool shouldUninitialize =
+        SUCCEEDED(initResult);
+
+    if (
+        FAILED(initResult) &&
+        initResult != RPC_E_CHANGED_MODE
+    ) {
+        return;
+    }
+
+    IMMDeviceEnumerator* enumerator =
+        nullptr;
+
+    HRESULT result =
+        CoCreateInstance(
+            __uuidof(MMDeviceEnumerator),
+            nullptr,
+            CLSCTX_ALL,
+            __uuidof(IMMDeviceEnumerator),
+            reinterpret_cast<void**>(&enumerator)
+        );
+
+    if (FAILED(result) || enumerator == nullptr)
+    {
+        if (shouldUninitialize)
+        {
+            CoUninitialize();
+        }
+
+        return;
+    }
+
+    auto loadDevices =
+        [&](EDataFlow flow, std::vector<VoiceAudioDevice>& target)
+        {
+            IMMDeviceCollection* collection =
+                nullptr;
+
+            HRESULT enumResult =
+                enumerator->EnumAudioEndpoints(
+                    flow,
+                    DEVICE_STATE_ACTIVE,
+                    &collection
+                );
+
+            if (FAILED(enumResult) || collection == nullptr)
+            {
+                return;
+            }
+
+            UINT count =
+                0;
+
+            collection->GetCount(
+                &count
+            );
+
+            for (UINT index = 0; index < count; ++index)
+            {
+                IMMDevice* device =
+                    nullptr;
+
+                if (
+                    FAILED(collection->Item(index, &device)) ||
+                    device == nullptr
+                ) {
+                    continue;
+                }
+
+                LPWSTR rawDeviceId =
+                    nullptr;
+
+                std::string id =
+                    "";
+
+                if (
+                    SUCCEEDED(device->GetId(&rawDeviceId)) &&
+                    rawDeviceId != nullptr
+                ) {
+                    id =
+                        WideToUtf8(rawDeviceId);
+
+                    CoTaskMemFree(rawDeviceId);
+                }
+
+                IPropertyStore* properties =
+                    nullptr;
+
+                std::string name =
+                    id;
+
+                if (
+                    SUCCEEDED(device->OpenPropertyStore(STGM_READ, &properties)) &&
+                    properties != nullptr
+                ) {
+                    PROPVARIANT friendlyName;
+                    PropVariantInit(
+                        &friendlyName
+                    );
+
+                    if (
+                        SUCCEEDED(properties->GetValue(PKEY_Device_FriendlyName, &friendlyName)) &&
+                        friendlyName.vt == VT_LPWSTR &&
+                        friendlyName.pwszVal != nullptr
+                    ) {
+                        name =
+                            WideToUtf8(friendlyName.pwszVal);
+                    }
+
+                    PropVariantClear(
+                        &friendlyName
+                    );
+
+                    properties->Release();
+                }
+
+                if (!id.empty() && !name.empty())
+                {
+                    target.push_back(
+                        { id, name }
+                    );
+                }
+
+                device->Release();
+            }
+
+            collection->Release();
+        };
+
+    loadDevices(
+        eCapture,
+        gVoiceInputDevices
+    );
+
+    loadDevices(
+        eRender,
+        gVoiceOutputDevices
+    );
+
+    enumerator->Release();
+
+    if (shouldUninitialize)
+    {
+        CoUninitialize();
+    }
+}
+
+
+std::string GetVoiceDeviceLabel(
+    const std::vector<VoiceAudioDevice>& devices,
+    const std::string& selectedId
+)
+{
+    for (const VoiceAudioDevice& device : devices)
+    {
+        if (device.id == selectedId)
+        {
+            return device.name;
+        }
+    }
+
+    return T("settings.voice_default_device");
+}
+
+
 CustomRect GetSettingsCloseRect(int left, int top, int right)
 {
     return { right - 36, top - 32, right - 6, top - 4 };
@@ -7497,6 +7860,75 @@ CustomRect GetSettingsLanguageSelectRect(int left, int top, int right)
         GetSettingsLanguageTop(top);
 
     return { left + 24, languageTop - 24, right - 24, languageTop - 64 };
+}
+
+
+int GetSettingsVoiceTop(int top)
+{
+    return GetSettingsLanguageTop(top) - 92;
+}
+
+
+CustomRect GetSettingsVoiceInputSelectRect(int left, int top, int right)
+{
+    int voiceTop =
+        GetSettingsVoiceTop(top);
+
+    return { left + 154, voiceTop - 48, right - 36, voiceTop - 78 };
+}
+
+
+CustomRect GetSettingsVoiceOutputSelectRect(int left, int top, int right)
+{
+    int voiceTop =
+        GetSettingsVoiceTop(top);
+
+    return { left + 154, voiceTop - 84, right - 36, voiceTop - 114 };
+}
+
+
+CustomRect GetSettingsVoiceDeviceOptionRect(
+    const CustomRect& selectRect,
+    int index
+)
+{
+    int optionTop =
+        selectRect.bottom - 4 - (index * 32);
+
+    return { selectRect.left, optionTop, selectRect.right, optionTop - 30 };
+}
+
+
+CustomRect GetSettingsVoiceDeviceOptionRectAbove(
+    const CustomRect& selectRect,
+    int index
+)
+{
+    int optionBottom =
+        selectRect.top + 4 + (index * 32);
+
+    return { selectRect.left, optionBottom + 30, selectRect.right, optionBottom };
+}
+
+
+CustomRect GetSettingsVoiceDeviceOptionRectForDirection(
+    const CustomRect& selectRect,
+    int index,
+    bool openUp
+)
+{
+    if (openUp)
+    {
+        return GetSettingsVoiceDeviceOptionRectAbove(
+            selectRect,
+            index
+        );
+    }
+
+    return GetSettingsVoiceDeviceOptionRect(
+        selectRect,
+        index
+    );
 }
 
 
@@ -7730,9 +8162,9 @@ void DrawSettingsLanguageOption(
 {
     DrawFilledRect(
         rect,
-        selected ? 0.018f : 0.015f,
-        selected ? 0.075f : 0.040f,
-        selected ? 0.115f : 0.065f,
+        selected ? 0.090f : 0.145f,
+        selected ? 0.105f : 0.157f,
+        selected ? 0.122f : 0.173f,
         1.00f
     );
 
@@ -7828,6 +8260,173 @@ void DrawSettingsLanguageSelect(
 }
 
 
+void DrawSettingsVoiceDeviceOption(
+    const CustomRect& rect,
+    const std::string& label,
+    bool selected
+)
+{
+    DrawFilledRect(
+        rect,
+        selected ? 0.035f : 0.030f,
+        selected ? 0.050f : 0.037f,
+        selected ? 0.065f : 0.045f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        rect,
+        selected ? 0.08f : 0.18f,
+        selected ? 0.56f : 0.36f,
+        selected ? 1.00f : 0.50f,
+        0.95f
+    );
+
+    DrawText(
+        rect.left + 10,
+        rect.top - 20,
+        TruncateMiddleForWidth(label, (rect.right - rect.left) - 42),
+        0.86f,
+        0.91f,
+        0.96f
+    );
+
+    if (selected)
+    {
+        DrawText(
+            rect.right - 24,
+            rect.top - 20,
+            "X",
+            0.24f,
+            0.92f,
+            0.25f
+        );
+    }
+}
+
+
+void DrawSettingsVoiceDeviceSelect(
+    const CustomRect& selectRect,
+    const std::vector<VoiceAudioDevice>& devices,
+    const std::string& selectedId,
+    bool dropdownOpen
+)
+{
+    std::string label =
+        GetVoiceDeviceLabel(
+            devices,
+            selectedId
+        );
+
+    DrawSettingsVoiceDeviceOption(
+        selectRect,
+        label,
+        true
+    );
+
+    DrawText(
+        selectRect.right - 38,
+        selectRect.top - 20,
+        dropdownOpen ? "^" : "v",
+        0.82f,
+        0.90f,
+        0.96f
+    );
+}
+
+
+void DrawSettingsVoiceDeviceDropdown(
+    const CustomRect& selectRect,
+    const std::vector<VoiceAudioDevice>& devices,
+    const std::string& selectedId,
+    bool dropdownOpen,
+    bool openUp
+)
+{
+    if (!dropdownOpen)
+    {
+        return;
+    }
+
+    int visibleCount =
+        (std::min)(
+            (int)devices.size(),
+            4
+        );
+
+    if (visibleCount <= 0)
+    {
+        return;
+    }
+
+    CustomRect firstOption =
+        GetSettingsVoiceDeviceOptionRectForDirection(
+            selectRect,
+            0,
+            openUp
+        );
+
+    CustomRect lastOption =
+        GetSettingsVoiceDeviceOptionRectForDirection(
+            selectRect,
+            visibleCount - 1,
+            openUp
+        );
+
+    CustomRect dropdownPanel = {
+        selectRect.left - 4,
+        (std::max)(firstOption.top, lastOption.top) + 8,
+        selectRect.right + 4,
+        (std::min)(firstOption.bottom, lastOption.bottom) - 8
+    };
+
+    DrawFilledRect(
+        dropdownPanel,
+        0.030f,
+        0.037f,
+        0.045f,
+        1.00f
+    );
+
+    DrawFilledRect(
+        {
+            dropdownPanel.left + 1,
+            dropdownPanel.top - 1,
+            dropdownPanel.right - 1,
+            dropdownPanel.bottom + 1
+        },
+        0.030f,
+        0.037f,
+        0.045f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        dropdownPanel,
+        0.08f,
+        0.48f,
+        0.88f,
+        1.00f
+    );
+
+    for (int index = 0; index < visibleCount; ++index)
+    {
+        const VoiceAudioDevice& device =
+            devices[(size_t)index];
+
+        DrawSettingsVoiceDeviceOption(
+            GetSettingsVoiceDeviceOptionRectForDirection(
+                selectRect,
+                index,
+                openUp
+            ),
+            device.name,
+            device.id == selectedId
+        );
+    }
+}
+
+
 void ApplyPluginLanguageSelection(
     const std::string& languageCode
 )
@@ -7844,6 +8443,7 @@ void ApplyPluginLanguageSelection(
 
     SaveConfig();
     LoadLanguage();
+    RefreshVoiceAudioDevices();
 
     if (gCustomLoginWindow != nullptr)
     {
@@ -8074,6 +8674,112 @@ void DrawSettingsWindow(
         top,
         right
     );
+
+    int voiceTop =
+        GetSettingsVoiceTop(top);
+
+    DrawText(
+        left + 24,
+        voiceTop,
+        T("settings.voice"),
+        0.08f,
+        0.55f,
+        1.00f
+    );
+
+    CustomRect voiceRect =
+        { left + 24, voiceTop - 24, right - 24, voiceTop - 172 };
+
+    DrawFilledRect(
+        voiceRect,
+        0.015f,
+        0.040f,
+        0.065f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        voiceRect,
+        0.18f,
+        0.40f,
+        0.52f,
+        0.95f
+    );
+
+    DrawText(
+        voiceRect.left + 12,
+        voiceRect.top - 25,
+        T("settings.voice_ptt"),
+        0.62f,
+        0.72f,
+        0.82f
+    );
+
+    DrawText(
+        voiceRect.left + 130,
+        voiceRect.top - 25,
+        "VFN Voice Push To Talk",
+        0.88f,
+        0.94f,
+        1.00f
+    );
+
+    DrawText(
+        voiceRect.left + 12,
+        voiceRect.top - 58,
+        T("settings.voice_input"),
+        0.62f,
+        0.72f,
+        0.82f
+    );
+
+    DrawSettingsVoiceDeviceSelect(
+        GetSettingsVoiceInputSelectRect(left, top, right),
+        gVoiceInputDevices,
+        gSelectedVoiceInputDeviceId,
+        gSettingsVoiceInputDropdownOpen
+    );
+
+    DrawText(
+        voiceRect.left + 12,
+        voiceRect.top - 94,
+        T("settings.voice_output"),
+        0.62f,
+        0.72f,
+        0.82f
+    );
+
+    DrawSettingsVoiceDeviceSelect(
+        GetSettingsVoiceOutputSelectRect(left, top, right),
+        gVoiceOutputDevices,
+        gSelectedVoiceOutputDeviceId,
+        gSettingsVoiceOutputDropdownOpen
+    );
+
+    DrawText(
+        voiceRect.left + 12,
+        voiceRect.top - 144,
+        T("settings.voice_ptt_hint"),
+        0.58f,
+        0.68f,
+        0.78f
+    );
+
+    DrawSettingsVoiceDeviceDropdown(
+        GetSettingsVoiceOutputSelectRect(left, top, right),
+        gVoiceOutputDevices,
+        gSelectedVoiceOutputDeviceId,
+        gSettingsVoiceOutputDropdownOpen,
+        false
+    );
+
+    DrawSettingsVoiceDeviceDropdown(
+        GetSettingsVoiceInputSelectRect(left, top, right),
+        gVoiceInputDevices,
+        gSelectedVoiceInputDeviceId,
+        gSettingsVoiceInputDropdownOpen,
+        true
+    );
 }
 
 
@@ -8140,14 +8846,112 @@ int SettingsHandleMouse(
         )
         {
             gSettingsLanguageDropdownOpen = false;
+            gSettingsVoiceInputDropdownOpen = false;
+            gSettingsVoiceOutputDropdownOpen = false;
 
             ToggleCustomInvisible();
 
             return 1;
         }
 
+        CustomRect inputSelectRect =
+            GetSettingsVoiceInputSelectRect(left, top, right);
+
+        CustomRect outputSelectRect =
+            GetSettingsVoiceOutputSelectRect(left, top, right);
+
+        if (gSettingsVoiceInputDropdownOpen)
+        {
+            int visibleCount =
+                (std::min)(
+                    (int)gVoiceInputDevices.size(),
+                    4
+                );
+
+            for (int index = 0; index < visibleCount; ++index)
+            {
+                if (
+                    PointInWindowRect(
+                        x,
+                        y,
+                        GetSettingsVoiceDeviceOptionRectForDirection(
+                            inputSelectRect,
+                            index,
+                            true
+                        ),
+                        left,
+                        top,
+                        bottom
+                    )
+                ) {
+                    gSelectedVoiceInputDeviceId =
+                        gVoiceInputDevices[(size_t)index].id;
+
+                    gSettingsVoiceInputDropdownOpen = false;
+                    SaveConfig();
+                    return 1;
+                }
+            }
+        }
+
+        if (gSettingsVoiceOutputDropdownOpen)
+        {
+            int visibleCount =
+                (std::min)(
+                    (int)gVoiceOutputDevices.size(),
+                    4
+                );
+
+            for (int index = 0; index < visibleCount; ++index)
+            {
+                if (
+                    PointInWindowRect(
+                        x,
+                        y,
+                        GetSettingsVoiceDeviceOptionRectForDirection(
+                            outputSelectRect,
+                            index,
+                            false
+                        ),
+                        left,
+                        top,
+                        bottom
+                    )
+                ) {
+                    gSelectedVoiceOutputDeviceId =
+                        gVoiceOutputDevices[(size_t)index].id;
+
+                    gSettingsVoiceOutputDropdownOpen = false;
+                    SaveConfig();
+                    return 1;
+                }
+            }
+        }
+
+        if (PointInWindowRect(x, y, inputSelectRect, left, top, bottom))
+        {
+            gSettingsLanguageDropdownOpen = false;
+            gSettingsVoiceOutputDropdownOpen = false;
+            gSettingsVoiceInputDropdownOpen =
+                !gSettingsVoiceInputDropdownOpen;
+
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, outputSelectRect, left, top, bottom))
+        {
+            gSettingsLanguageDropdownOpen = false;
+            gSettingsVoiceInputDropdownOpen = false;
+            gSettingsVoiceOutputDropdownOpen =
+                !gSettingsVoiceOutputDropdownOpen;
+
+            return 1;
+        }
+
         if (PointInWindowRect(x, y, GetSettingsLanguageSelectRect(left, top, right), left, top, bottom))
         {
+            gSettingsVoiceInputDropdownOpen = false;
+            gSettingsVoiceOutputDropdownOpen = false;
             gSettingsLanguageDropdownOpen =
                 !gSettingsLanguageDropdownOpen;
 
@@ -8181,6 +8985,8 @@ int SettingsHandleMouse(
         }
 
         gSettingsLanguageDropdownOpen = false;
+        gSettingsVoiceInputDropdownOpen = false;
+        gSettingsVoiceOutputDropdownOpen = false;
 
         if (y >= top - 38)
         {
@@ -8235,8 +9041,8 @@ void CreateSettingsWindow()
     params.structSize = sizeof(params);
     params.left = 130;
     params.top = 650;
-    params.right = 490;
-    params.bottom = 360;
+    params.right = 650;
+    params.bottom = 110;
     params.visible = 0;
     params.drawWindowFunc = DrawSettingsWindow;
     params.handleMouseClickFunc = SettingsHandleMouse;
@@ -8263,10 +9069,10 @@ void CreateSettingsWindow()
 
         XPLMSetWindowResizingLimits(
             gSettingsWindow,
-            360,
-            290,
-            360,
-            290
+            520,
+            540,
+            520,
+            540
         );
     }
 }
@@ -8275,6 +9081,10 @@ void CreateSettingsWindow()
 void ShowSettingsWindow()
 {
     gSettingsLanguageDropdownOpen = false;
+    gSettingsVoiceInputDropdownOpen = false;
+    gSettingsVoiceOutputDropdownOpen = false;
+
+    RefreshVoiceAudioDevices();
 
     CreateSettingsWindow();
 
@@ -8304,7 +9114,7 @@ void ShowSettingsWindow()
         );
 
         windowLeft =
-            compactRight - 380;
+            compactRight - 540;
         windowTop =
             compactTop - 60;
     }
@@ -8313,8 +9123,8 @@ void ShowSettingsWindow()
         gSettingsWindow,
         windowLeft,
         windowTop,
-        windowLeft + 360,
-        windowTop - 290
+        windowLeft + 520,
+        windowTop - 540
     );
 
     XPLMSetWindowIsVisible(
@@ -10312,8 +11122,23 @@ void DrawCompactWindow(
     std::string com2Frequency =
         FormatComFrequency(com2);
 
-    DrawCompactRadioPanel({ left + 12, top - 50, left + 255, top - 132 }, "COM 1", com1Frequency, GetCompactComSubLabel(com1Frequency));
-    DrawCompactRadioPanel({ left + 12, top - 140, left + 255, top - 222 }, "COM 2", com2Frequency, GetCompactComSubLabel(com2Frequency));
+    float now =
+        XPLMGetElapsedTime();
+
+    bool com1RxActive =
+        now < gVoiceLastRxCom1Until;
+
+    bool com2RxActive =
+        now < gVoiceLastRxCom2Until;
+
+    bool com1TxActive =
+        gVoicePttActive && gVoiceTransmitCom == 1;
+
+    bool com2TxActive =
+        gVoicePttActive && gVoiceTransmitCom == 2;
+
+    DrawCompactRadioPanel({ left + 12, top - 50, left + 255, top - 132 }, "COM 1", com1Frequency, GetCompactComSubLabel(com1Frequency), com1RxActive, com1TxActive);
+    DrawCompactRadioPanel({ left + 12, top - 140, left + 255, top - 222 }, "COM 2", com2Frequency, GetCompactComSubLabel(com2Frequency), com2RxActive, com2TxActive);
     DrawCompactTransponderPanel({ left + 12, top - 230, left + 255, top - 300 }, transponder, transponderMode);
 
     CustomRect chatRect = { left + 270, top - 50, right - 12, top - 300 };
@@ -10917,6 +11742,28 @@ int KickNoticeHandleMouse(
     else if (inMouse == xplm_MouseUp)
     {
         gKickNoticeDragging = false;
+        return 1;
+    }
+
+    return 1;
+}
+
+
+int VoicePttCommandHandler(
+    XPLMCommandRef inCommand,
+    XPLMCommandPhase inPhase,
+    void* inRefcon
+)
+{
+    if (inPhase == xplm_CommandBegin)
+    {
+        gVoicePttActive = true;
+        return 1;
+    }
+
+    if (inPhase == xplm_CommandEnd)
+    {
+        gVoicePttActive = false;
         return 1;
     }
 
@@ -15052,6 +15899,22 @@ PLUGIN_API int XPluginStart(
         );
     }
 
+    gVoicePttCommand =
+        XPLMCreateCommand(
+            "vfn/voice/push_to_talk",
+            "VFN Voice Push To Talk"
+        );
+
+    if (gVoicePttCommand != nullptr)
+    {
+        XPLMRegisterCommandHandler(
+            gVoicePttCommand,
+            VoicePttCommandHandler,
+            1,
+            nullptr
+        );
+    }
+
     SetTransponderMode(1);
 
     XPLMRegisterFlightLoopCallback(
@@ -15080,6 +15943,18 @@ PLUGIN_API void XPluginStop(void)
             0,
             nullptr
         );
+    }
+
+    if (gVoicePttCommand != nullptr)
+    {
+        XPLMUnregisterCommandHandler(
+            gVoicePttCommand,
+            VoicePttCommandHandler,
+            1,
+            nullptr
+        );
+
+        gVoicePttCommand = nullptr;
     }
 
     XPLMUnregisterFlightLoopCallback(

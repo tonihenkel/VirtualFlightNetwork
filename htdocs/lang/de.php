@@ -749,4 +749,160 @@ return [
     'description_award_founder_home' =>
         'Du bist innerhalb von 5 NM am Haus des VFN-Gründers vorbeigeflogen.',
 
+    'nav_admin_panel' =>
+        'Admin Panel',
+
+    'admin_title' =>
+        'Admin Panel',
+
+    'admin_subtitle' =>
+        'Netzwerkueberwachung, Frequenzmonitoring und Staff-Werkzeuge.',
+
+    'admin_login_required' =>
+        'Bitte melde dich an, um das Admin Panel zu nutzen.',
+
+    'admin_access_denied' =>
+        'Du hast keinen Zugriff auf das Admin Panel.',
+
+    'admin_tab_chat' =>
+        'Chat / Frequenzueberwachung',
+
+    'admin_tab_activity' =>
+        'Staff-Aktivitaeten',
+
+    'admin_tab_voice' =>
+        'Voice Monitor',
+
+    'admin_monitor_title' =>
+        'Frequenzueberwachung',
+
+    'admin_monitor_text' =>
+        'Schalte eine oder mehrere Frequenzen auf, um den laufenden Funkchat zu verfolgen.',
+
+    'admin_frequency' =>
+        'Frequenz',
+
+    'admin_add_frequency' =>
+        'Frequenz hinzufuegen',
+
+    'admin_add_unicom' =>
+        'UNICOM aufschalten',
+
+    'admin_all_frequencies' =>
+        'Alle Frequenzen',
+
+    'admin_all_frequencies_active' =>
+        'Alle Frequenzen aktiv',
+
+    'admin_permission_all_required' =>
+        'Alle Frequenzen gleichzeitig sind ab OP-Level 4 verfuegbar.',
+
+    'admin_monitored_frequencies' =>
+        'Aufgeschaltete Frequenzen',
+
+    'admin_no_frequencies' =>
+        'Noch keine Frequenz aufgeschaltet.',
+
+    'admin_live_messages' =>
+        'Live Nachrichten',
+
+    'admin_no_messages' =>
+        'Noch keine Nachrichten.',
+
+    'admin_time' =>
+        'Zeit',
+
+    'admin_sender' =>
+        'Sender',
+
+    'admin_type' =>
+        'Typ',
+
+    'admin_message' =>
+        'Nachricht',
+
+    'admin_staff_activity_title' =>
+        'Staff-Aktivitaeten',
+
+    'admin_staff_activity_text' =>
+        'Kicks, Bans, Announcements und weitere Staff-relevante Ereignisse.',
+
+    'admin_no_activity' =>
+        'Keine Staff-Aktivitaeten vorhanden.',
+
+    'admin_activity_announcement' =>
+        'Announcement',
+
+    'admin_all_online_pilots' =>
+        'Alle Online-Piloten',
+
+    'admin_voice_title' =>
+        'Browser Voice Monitor',
+
+    'admin_voice_text' =>
+        'Hier wird die Voice-Ueberwachung fuer Browserzugriff vorbereitet.',
+
+    'admin_voice_frequency' =>
+        'Voice-Frequenz',
+
+    'admin_voice_connect' =>
+        'Voice Monitor verbinden',
+
+    'admin_voice_device_default' =>
+        'Systemstandard',
+
+    'admin_voice_input_device' =>
+        'Eingabegeraet',
+
+    'admin_voice_output_device' =>
+        'Ausgabegeraet',
+
+    'admin_voice_device_input_prefix' =>
+        'Mikrofon:',
+
+    'admin_voice_device_output_prefix' =>
+        'Wiedergabe:',
+
+    'admin_voice_refresh_devices' =>
+        'Geraete aktualisieren',
+
+    'admin_voice_device_permission_hint' =>
+        'Browserzugriff auf Mikrofon erlauben, um Geraete auszuwaehlen.',
+
+    'admin_voice_push_to_talk' =>
+        'Senden / PTT',
+
+    'admin_voice_transmit_prepared' =>
+        'Senden auf dieser Frequenz vorbereitet.',
+
+    'admin_voice_tx_level' =>
+        'Senden',
+
+    'admin_voice_rx_level' =>
+        'Empfang',
+
+    'admin_voice_receiver' =>
+        'Empfang',
+
+    'admin_voice_browser_ready' =>
+        'Browser-Empfang vorbereitet',
+
+    'admin_voice_service' =>
+        'Voice-Service',
+
+    'admin_voice_placeholder' =>
+        'WebSocket-Anbindung fuer den Voice-Service ist fuer diesen Bereich vorbereitet.',
+
+    'admin_invalid_frequency' =>
+        'Ungueltige Frequenz.',
+
+    'admin_loading' =>
+        'Lade Daten...',
+
+    'admin_server_error' =>
+        'Serverfehler.',
+
+    'admin_system' =>
+        'System',
+
 ];

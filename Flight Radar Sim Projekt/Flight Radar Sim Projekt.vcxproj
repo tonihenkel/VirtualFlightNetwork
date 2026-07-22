@@ -120,7 +120,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <AdditionalLibraryDirectories>C:\Users\tonih\Desktop\Xplane Development\SDK\Libraries\Win;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>XPLM_64.lib;XPWidgets_64.lib;winhttp.lib;gdiplus.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>XPLM_64.lib;XPWidgets_64.lib;winhttp.lib;gdiplus.lib;winmm.lib;propsys.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\win_x64\Flight Radar Sim Projekt.xpl</OutputFile>
     </Link>
     <PostBuildEvent>
@@ -147,7 +147,7 @@ exit /b 0</Command>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <AdditionalLibraryDirectories>C:\Users\tonih\Desktop\Xplane Development\SDK\Libraries\Win;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>XPLM_64.lib;XPWidgets_64.lib;winhttp.lib;gdiplus.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>XPLM_64.lib;XPWidgets_64.lib;winhttp.lib;gdiplus.lib;winmm.lib;propsys.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\win_x64\Flight Radar Sim Projekt.xpl</OutputFile>
     </Link>
     <PostBuildEvent>
