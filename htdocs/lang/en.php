@@ -605,6 +605,9 @@
         'activity_system' =>
             'System',
 
+        'activity_kicked' =>
+            'Kicked from network',
+
         'activity_award_unlocked' =>
             'Award Unlocked',
 
@@ -645,7 +648,7 @@
             'Butter Landing',
 
         'description_award_butter_landing' =>
-            'You completed an exceptionally smooth landing.',
+            'You completed an exceptionally smooth landing at 80 fpm or less.',
 
         'activity_fuel_gambler' =>
             'Fuel Gambler',

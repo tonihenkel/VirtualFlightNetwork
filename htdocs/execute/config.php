@@ -13,7 +13,7 @@ $defaultTimezone = "UTC";
 date_default_timezone_set($defaultTimezone);
 
 // Minimale OP Permission, um unsichtbar sein zu können
-$minimumInvisibleOpPermission = 3;
+$minimumInvisibleOpPermission = 1;
 
 // Anzeige der Ratings überall
 $showRatings = true;

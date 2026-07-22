@@ -492,7 +492,7 @@ function checkLandingActivity(
     }
 
     if (
-        $landingRateFpm <= 50
+        $landingRateFpm <= 80
         && !userHasAward($pdo, $userId, 'award_butter_landing')
     ) {
         return;
@@ -561,7 +561,7 @@ function checkButterLanding(
     int $landingRateFpm
 ): void {
 
-    if ($landingRateFpm < 0 || $landingRateFpm > 50) {
+    if ($landingRateFpm < 0 || $landingRateFpm > 80) {
         return;
     }
 

@@ -261,7 +261,9 @@ try {
             s.user_id,
             s.was_airborne,
             s.last_vertical_speed,
-            u.username
+            s.is_invisible,
+            u.username,
+            u.op_permission
          FROM user_sessions s
          INNER JOIN users u ON u.id = s.user_id
          WHERE s.token = :token
@@ -276,11 +278,76 @@ try {
     $session = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$session) {
+        $inactiveStmt = $pdo->prepare(
+            "SELECT
+                s.user_id
+             FROM user_sessions s
+             WHERE s.token = :token
+             LIMIT 1"
+        );
+
+        $inactiveStmt->execute([
+            "token" => $token
+        ]);
+
+        $inactiveSession =
+            $inactiveStmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($inactiveSession) {
+            $kickMessageStmt = $pdo->prepare(
+                "SELECT
+                    message_text
+                 FROM chat_messages
+                 WHERE recipient_user_id = :user_id
+                   AND sender_callsign = 'ADMIN'
+                   AND message_text LIKE 'Du wurdest aus dem Netzwerk gekickt.%'
+                 ORDER BY id DESC
+                 LIMIT 1"
+            );
+
+            $kickMessageStmt->execute([
+                "user_id" => (int)$inactiveSession["user_id"]
+            ]);
+
+            $kickMessage =
+                $kickMessageStmt->fetchColumn();
+
+            if ($kickMessage) {
+                echo json_encode([
+                    "success" => false,
+                    "kicked" => true,
+                    "message" => (string)$kickMessage
+                ]);
+                exit;
+            }
+        }
+
         echo json_encode([
             "success" => false,
             "message" => "Ungueltige oder abgelaufene Session."
         ]);
         exit;
+    }
+
+    $minimumInvisibleLevel =
+        (int)($minimumInvisibleOpPermission ?? 2);
+
+    $canUseInvisible =
+        ((int)$session["op_permission"] >= $minimumInvisibleLevel);
+
+    if (!$canUseInvisible && (int)$session["is_invisible"] === 1) {
+        $resetInvisibleStmt = $pdo->prepare(
+            "UPDATE user_sessions
+             SET is_invisible = 0
+             WHERE token = :token
+             LIMIT 1"
+        );
+
+        $resetInvisibleStmt->execute([
+            "token" => $token
+        ]);
+
+        $session["is_invisible"] = 0;
     }
 
     /*
@@ -772,7 +839,10 @@ try {
         "aircraft_icao" => $aircraft_icao,
         "aircraft_category" => $aircraft_category,
         "transponder" => $transponder,
-        "on_ground" => $onGround
+        "on_ground" => $onGround,
+        "op_permission" => (int)$session["op_permission"],
+        "can_use_invisible" => $canUseInvisible,
+        "is_invisible" => ((int)$session["is_invisible"] === 1)
     ]);
 
 } catch (Exception $e) {

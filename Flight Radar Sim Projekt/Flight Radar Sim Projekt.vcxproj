@@ -120,9 +120,14 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <AdditionalLibraryDirectories>C:\Users\tonih\Desktop\Xplane Development\SDK\Libraries\Win;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>XPLM_64.lib;XPWidgets_64.lib;winhttp.lib;gdiplus.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>XPLM_64.lib;XPWidgets_64.lib;winhttp.lib;gdiplus.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\win_x64\Flight Radar Sim Projekt.xpl</OutputFile>
     </Link>
+    <PostBuildEvent>
+      <Command>if not exist "C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\resources" mkdir "C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\resources"
+if exist "$(ProjectDir)resources\msg_input_sound.mp3" copy /Y "$(ProjectDir)resources\msg_input_sound.mp3" "C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\resources\msg_input_sound.mp3"
+exit /b 0</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -142,9 +147,14 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
       <AdditionalLibraryDirectories>C:\Users\tonih\Desktop\Xplane Development\SDK\Libraries\Win;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>XPLM_64.lib;XPWidgets_64.lib;winhttp.lib;gdiplus.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>XPLM_64.lib;XPWidgets_64.lib;winhttp.lib;gdiplus.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <OutputFile>C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\win_x64\Flight Radar Sim Projekt.xpl</OutputFile>
     </Link>
+    <PostBuildEvent>
+      <Command>if not exist "C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\resources" mkdir "C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\resources"
+if exist "$(ProjectDir)resources\msg_input_sound.mp3" copy /Y "$(ProjectDir)resources\msg_input_sound.mp3" "C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\resources\msg_input_sound.mp3"
+exit /b 0</Command>
+    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="framework.h" />

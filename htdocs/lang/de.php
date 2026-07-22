@@ -601,6 +601,9 @@ return [
     'activity_system' =>
         'System',
 
+    'activity_kicked' =>
+        'Aus dem Netzwerk gekickt',
+
     'activity_award_unlocked' =>
         'Award freigeschaltet',
 
@@ -657,7 +660,7 @@ return [
         'Butterweiche Landung',
 
     'description_award_butter_landing' =>
-        'Du hast eine außergewöhnlich sanfte Landung absolviert.',
+        'Du hast eine außergewöhnlich sanfte Landung mit maximal 80 fpm absolviert.',
 
     'activity_fuel_gambler' =>
         'Fuel Gambler',

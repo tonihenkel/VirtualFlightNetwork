@@ -71,7 +71,7 @@ try {
     }
 
     $minimumInvisibleLevel =
-        (int)($minimumInvisibleOpPermission ?? 3);
+        (int)($minimumInvisibleOpPermission ?? 2);
 
     if ((int)$session["op_permission"] < $minimumInvisibleLevel) {
         echo json_encode([

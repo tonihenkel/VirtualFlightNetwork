@@ -90,7 +90,7 @@ try {
     }
 
     $minimumInvisibleLevel =
-        (int)($minimumInvisibleOpPermission ?? 3);
+        (int)($minimumInvisibleOpPermission ?? 2);
 
     $canUseInvisible =
         ((int)$user["op_permission"] >= $minimumInvisibleLevel);

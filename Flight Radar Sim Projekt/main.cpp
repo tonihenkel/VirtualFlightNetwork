@@ -31,21 +31,48 @@
 #include <atomic>
 #include <mutex>
 #include <thread>
+#include <cstring>
 #include <windows.h>
+#include <mmsystem.h>
+#include <objidl.h>
+#include <olectl.h>
 #include <winhttp.h>
+#include <gdiplus.h>
 #include <gl/GL.h>
 
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "opengl32.lib")
+#pragma comment(lib, "gdiplus.lib")
+#pragma comment(lib, "winmm.lib")
+
+using namespace Gdiplus;
+
+#ifndef GL_BGRA_EXT
+#define GL_BGRA_EXT 0x80E1
+#endif
 
 static std::string gPluginDirectory;
 static std::string gConfigPath;
 static std::string gLanguageDirectory;
+static std::string gMessageSoundPath;
 static std::string gCurrentLanguage = "en";
+static std::string gConfiguredLanguage = "";
 
 static std::map<std::string, std::string> gText;
 
 static bool gDebugEnabled = false;
+static ULONG_PTR gGdiplusToken = 0;
+
+struct TextureImage
+{
+    GLuint textureId;
+    int width;
+    int height;
+    bool loaded;
+};
+
+static TextureImage gGermanFlagTexture = { 0, 0, 0, false };
+static TextureImage gEnglishFlagTexture = { 0, 0, 0, false };
 
 
 /*
@@ -91,6 +118,7 @@ static std::string gAuthToken = "";
 
 static bool gCanUseInvisible = false;
 static bool gIsInvisible = false;
+static int gCurrentOpPermission = 0;
 
 static bool gCloseFlightplanAfterSend = false;
 static int gPositionUpdateFailureCount = 0;
@@ -120,6 +148,9 @@ static XPWidgetID gLoginWindow = nullptr;
 static XPLMWindowID gCustomLoginWindow = nullptr;
 static XPLMWindowID gCompactWindow = nullptr;
 static XPLMWindowID gLogoutConfirmWindow = nullptr;
+static XPLMWindowID gSettingsWindow = nullptr;
+static XPLMWindowID gKickNoticeWindow = nullptr;
+static std::string gKickNoticeMessage = "";
 static bool gCustomLoginDragging = false;
 static bool gCustomLoginPoppedOut = false;
 static int gCustomLoginDragOffsetX = 0;
@@ -135,6 +166,10 @@ static bool gWindowsChatKeyDown[256] = {};
 static char gLastLoginKey = 0;
 static char gLastLoginVirtualKey = 0;
 static float gLastLoginKeyTime = -1.0f;
+
+void ShowKickNoticeWindow(
+    const std::string& message
+);
 
 static XPWidgetID gUsernameLabel = nullptr;
 static XPWidgetID gPasswordLabel = nullptr;
@@ -198,6 +233,7 @@ static std::atomic<bool> gChatSendInProgress(false);
 static std::atomic<bool> gChatSendResultReady(false);
 static std::mutex gChatSendResultMutex;
 static std::string gChatSendLastResponse = "";
+static bool gLastChatSendWasCommand = false;
 static std::thread gChatSendThread;
 static std::string gCurrentPilotRatingCode = "FC0";
 static std::string gCurrentPilotRatingName = "New Flight Cadet";
@@ -234,6 +270,7 @@ static CustomFlightplanField gCustomFlightplanFocusedField =
 
 static XPWidgetID gFlightplanWindow = nullptr;
 static XPLMWindowID gCustomFlightplanWindow = nullptr;
+static XPLMWindowID gFrequencyWindow = nullptr;
 static bool gCustomFlightplanDragging = false;
 static bool gCustomFlightplanPoppedOut = false;
 static int gCustomFlightplanDragOffsetX = 0;
@@ -241,6 +278,23 @@ static int gCustomFlightplanDragOffsetY = 0;
 static char gLastFlightplanKey = 0;
 static char gLastFlightplanVirtualKey = 0;
 static float gLastFlightplanKeyTime = -1.0f;
+static bool gFrequencyWindowDragging = false;
+static int gFrequencyWindowDragOffsetX = 0;
+static int gFrequencyWindowDragOffsetY = 0;
+static bool gSettingsWindowDragging = false;
+static int gSettingsWindowDragOffsetX = 0;
+static int gSettingsWindowDragOffsetY = 0;
+static bool gKickNoticeDragging = false;
+static int gKickNoticeDragOffsetX = 0;
+static int gKickNoticeDragOffsetY = 0;
+static bool gSettingsLanguageDropdownOpen = false;
+static char gLastFrequencyKey = 0;
+static char gLastFrequencyVirtualKey = 0;
+static float gLastFrequencyKeyTime = -1.0f;
+static int gFrequencyTargetCom = 1;
+static std::string gFrequencyInputText = "";
+static std::string gFrequencyStatusText = "";
+static bool gFrequencyInputFocused = false;
 
 static std::string gFlightplanDepartureTimeText = "";
 static std::string gFlightplanDepartureAirportText = "";
@@ -334,6 +388,7 @@ void SyncCustomFlightplanToWidgets();
 void SetCustomLoginStatus(
     const std::string& value
 );
+void ToggleCustomInvisible();
 bool HandleChatKeyInput(
     char inKey,
     XPLMKeyFlags inFlags,
@@ -844,6 +899,8 @@ void LoadInternalEnglishLanguage()
 
     gText["window.login.title"] = "Flight Radar Login";
     gText["window.flightplan.title"] = "Flightplan";
+    gText["window.frequency.title"] = "Radio Frequency";
+    gText["window.settings.title"] = "Settings";
 
     gText["label.username"] = "Username:";
     gText["label.password"] = "Password:";
@@ -857,11 +914,22 @@ void LoadInternalEnglishLanguage()
     gText["button.send_flightplan"] = "Send Flightplan";
     gText["button.paste_route"] = "Paste Route";
     gText["button.clear_route"] = "Clear Route";
+    gText["button.set_frequency"] = "Set Frequency";
+    gText["button.cancel"] = "Cancel";
+    gText["button.settings"] = "Settings";
 
     gText["checkbox.invisible.off"] = "[ ] Invisible";
     gText["checkbox.invisible.on"] = "[X] Invisible";
     gText["status.invisible_enabled"] = "Invisible Mode enabled.";
     gText["status.invisible_disabled"] = "Invisible Mode disabled.";
+    gText["settings.title"] = "Settings";
+    gText["settings.invisible"] = "Invisible mode";
+    gText["settings.invisible_hint"] = "Available from OP-Level 1.";
+    gText["settings.invisible_locked"] = "Requires OP-Level 1.";
+    gText["settings.language"] = "Plugin language";
+    gText["settings.language_saved"] = "Language saved.";
+    gText["settings.language_de"] = "Deutsch";
+    gText["settings.language_en"] = "English";
 
     gText["menu.title"] = "Flight Radar Sim Project";
     gText["menu.login"] = "Open / Close Main Window";
@@ -880,6 +948,11 @@ void LoadInternalEnglishLanguage()
     gText["status.login_failed_log"] = "Flight Radar Plugin: Login failed.\n";
     gText["status.login_first"] = "Please login first.";
     gText["status.connection_lost_auto_logout"] = "Connection lost. Logged out locally.";
+    gText["status.kicked"] = "Kicked from network. ";
+    gText["frequency.input_label"] = "Frequency (MHz):";
+    gText["frequency.input_placeholder"] = "e.g. 122.800";
+    gText["frequency.saved"] = "Frequency set.";
+    gText["frequency.invalid"] = "Enter a valid COM frequency from 118.000 to 136.990.";
     gText["chat.connected"] = "Connected to VFN Network.";
     gText["chat.rank_status"] = "Pilot Rank: {pilot} / ATC Rank: {atc}";
     gText["chat.ready"] = "Ready for network operations.";
@@ -954,6 +1027,16 @@ void LoadInternalEnglishLanguage()
 
 void ApplyInternalGermanLanguageFallbacks()
 {
+    gText["window.frequency.title"] = "Funkfrequenz";
+    gText["window.settings.title"] = "Einstellungen";
+    gText["button.set_frequency"] = "Frequenz setzen";
+    gText["button.cancel"] = "Abbrechen";
+    gText["button.settings"] = "Einstellungen";
+    gText["frequency.input_label"] = "Frequenz (MHz):";
+    gText["frequency.input_placeholder"] = "z.B. 122.800";
+    gText["frequency.saved"] = "Frequenz gesetzt.";
+    gText["frequency.invalid"] = "Bitte eine gueltige COM-Frequenz von 118.000 bis 136.990 eingeben.";
+    gText["status.kicked"] = "Aus dem Netzwerk gekickt. ";
     gText["chat.connected"] = "Mit dem VFN Netzwerk verbunden.";
     gText["chat.rank_status"] = "Pilotenrang: {pilot} / ATC-Rang: {atc}";
     gText["chat.ready"] = "Bereit fuer den Netzwerkbetrieb.";
@@ -973,6 +1056,14 @@ void ApplyInternalGermanLanguageFallbacks()
     gText["award_moon_walker"] = "Moon Walker";
     gText["award_master_of_night"] = "Master of Night";
     gText["award_founder_home"] = "Haus des Gruenders";
+    gText["settings.title"] = "Einstellungen";
+    gText["settings.invisible"] = "Unsichtbar-Modus";
+    gText["settings.invisible_hint"] = "Verfuegbar ab OP-Level 1.";
+    gText["settings.invisible_locked"] = "Benoetigt OP-Level 1.";
+    gText["settings.language"] = "Plugin-Sprache";
+    gText["settings.language_saved"] = "Sprache gespeichert.";
+    gText["settings.language_de"] = "Deutsch";
+    gText["settings.language_en"] = "Englisch";
 }
 
 
@@ -1008,6 +1099,8 @@ void WriteDefaultLanguageFilesIfMissing()
         {
             enFile << "window.login.title=Flight Radar Login\n";
             enFile << "window.flightplan.title=Flightplan\n";
+            enFile << "window.frequency.title=Radio Frequency\n";
+            enFile << "window.settings.title=Settings\n";
             enFile << "label.username=Username:\n";
             enFile << "label.password=Password:\n";
             enFile << "label.callsign=Callsign:\n";
@@ -1019,10 +1112,21 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "button.send_flightplan=Send Flightplan\n";
             enFile << "button.paste_route=Paste Route\n";
             enFile << "button.clear_route=Clear Route\n";
+            enFile << "button.set_frequency=Set Frequency\n";
+            enFile << "button.cancel=Cancel\n";
+            enFile << "button.settings=Settings\n";
             enFile << "checkbox.invisible.off=[ ] Invisible\n";
             enFile << "checkbox.invisible.on=[X] Invisible\n";
             enFile << "status.invisible_enabled=Invisible Mode enabled.\n";
             enFile << "status.invisible_disabled=Invisible Mode disabled.\n";
+            enFile << "settings.title=Settings\n";
+            enFile << "settings.invisible=Invisible mode\n";
+            enFile << "settings.invisible_hint=Available from OP-Level 1.\n";
+            enFile << "settings.invisible_locked=Requires OP-Level 1.\n";
+            enFile << "settings.language=Plugin language\n";
+            enFile << "settings.language_saved=Language saved.\n";
+            enFile << "settings.language_de=Deutsch\n";
+            enFile << "settings.language_en=English\n";
             enFile << "menu.title=Flight Radar Sim Project\n";
             enFile << "menu.login=Open / Close Main Window\n";
             enFile << "menu.main=Open / Close Main Window\n";
@@ -1039,6 +1143,11 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "status.login_failed_log=Flight Radar Plugin: Login failed.\\n\n";
             enFile << "status.login_first=Please login first.\n";
             enFile << "status.connection_lost_auto_logout=Connection lost. Logged out locally.\n";
+            enFile << "status.kicked=Kicked from network. \n";
+            enFile << "frequency.input_label=Frequency (MHz):\n";
+            enFile << "frequency.input_placeholder=e.g. 122.800\n";
+            enFile << "frequency.saved=Frequency set.\n";
+            enFile << "frequency.invalid=Enter a valid COM frequency from 118.000 to 136.990.\n";
             enFile << "label.flight_rules=Flight Rules:\n";
             enFile << "label.flight_type=Flight Type:\n";
             enFile << "label.departure_time=Departure Time:\n";
@@ -1121,6 +1230,8 @@ void WriteDefaultLanguageFilesIfMissing()
         {
             deFile << "window.login.title=Flight Radar Login\n";
             deFile << "window.flightplan.title=Flugplan\n";
+            deFile << "window.frequency.title=Funkfrequenz\n";
+            deFile << "window.settings.title=Einstellungen\n";
             deFile << "label.username=Benutzer:\n";
             deFile << "label.password=Passwort:\n";
             deFile << "label.callsign=Callsign:\n";
@@ -1132,10 +1243,21 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "button.send_flightplan=Flugplan senden\n";
             deFile << "button.paste_route=Route einfuegen\n";
             deFile << "button.clear_route=Route leeren\n";
+            deFile << "button.set_frequency=Frequenz setzen\n";
+            deFile << "button.cancel=Abbrechen\n";
+            deFile << "button.settings=Einstellungen\n";
             deFile << "checkbox.invisible.off=[ ] Unsichtbar\n";
             deFile << "checkbox.invisible.on=[X] Unsichtbar\n";
             deFile << "status.invisible_enabled=Unsichtbarer Modus aktiviert.\n";
             deFile << "status.invisible_disabled=Unsichtbarer Modus deaktiviert.\n";
+            deFile << "settings.title=Einstellungen\n";
+            deFile << "settings.invisible=Unsichtbar-Modus\n";
+            deFile << "settings.invisible_hint=Verfuegbar ab OP-Level 1.\n";
+            deFile << "settings.invisible_locked=Benoetigt OP-Level 1.\n";
+            deFile << "settings.language=Plugin-Sprache\n";
+            deFile << "settings.language_saved=Sprache gespeichert.\n";
+            deFile << "settings.language_de=Deutsch\n";
+            deFile << "settings.language_en=Englisch\n";
             deFile << "menu.title=Flight Radar Sim Project\n";
             deFile << "menu.main=Hauptfenster oeffnen / schliessen\n";
             deFile << "menu.login=Hauptfenster oeffnen / schliessen\n";
@@ -1152,6 +1274,11 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "status.login_failed_log=Flight Radar Plugin: Login fehlgeschlagen.\\n\n";
             deFile << "status.login_first=Bitte zuerst einloggen.\n";
             deFile << "status.connection_lost_auto_logout=Verbindung verloren. Lokal ausgeloggt.\n";
+            deFile << "status.kicked=Aus dem Netzwerk gekickt. \n";
+            deFile << "frequency.input_label=Frequenz (MHz):\n";
+            deFile << "frequency.input_placeholder=z.B. 122.800\n";
+            deFile << "frequency.saved=Frequenz gesetzt.\n";
+            deFile << "frequency.invalid=Bitte eine gueltige COM-Frequenz von 118.000 bis 136.990 eingeben.\n";
             deFile << "label.flight_rules=Flugregeln:\n";
             deFile << "label.flight_type=Flugart:\n";
             deFile << "label.departure_time=Abflugzeit:\n";
@@ -1379,7 +1506,12 @@ void LoadLanguage()
     }
 
     gCurrentLanguage =
-        detectedLanguage;
+        (
+            gConfiguredLanguage == "de" ||
+            gConfiguredLanguage == "en"
+        )
+        ? gConfiguredLanguage
+        : detectedLanguage;
 
     if (!LoadLanguageFile(gCurrentLanguage))
     {
@@ -1447,6 +1579,426 @@ void InitializePluginPaths()
 }
 
 
+bool FileExists(
+    const std::string& filePath
+)
+{
+    std::ifstream file(
+        filePath.c_str(),
+        std::ios::binary
+    );
+
+    return file.good();
+}
+
+
+std::string GetMessageSoundPath()
+{
+    if (
+        !gMessageSoundPath.empty() &&
+        FileExists(gMessageSoundPath)
+    ) {
+        return gMessageSoundPath;
+    }
+
+    std::vector<std::string> candidates;
+
+    candidates.push_back(
+        gPluginDirectory + "\\resources\\msg_input_sound.mp3"
+    );
+
+    candidates.push_back(
+        gPluginDirectory + "\\msg_input_sound.mp3"
+    );
+
+    candidates.push_back(
+        gPluginDirectory + "\\..\\resources\\msg_input_sound.mp3"
+    );
+
+    candidates.push_back(
+        gPluginDirectory + "\\..\\msg_input_sound.mp3"
+    );
+
+    candidates.push_back(
+        "C:\\Users\\tonih\\Desktop\\Xplane Development\\Flight Radar Sim Projekt\\Flight Radar Sim Projekt\\resources\\msg_input_sound.mp3"
+    );
+
+    for (const std::string& candidate : candidates)
+    {
+        if (FileExists(candidate))
+        {
+            gMessageSoundPath =
+                candidate;
+
+            return gMessageSoundPath;
+        }
+    }
+
+    return "";
+}
+
+
+void PlayIncomingChatSound()
+{
+    std::string soundPath =
+        GetMessageSoundPath();
+
+    if (soundPath.empty())
+    {
+        MessageBeep(MB_ICONASTERISK);
+        return;
+    }
+
+    mciSendStringA(
+        "stop vfn_message_sound",
+        nullptr,
+        0,
+        nullptr
+    );
+
+    mciSendStringA(
+        "close vfn_message_sound",
+        nullptr,
+        0,
+        nullptr
+    );
+
+    std::string openCommand =
+        "open \"" + soundPath + "\" type mpegvideo alias vfn_message_sound";
+
+    MCIERROR openError =
+        mciSendStringA(
+            openCommand.c_str(),
+            nullptr,
+            0,
+            nullptr
+        );
+
+    if (openError != 0)
+    {
+        MessageBeep(MB_ICONASTERISK);
+        return;
+    }
+
+    MCIERROR playError =
+        mciSendStringA(
+            "play vfn_message_sound from 0",
+            nullptr,
+            0,
+            nullptr
+        );
+
+    if (playError != 0)
+    {
+        MessageBeep(MB_ICONASTERISK);
+    }
+}
+
+
+std::wstring StringToWideString(
+    const std::string& value
+)
+{
+    int length =
+        MultiByteToWideChar(
+            CP_ACP,
+            0,
+            value.c_str(),
+            -1,
+            nullptr,
+            0
+        );
+
+    if (length <= 0)
+    {
+        return L"";
+    }
+
+    std::wstring result(
+        length,
+        L'\0'
+    );
+
+    MultiByteToWideChar(
+        CP_ACP,
+        0,
+        value.c_str(),
+        -1,
+        &result[0],
+        length
+    );
+
+    if (!result.empty() && result.back() == L'\0')
+    {
+        result.pop_back();
+    }
+
+    return result;
+}
+
+
+std::string GetFlagImagePath(
+    const std::string& code
+)
+{
+    std::vector<std::string> candidates;
+
+    candidates.push_back(
+        gPluginDirectory + "\\images\\flags\\" + code + ".png"
+    );
+
+    candidates.push_back(
+        gPluginDirectory + "\\..\\images\\flags\\" + code + ".png"
+    );
+
+    candidates.push_back(
+        gPluginDirectory + "\\..\\..\\images\\flags\\" + code + ".png"
+    );
+
+    candidates.push_back(
+        "C:\\Users\\tonih\\Desktop\\Xplane Development\\Flight Radar Sim Projekt\\htdocs\\images\\flags\\" + code + ".png"
+    );
+
+    candidates.push_back(
+        "C:\\xampp\\htdocs\\images\\flags\\" + code + ".png"
+    );
+
+    for (const std::string& candidate : candidates)
+    {
+        if (FileExists(candidate))
+        {
+            return candidate;
+        }
+    }
+
+    return "";
+}
+
+
+bool LoadPngTexture(
+    const std::string& filePath,
+    TextureImage& texture
+)
+{
+    if (filePath.empty())
+    {
+        return false;
+    }
+
+    std::wstring widePath =
+        StringToWideString(filePath);
+
+    if (widePath.empty())
+    {
+        return false;
+    }
+
+    Bitmap bitmap(
+        widePath.c_str()
+    );
+
+    if (bitmap.GetLastStatus() != Ok)
+    {
+        return false;
+    }
+
+    UINT width =
+        bitmap.GetWidth();
+
+    UINT height =
+        bitmap.GetHeight();
+
+    if (width == 0 || height == 0)
+    {
+        return false;
+    }
+
+    Rect lockRect(
+        0,
+        0,
+        width,
+        height
+    );
+
+    BitmapData data;
+
+    Status lockStatus =
+        bitmap.LockBits(
+            &lockRect,
+            ImageLockModeRead,
+            PixelFormat32bppARGB,
+            &data
+        );
+
+    if (lockStatus != Ok)
+    {
+        return false;
+    }
+
+    std::vector<unsigned char> pixels(
+        width * height * 4
+    );
+
+    unsigned char* source =
+        static_cast<unsigned char*>(data.Scan0);
+
+    for (UINT row = 0; row < height; ++row)
+    {
+        unsigned char* sourceRow =
+            source + (row * data.Stride);
+
+        unsigned char* targetRow =
+            &pixels[row * width * 4];
+
+        memcpy(
+            targetRow,
+            sourceRow,
+            width * 4
+        );
+    }
+
+    bitmap.UnlockBits(
+        &data
+    );
+
+    if (texture.textureId == 0)
+    {
+        glGenTextures(
+            1,
+            &texture.textureId
+        );
+    }
+
+    glBindTexture(
+        GL_TEXTURE_2D,
+        texture.textureId
+    );
+
+    glTexParameteri(
+        GL_TEXTURE_2D,
+        GL_TEXTURE_MIN_FILTER,
+        GL_LINEAR
+    );
+
+    glTexParameteri(
+        GL_TEXTURE_2D,
+        GL_TEXTURE_MAG_FILTER,
+        GL_LINEAR
+    );
+
+    glTexParameteri(
+        GL_TEXTURE_2D,
+        GL_TEXTURE_WRAP_S,
+        GL_CLAMP
+    );
+
+    glTexParameteri(
+        GL_TEXTURE_2D,
+        GL_TEXTURE_WRAP_T,
+        GL_CLAMP
+    );
+
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_RGBA,
+        width,
+        height,
+        0,
+        GL_BGRA_EXT,
+        GL_UNSIGNED_BYTE,
+        pixels.data()
+    );
+
+    glBindTexture(
+        GL_TEXTURE_2D,
+        0
+    );
+
+    texture.width =
+        (int)width;
+
+    texture.height =
+        (int)height;
+
+    texture.loaded =
+        true;
+
+    return true;
+}
+
+
+void DrawTextureImage(
+    const TextureImage& texture,
+    const CustomRect& rect
+)
+{
+    if (!texture.loaded || texture.textureId == 0)
+    {
+        return;
+    }
+
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindTexture(
+        GL_TEXTURE_2D,
+        texture.textureId
+    );
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+
+    glBegin(GL_QUADS);
+    glTexCoord2f(0.0f, 1.0f);
+    glVertex2i(rect.left, rect.bottom);
+    glTexCoord2f(1.0f, 1.0f);
+    glVertex2i(rect.right, rect.bottom);
+    glTexCoord2f(1.0f, 0.0f);
+    glVertex2i(rect.right, rect.top);
+    glTexCoord2f(0.0f, 0.0f);
+    glVertex2i(rect.left, rect.top);
+    glEnd();
+
+    glBindTexture(
+        GL_TEXTURE_2D,
+        0
+    );
+    glDisable(GL_TEXTURE_2D);
+}
+
+
+void LoadFlagTextures()
+{
+    LoadPngTexture(
+        GetFlagImagePath("de"),
+        gGermanFlagTexture
+    );
+
+    LoadPngTexture(
+        GetFlagImagePath("gb"),
+        gEnglishFlagTexture
+    );
+}
+
+
+void DestroyTexture(
+    TextureImage& texture
+)
+{
+    if (texture.textureId != 0)
+    {
+        glDeleteTextures(
+            1,
+            &texture.textureId
+        );
+    }
+
+    texture.textureId = 0;
+    texture.width = 0;
+    texture.height = 0;
+    texture.loaded = false;
+}
+
+
 void CreateDefaultConfigIfMissing()
 {
     std::ifstream checkFile(
@@ -1473,6 +2025,7 @@ void CreateDefaultConfigIfMissing()
 
     configFile << "# Flight Radar Plugin Config\n";
     configFile << "debug=false\n";
+    configFile << "language=auto\n";
 
     configFile.close();
 
@@ -1483,6 +2036,7 @@ void CreateDefaultConfigIfMissing()
 void LoadConfig()
 {
     gDebugEnabled = false;
+    gConfiguredLanguage = "";
 
     CreateDefaultConfigIfMissing();
 
@@ -1507,6 +2061,17 @@ void LoadConfig()
         else if (line == "debug=false")
         {
             gDebugEnabled = false;
+        }
+        else if (
+            line == "language=de" ||
+            line == "language=en"
+        ) {
+            gConfiguredLanguage =
+                line.substr(9);
+        }
+        else if (line == "language=auto")
+        {
+            gConfiguredLanguage = "";
         }
     }
 
@@ -2035,6 +2600,33 @@ std::string FormatComFrequency(int value)
 }
 
 
+void SaveConfig()
+{
+    std::ofstream configFile(
+        gConfigPath.c_str()
+    );
+
+    if (!configFile.is_open())
+    {
+        XPLMDebugString(T("debug.config_create_failed"));
+        return;
+    }
+
+    configFile << "# Flight Radar Plugin Config\n";
+    configFile << "debug=" << (gDebugEnabled ? "true" : "false") << "\n";
+    configFile << "language="
+        << (
+            gConfiguredLanguage == "de" ||
+            gConfiguredLanguage == "en"
+            ? gConfiguredLanguage
+            : "auto"
+        )
+        << "\n";
+
+    configFile.close();
+}
+
+
 std::string GetPrimaryChatFrequency()
 {
     int com1 =
@@ -2148,7 +2740,7 @@ void AddChatLine(
 
     if (notify)
     {
-        MessageBeep(MB_ICONASTERISK);
+        PlayIncomingChatSound();
     }
 }
 
@@ -3224,6 +3816,7 @@ void DoLogout()
     gAuthToken = "";
     gCanUseInvisible = false;
     gIsInvisible = false;
+    gCurrentOpPermission = 0;
     gPositionUpdateFailureCount = 0;
     gPositionUpdateFirstFailureTime = -1.0f;
     gPositionUpdateResultReady.store(false);
@@ -3342,6 +3935,7 @@ void ForceLocalLogoutAfterConnectionFailures(
     gAuthToken = "";
     gCanUseInvisible = false;
     gIsInvisible = false;
+    gCurrentOpPermission = 0;
     gPositionUpdateFailureCount = 0;
     gPositionUpdateFirstFailureTime = -1.0f;
     gPositionUpdateResultReady.store(false);
@@ -3431,6 +4025,28 @@ void ForceLocalLogoutAfterConnectionFailures(
 }
 
 
+void ForceLocalLogoutAfterKick(
+    const std::string& reason
+)
+{
+    ForceLocalLogoutAfterConnectionFailures(
+        reason
+    );
+
+    std::string status =
+        std::string(T("status.kicked")) + reason;
+
+    XPSetWidgetDescriptor(
+        gStatusCaption,
+        status.c_str()
+    );
+
+    ShowKickNoticeWindow(
+        reason
+    );
+}
+
+
 void StartPositionUpdateWorker(
     const std::string& postData
 )
@@ -3483,6 +4099,49 @@ void StartPositionUpdateWorker(
 }
 
 
+void ApplyOperatorPermissionFromResponse(
+    const std::string& response
+)
+{
+    int opPermission =
+        ExtractJsonIntValue(
+            response,
+            "op_permission",
+            gCurrentOpPermission
+        );
+
+    bool canUseInvisible =
+        ExtractJsonBoolValue(
+            response,
+            "can_use_invisible",
+            opPermission > 1
+        );
+
+    bool isInvisible =
+        ExtractJsonBoolValue(
+            response,
+            "is_invisible",
+            gIsInvisible
+        );
+
+    gCurrentOpPermission =
+        opPermission;
+
+    gCanUseInvisible =
+        canUseInvisible;
+
+    if (!gCanUseInvisible)
+    {
+        gIsInvisible = false;
+    }
+    else
+    {
+        gIsInvisible =
+            isInvisible;
+    }
+}
+
+
 void ProcessPositionUpdateResult()
 {
     if (!gPositionUpdateResultReady.exchange(false))
@@ -3520,6 +4179,10 @@ void ProcessPositionUpdateResult()
 
     if (success)
     {
+        ApplyOperatorPermissionFromResponse(
+            response
+        );
+
         gPositionUpdateFailureCount = 0;
         gPositionUpdateFirstFailureTime = -1.0f;
         return;
@@ -3527,6 +4190,15 @@ void ProcessPositionUpdateResult()
 
     std::string message =
         ExtractMessageFromResponse(response);
+
+    if (ExtractJsonBoolValue(response, "kicked", false))
+    {
+        ForceLocalLogoutAfterKick(
+            message
+        );
+
+        return;
+    }
 
     gPositionUpdateFailureCount++;
 
@@ -3566,6 +4238,12 @@ void StartChatPollWorker()
 {
     if (!gLoggedIn || gAuthToken.empty())
     {
+        return;
+    }
+
+    if (!gCanUseInvisible)
+    {
+        gIsInvisible = false;
         return;
     }
 
@@ -3785,12 +4463,65 @@ void ProcessChatSendResult()
         return;
     }
 
+    std::string response;
+
+    {
+        std::lock_guard<std::mutex> lock(
+            gChatSendResultMutex
+        );
+
+        response =
+            gChatSendLastResponse;
+    }
+
     if (
         !gChatSendInProgress.load() &&
         gChatSendThread.joinable()
     ) {
         gChatSendThread.join();
     }
+
+    bool success =
+        ResponseIsSuccess(response);
+
+    std::string responseMessage =
+        ExtractMessageFromResponse(response);
+
+    if (ExtractJsonBoolValue(response, "kicked", false))
+    {
+        if (!responseMessage.empty())
+        {
+            AddChatLine(
+                { 0, "", "", "SYSTEM", "system", responseMessage },
+                false
+            );
+        }
+
+        ForceLocalLogoutAfterKick(
+            responseMessage
+        );
+
+        gLastChatSendWasCommand = false;
+        return;
+    }
+
+    if (!success || gLastChatSendWasCommand)
+    {
+        if (responseMessage.empty())
+        {
+            responseMessage =
+                success
+                ? "Command completed."
+                : "Command failed.";
+        }
+
+        AddChatLine(
+            { 0, "", "", "SYSTEM", success ? "system" : "admin", responseMessage },
+            false
+        );
+    }
+
+    gLastChatSendWasCommand = false;
 }
 
 
@@ -3832,6 +4563,10 @@ void SendChatMessage()
     XPLMDebugString(
         "Flight Radar Plugin: Chat send started.\n"
     );
+
+    gLastChatSendWasCommand =
+        !message.empty() &&
+        message[0] == '/';
 
     std::string postData =
         "token=" + UrlEncode(gAuthToken) +
@@ -4452,15 +5187,9 @@ void PerformCustomLogin()
             gCurrentAtcRatingName = "New ATC Cadet";
         }
 
-        gCanUseInvisible =
-            (
-                response.find("\"can_use_invisible\":true")
-                != std::string::npos ||
-                response.find("\"can_use_invisible\": true")
-                != std::string::npos
-            );
-
-        gIsInvisible = false;
+        ApplyOperatorPermissionFromResponse(
+            response
+        );
 
         if (gAuthToken.empty())
         {
@@ -4575,7 +5304,11 @@ void ToggleCustomInvisible()
     if (ResponseIsSuccess(response))
     {
         gIsInvisible =
-            newInvisibleState;
+            ExtractJsonBoolValue(
+                response,
+                "is_invisible",
+                newInvisibleState
+            );
 
         SetCustomLoginStatus(
             gIsInvisible
@@ -4585,6 +5318,10 @@ void ToggleCustomInvisible()
     }
     else
     {
+        ApplyOperatorPermissionFromResponse(
+            response
+        );
+
         SetCustomLoginStatus(
             ExtractMessageFromResponse(response)
         );
@@ -5849,6 +6586,1518 @@ void DrawCompactRadioPanel(
 }
 
 
+CustomRect GetCompactRadioKnobRect(
+    const CustomRect& rect
+)
+{
+    int knobX =
+        rect.right - 78;
+
+    int knobY =
+        rect.top - 48;
+
+    return {
+        knobX - 28,
+        knobY + 28,
+        knobX + 28,
+        knobY - 28
+    };
+}
+
+
+CustomRect GetFrequencyCloseRect(int left, int top, int right)
+{
+    return { right - 36, top - 32, right - 6, top - 4 };
+}
+
+
+CustomRect GetFrequencyInputRect(int left, int top, int right)
+{
+    return { left + 24, top - 98, right - 24, top - 130 };
+}
+
+
+CustomRect GetFrequencySetRect(int left, int top)
+{
+    return { left + 24, top - 174, left + 170, top - 208 };
+}
+
+
+CustomRect GetFrequencyCancelRect(int left, int top, int right)
+{
+    return { right - 170, top - 174, right - 24, top - 208 };
+}
+
+
+std::string NormalizeFrequencyInputText(
+    const std::string& value
+)
+{
+    std::string normalized =
+        TrimString(value);
+
+    for (size_t index = 0; index < normalized.size(); ++index)
+    {
+        if (normalized[index] == ',')
+        {
+            normalized[index] = '.';
+        }
+    }
+
+    char* endPtr =
+        nullptr;
+
+    double frequency =
+        strtod(
+            normalized.c_str(),
+            &endPtr
+        );
+
+    if (
+        endPtr == normalized.c_str() ||
+        *endPtr != '\0' ||
+        frequency < 118.0 ||
+        frequency > 136.990
+    ) {
+        return "";
+    }
+
+    char buffer[32];
+
+    sprintf_s(
+        buffer,
+        "%.3f",
+        frequency
+    );
+
+    return std::string(buffer);
+}
+
+
+int ConvertFrequencyToDataRefValue(
+    const std::string& frequencyText,
+    int currentValue
+)
+{
+    double frequencyMhz =
+        atof(
+            frequencyText.c_str()
+        );
+
+    if (currentValue >= 100000000 || currentValue <= 0)
+    {
+        return static_cast<int>(
+            std::round(frequencyMhz * 1000000.0)
+        );
+    }
+
+    if (currentValue >= 100000)
+    {
+        return static_cast<int>(
+            std::round(frequencyMhz * 1000.0)
+        );
+    }
+
+    return static_cast<int>(
+        std::round(frequencyMhz * 100.0)
+    );
+}
+
+
+void ApplyFrequencyWindowValue()
+{
+    std::string normalized =
+        NormalizeFrequencyInputText(
+            gFrequencyInputText
+        );
+
+    if (normalized.empty())
+    {
+        gFrequencyStatusText =
+            T("frequency.invalid");
+        return;
+    }
+
+    XPLMDataRef targetRef =
+        gFrequencyTargetCom == 2
+        ? gCom2
+        : gCom1;
+
+    if (targetRef == nullptr)
+    {
+        gFrequencyStatusText =
+            T("frequency.invalid");
+        return;
+    }
+
+    int currentValue =
+        XPLMGetDatai(
+            targetRef
+        );
+
+    XPLMSetDatai(
+        targetRef,
+        ConvertFrequencyToDataRefValue(
+            normalized,
+            currentValue
+        )
+    );
+
+    gFrequencyInputText =
+        normalized;
+    gFrequencyStatusText =
+        T("frequency.saved");
+
+    if (gFrequencyWindow != nullptr)
+    {
+        XPLMSetWindowIsVisible(
+            gFrequencyWindow,
+            0
+        );
+    }
+}
+
+
+void DrawFrequencyWindow(
+    XPLMWindowID inWindowID,
+    void* inRefcon
+)
+{
+    int left;
+    int top;
+    int right;
+    int bottom;
+
+    XPLMGetWindowGeometry(
+        inWindowID,
+        &left,
+        &top,
+        &right,
+        &bottom
+    );
+
+    DrawFilledRect(
+        { left, top, right, bottom },
+        0.145f,
+        0.157f,
+        0.173f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        { left, top, right, bottom },
+        0.18f,
+        0.36f,
+        0.50f,
+        1.00f
+    );
+
+    DrawFilledRect(
+        { left, top, right, top - 38 },
+        0.015f,
+        0.040f,
+        0.065f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        { left, top, right, top - 38 },
+        0.05f,
+        0.42f,
+        0.88f,
+        0.95f
+    );
+
+    DrawCompactHeaderLogo(
+        left + 4,
+        top - 3
+    );
+
+    std::string title =
+        std::string(
+            T("window.frequency.title")
+        ) +
+        " - COM " +
+        IntToString(gFrequencyTargetCom);
+
+    DrawText(
+        left + 90,
+        top - 21,
+        title,
+        0.88f,
+        0.94f,
+        1.00f
+    );
+
+    DrawText(
+        right - 24,
+        top - 21,
+        "X",
+        0.72f,
+        0.80f,
+        0.88f
+    );
+
+    CustomRect inputRect =
+        GetFrequencyInputRect(
+            left,
+            top,
+            right
+        );
+
+    DrawText(
+        inputRect.left,
+        inputRect.top + 10,
+        T("frequency.input_label"),
+        0.82f,
+        0.88f,
+        0.95f
+    );
+
+    DrawFilledRect(
+        inputRect,
+        0.025f,
+        0.080f,
+        0.115f,
+        0.98f
+    );
+
+    DrawRectOutline(
+        inputRect,
+        gFrequencyInputFocused ? 0.14f : 0.22f,
+        gFrequencyInputFocused ? 0.60f : 0.36f,
+        gFrequencyInputFocused ? 1.00f : 0.46f,
+        gFrequencyInputFocused ? 1.00f : 0.95f
+    );
+
+    if (gFrequencyInputText.empty())
+    {
+        DrawText(
+            inputRect.left + 12,
+            inputRect.bottom + 10,
+            T("frequency.input_placeholder"),
+            0.46f,
+            0.54f,
+            0.62f
+        );
+    }
+    else
+    {
+        DrawText(
+            inputRect.left + 12,
+            inputRect.bottom + 10,
+            gFrequencyInputText,
+            0.86f,
+            0.91f,
+            0.96f
+        );
+    }
+
+    if (!gFrequencyStatusText.empty())
+    {
+        DrawText(
+            left + 24,
+            top - 154,
+            gFrequencyStatusText,
+            0.42f,
+            0.92f,
+            0.46f
+        );
+    }
+
+    DrawCustomLoginButton(
+        GetFrequencySetRect(left, top),
+        T("button.set_frequency"),
+        true
+    );
+
+    DrawCustomLoginButton(
+        GetFrequencyCancelRect(left, top, right),
+        T("button.cancel"),
+        false
+    );
+}
+
+
+int FrequencyHandleCursor(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    void* inRefcon
+)
+{
+    return xplm_CursorDefault;
+}
+
+
+int FrequencyHandleMouseWheel(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    int wheel,
+    int clicks,
+    void* inRefcon
+)
+{
+    return 1;
+}
+
+
+void FrequencyHandleKey(
+    XPLMWindowID inWindowID,
+    char inKey,
+    XPLMKeyFlags inFlags,
+    char inVirtualKey,
+    void* inRefcon,
+    int losingFocus
+)
+{
+    if (losingFocus)
+    {
+        gFrequencyInputFocused = false;
+        return;
+    }
+
+    if (!gFrequencyInputFocused || (inFlags & xplm_UpFlag) != 0)
+    {
+        return;
+    }
+
+    float now =
+        XPLMGetElapsedTime();
+
+    bool repeatedKeyEvent =
+        inKey == gLastFrequencyKey &&
+        inVirtualKey == gLastFrequencyVirtualKey &&
+        now - gLastFrequencyKeyTime < 0.06f;
+
+    if (repeatedKeyEvent)
+    {
+        return;
+    }
+
+    gLastFrequencyKey =
+        inKey;
+
+    gLastFrequencyVirtualKey =
+        inVirtualKey;
+
+    gLastFrequencyKeyTime =
+        now;
+
+    if (inVirtualKey == 8 || inKey == 8)
+    {
+        if (!gFrequencyInputText.empty())
+        {
+            gFrequencyInputText.pop_back();
+        }
+
+        return;
+    }
+
+    if (inVirtualKey == 13 || inKey == 13)
+    {
+        ApplyFrequencyWindowValue();
+        return;
+    }
+
+    if (inVirtualKey == 27 || inKey == 27)
+    {
+        XPLMSetWindowIsVisible(
+            inWindowID,
+            0
+        );
+        return;
+    }
+
+    if (
+        (
+            (inKey >= '0' && inKey <= '9') ||
+            inKey == '.' ||
+            inKey == ','
+        ) &&
+        gFrequencyInputText.size() < 7
+    ) {
+        gFrequencyInputText.push_back(
+            inKey == ',' ? '.' : inKey
+        );
+    }
+}
+
+
+int FrequencyHandleMouse(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    XPLMMouseStatus inMouse,
+    void* inRefcon
+)
+{
+    int left;
+    int top;
+    int right;
+    int bottom;
+
+    XPLMGetWindowGeometry(
+        inWindowID,
+        &left,
+        &top,
+        &right,
+        &bottom
+    );
+
+    if (inMouse == xplm_MouseDown)
+    {
+        if (PointInWindowRect(x, y, GetFrequencyCloseRect(left, top, right), left, top, bottom))
+        {
+            XPLMSetWindowIsVisible(
+                inWindowID,
+                0
+            );
+
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetFrequencyInputRect(left, top, right), left, top, bottom))
+        {
+            gFrequencyInputFocused = true;
+
+            XPLMTakeKeyboardFocus(
+                inWindowID
+            );
+
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetFrequencySetRect(left, top), left, top, bottom))
+        {
+            ApplyFrequencyWindowValue();
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetFrequencyCancelRect(left, top, right), left, top, bottom))
+        {
+            XPLMSetWindowIsVisible(
+                inWindowID,
+                0
+            );
+
+            return 1;
+        }
+
+        gFrequencyInputFocused = false;
+        XPLMTakeKeyboardFocus(
+            nullptr
+        );
+
+        if (y >= top - 38)
+        {
+            gFrequencyWindowDragging = true;
+            gFrequencyWindowDragOffsetX = x - left;
+            gFrequencyWindowDragOffsetY = top - y;
+            return 1;
+        }
+    }
+    else if (inMouse == xplm_MouseDrag && gFrequencyWindowDragging)
+    {
+        int width =
+            right - left;
+
+        int height =
+            top - bottom;
+
+        int newLeft =
+            x - gFrequencyWindowDragOffsetX;
+
+        int newTop =
+            y + gFrequencyWindowDragOffsetY;
+
+        XPLMSetWindowGeometry(
+            inWindowID,
+            newLeft,
+            newTop,
+            newLeft + width,
+            newTop - height
+        );
+
+        return 1;
+    }
+    else if (inMouse == xplm_MouseUp)
+    {
+        gFrequencyWindowDragging = false;
+        return 1;
+    }
+
+    return 1;
+}
+
+
+void CreateFrequencyWindow()
+{
+    if (gFrequencyWindow != nullptr)
+    {
+        return;
+    }
+
+    XPLMCreateWindow_t params = {};
+    params.structSize = sizeof(params);
+    params.left = 120;
+    params.top = 660;
+    params.right = 440;
+    params.bottom = 430;
+    params.visible = 0;
+    params.drawWindowFunc = DrawFrequencyWindow;
+    params.handleMouseClickFunc = FrequencyHandleMouse;
+    params.handleKeyFunc = FrequencyHandleKey;
+    params.handleCursorFunc = FrequencyHandleCursor;
+    params.handleMouseWheelFunc = FrequencyHandleMouseWheel;
+    params.refcon = nullptr;
+    params.decorateAsFloatingWindow =
+        xplm_WindowDecorationRoundRectangle;
+    params.layer =
+        xplm_WindowLayerFloatingWindows;
+    params.handleRightClickFunc = FrequencyHandleMouse;
+
+    gFrequencyWindow =
+        XPLMCreateWindowEx(
+            &params
+        );
+
+    if (gFrequencyWindow != nullptr)
+    {
+        XPLMSetWindowTitle(
+            gFrequencyWindow,
+            T("window.frequency.title")
+        );
+
+        XPLMSetWindowResizingLimits(
+            gFrequencyWindow,
+            320,
+            230,
+            320,
+            230
+        );
+    }
+}
+
+
+void ShowFrequencyWindow(int targetCom)
+{
+    gFrequencyTargetCom =
+        targetCom == 2 ? 2 : 1;
+
+    XPLMDataRef targetRef =
+        gFrequencyTargetCom == 2
+        ? gCom2
+        : gCom1;
+
+    int currentValue =
+        targetRef != nullptr
+        ? XPLMGetDatai(targetRef)
+        : 0;
+
+    gFrequencyInputText =
+        FormatComFrequency(
+            currentValue
+        );
+
+    if (gFrequencyInputText == "0.000")
+    {
+        gFrequencyInputText = "";
+    }
+
+    gFrequencyStatusText = "";
+    gFrequencyInputFocused = true;
+
+    CreateFrequencyWindow();
+
+    if (gFrequencyWindow == nullptr)
+    {
+        return;
+    }
+
+    int windowLeft =
+        120;
+    int windowTop =
+        660;
+
+    if (gCompactWindow != nullptr)
+    {
+        int compactLeft;
+        int compactTop;
+        int compactRight;
+        int compactBottom;
+
+        XPLMGetWindowGeometry(
+            gCompactWindow,
+            &compactLeft,
+            &compactTop,
+            &compactRight,
+            &compactBottom
+        );
+
+        windowLeft =
+            compactLeft + 42;
+        windowTop =
+            compactTop - 64;
+    }
+
+    XPLMSetWindowGeometry(
+        gFrequencyWindow,
+        windowLeft,
+        windowTop,
+        windowLeft + 320,
+        windowTop - 230
+    );
+
+    XPLMSetWindowIsVisible(
+        gFrequencyWindow,
+        1
+    );
+
+    XPLMBringWindowToFront(
+        gFrequencyWindow
+    );
+
+    XPLMTakeKeyboardFocus(
+        gFrequencyWindow
+    );
+}
+
+
+CustomRect GetSettingsCloseRect(int left, int top, int right)
+{
+    return { right - 36, top - 32, right - 6, top - 4 };
+}
+
+
+CustomRect GetSettingsInvisibleRect(int left, int top, int right)
+{
+    return { left + 24, top - 92, right - 24, top - 132 };
+}
+
+
+int GetSettingsLanguageTop(int top)
+{
+    return gCanUseInvisible
+        ? top - 154
+        : top - 76;
+}
+
+
+CustomRect GetSettingsLanguageSelectRect(int left, int top, int right)
+{
+    int languageTop =
+        GetSettingsLanguageTop(top);
+
+    return { left + 24, languageTop - 24, right - 24, languageTop - 64 };
+}
+
+
+CustomRect GetSettingsLanguageOptionRect(
+    int left,
+    int top,
+    int right,
+    int index
+)
+{
+    CustomRect selectRect =
+        GetSettingsLanguageSelectRect(left, top, right);
+
+    int optionTop =
+        selectRect.bottom - 4 - (index * 42);
+
+    return { selectRect.left, optionTop, selectRect.right, optionTop - 40 };
+}
+
+
+void DrawSettingsFlagBadge(
+    const CustomRect& rect,
+    const std::string& code
+)
+{
+    std::string normalizedCode =
+        code;
+
+    std::transform(
+        normalizedCode.begin(),
+        normalizedCode.end(),
+        normalizedCode.begin(),
+        [](unsigned char value)
+        {
+            return (char)std::tolower(value);
+        }
+    );
+
+    CustomRect badge =
+        { rect.left, rect.top, rect.left + 42, rect.bottom };
+
+    DrawFilledRect(
+        badge,
+        0.015f,
+        0.040f,
+        0.065f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        badge,
+        0.55f,
+        0.72f,
+        0.84f,
+        1.00f
+    );
+
+    CustomRect flag =
+        { badge.left + 4, badge.top - 4, badge.right - 4, badge.bottom + 4 };
+
+    int flagTop =
+        flag.top > flag.bottom ? flag.top : flag.bottom;
+
+    int flagBottom =
+        flag.top < flag.bottom ? flag.top : flag.bottom;
+
+    if (normalizedCode == "de")
+    {
+        int height =
+            (flagTop - flagBottom) > 3
+            ? (flagTop - flagBottom)
+            : 3;
+
+        int stripeOne =
+            flagTop - (height / 3);
+
+        int stripeTwo =
+            flagTop - ((height * 2) / 3);
+
+        for (int y = flagTop; y >= stripeOne; --y)
+        {
+            DrawLine(
+                flag.left,
+                y,
+                flag.right,
+                y,
+                0.00f,
+                0.00f,
+                0.00f,
+                1.00f
+            );
+        }
+
+        for (int y = stripeOne; y >= stripeTwo; --y)
+        {
+            DrawLine(
+                flag.left,
+                y,
+                flag.right,
+                y,
+                0.92f,
+                0.05f,
+                0.08f,
+                1.00f
+            );
+        }
+
+        for (int y = stripeTwo; y >= flagBottom; --y)
+        {
+            DrawLine(
+                flag.left,
+                y,
+                flag.right,
+                y,
+                1.00f,
+                0.84f,
+                0.00f,
+                1.00f
+            );
+        }
+    }
+    else
+    {
+        DrawFilledRect(
+            flag,
+            0.02f,
+            0.18f,
+            0.54f,
+            1.00f
+        );
+
+        for (int offset = -4; offset <= 4; offset += 2)
+        {
+            DrawLine(
+                flag.left,
+                flag.top + offset,
+                flag.right,
+                flag.bottom + offset,
+                0.94f,
+                0.94f,
+                0.98f,
+                1.00f
+            );
+
+            DrawLine(
+                flag.left,
+                flag.bottom + offset,
+                flag.right,
+                flag.top + offset,
+                0.94f,
+                0.94f,
+                0.98f,
+                1.00f
+            );
+        }
+
+        for (int offset = -1; offset <= 1; ++offset)
+        {
+            DrawLine(
+                flag.left,
+                flag.top + offset,
+                flag.right,
+                flag.bottom + offset,
+                0.78f,
+                0.06f,
+                0.10f,
+                1.00f
+            );
+
+            DrawLine(
+                flag.left,
+                flag.bottom + offset,
+                flag.right,
+                flag.top + offset,
+                0.78f,
+                0.06f,
+                0.10f,
+                1.00f
+            );
+        }
+
+        DrawFilledRect(
+            { flag.left + 13, flag.top, flag.left + 21, flag.bottom },
+            0.94f,
+            0.94f,
+            0.98f,
+            1.00f
+        );
+
+        DrawFilledRect(
+            { flag.left, flag.top - 8, flag.right, flag.top - 16 },
+            0.94f,
+            0.94f,
+            0.98f,
+            1.00f
+        );
+
+        DrawFilledRect(
+            { flag.left + 15, flag.top, flag.left + 19, flag.bottom },
+            0.78f,
+            0.06f,
+            0.10f,
+            1.00f
+        );
+
+        DrawFilledRect(
+            { flag.left, flag.top - 10, flag.right, flag.top - 14 },
+            0.78f,
+            0.06f,
+            0.10f,
+            1.00f
+        );
+    }
+
+    DrawRectOutline(
+        flag,
+        0.85f,
+        0.90f,
+        0.95f,
+        0.75f
+    );
+}
+
+
+void DrawSettingsLanguageOption(
+    const CustomRect& rect,
+    const std::string& code,
+    const std::string& label,
+    bool selected
+)
+{
+    DrawFilledRect(
+        rect,
+        selected ? 0.018f : 0.015f,
+        selected ? 0.075f : 0.040f,
+        selected ? 0.115f : 0.065f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        rect,
+        selected ? 0.08f : 0.18f,
+        selected ? 0.56f : 0.36f,
+        selected ? 1.00f : 0.50f,
+        0.95f
+    );
+
+    DrawSettingsFlagBadge(
+        { rect.left + 12, rect.top - 8, rect.left + 56, rect.bottom + 8 },
+        code
+    );
+
+    DrawText(
+        rect.left + 72,
+        rect.top - 24,
+        label,
+        0.86f,
+        0.91f,
+        0.96f
+    );
+
+    if (selected)
+    {
+        DrawText(
+            rect.right - 28,
+            rect.top - 24,
+            "X",
+            0.24f,
+            0.92f,
+            0.25f
+        );
+    }
+}
+
+
+std::string GetLanguageLabel(
+    const std::string& code
+)
+{
+    return code == "de"
+        ? T("settings.language_de")
+        : T("settings.language_en");
+}
+
+
+void DrawSettingsLanguageSelect(
+    int left,
+    int top,
+    int right
+)
+{
+    CustomRect selectRect =
+        GetSettingsLanguageSelectRect(left, top, right);
+
+    DrawSettingsLanguageOption(
+        selectRect,
+        gCurrentLanguage,
+        GetLanguageLabel(gCurrentLanguage),
+        true
+    );
+
+    DrawText(
+        selectRect.right - 42,
+        selectRect.top - 24,
+        gSettingsLanguageDropdownOpen ? "^" : "v",
+        0.82f,
+        0.90f,
+        0.96f
+    );
+
+    if (!gSettingsLanguageDropdownOpen)
+    {
+        return;
+    }
+
+    DrawSettingsLanguageOption(
+        GetSettingsLanguageOptionRect(left, top, right, 0),
+        "de",
+        T("settings.language_de"),
+        gCurrentLanguage == "de"
+    );
+
+    DrawSettingsLanguageOption(
+        GetSettingsLanguageOptionRect(left, top, right, 1),
+        "en",
+        T("settings.language_en"),
+        gCurrentLanguage == "en"
+    );
+}
+
+
+void ApplyPluginLanguageSelection(
+    const std::string& languageCode
+)
+{
+    if (
+        languageCode != "de" &&
+        languageCode != "en"
+    ) {
+        return;
+    }
+
+    gConfiguredLanguage =
+        languageCode;
+
+    SaveConfig();
+    LoadLanguage();
+
+    if (gCustomLoginWindow != nullptr)
+    {
+        XPLMSetWindowTitle(
+            gCustomLoginWindow,
+            "VFN Network Pilot Client"
+        );
+    }
+
+    if (gFrequencyWindow != nullptr)
+    {
+        XPLMSetWindowTitle(
+            gFrequencyWindow,
+            T("window.frequency.title")
+        );
+    }
+
+    if (gSettingsWindow != nullptr)
+    {
+        XPLMSetWindowTitle(
+            gSettingsWindow,
+            T("window.settings.title")
+        );
+    }
+}
+
+
+void DrawSettingsWindow(
+    XPLMWindowID inWindowID,
+    void* inRefcon
+)
+{
+    int left;
+    int top;
+    int right;
+    int bottom;
+
+    XPLMGetWindowGeometry(
+        inWindowID,
+        &left,
+        &top,
+        &right,
+        &bottom
+    );
+
+    XPLMSetGraphicsState(
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+    );
+
+    XPLMDrawTranslucentDarkBox(
+        left,
+        top,
+        right,
+        bottom
+    );
+
+    DrawFilledRect(
+        { left, top, right, bottom },
+        0.015f,
+        0.040f,
+        0.065f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        { left, top, right, bottom },
+        0.18f,
+        0.36f,
+        0.50f,
+        1.00f
+    );
+
+    DrawFilledRect(
+        { left, top, right, top - 38 },
+        0.018f,
+        0.075f,
+        0.115f,
+        1.00f
+    );
+
+    DrawFilledRect(
+        { left + 3, top - 40, right - 3, top - 38 },
+        0.10f,
+        0.45f,
+        0.85f,
+        0.86f
+    );
+
+    DrawRectOutline(
+        { left, top, right, top - 38 },
+        0.05f,
+        0.42f,
+        0.88f,
+        0.95f
+    );
+
+    DrawCompactHeaderLogo(
+        left + 4,
+        top - 3
+    );
+
+    DrawText(
+        left + 90,
+        top - 21,
+        T("settings.title"),
+        0.88f,
+        0.94f,
+        1.00f
+    );
+
+    DrawText(
+        right - 24,
+        top - 21,
+        "X",
+        0.72f,
+        0.80f,
+        0.88f
+    );
+
+    DrawText(
+        left + 24,
+        GetSettingsLanguageTop(top),
+        T("settings.language"),
+        0.08f,
+        0.55f,
+        1.00f
+    );
+
+    if (gCanUseInvisible)
+    {
+        CustomRect invisibleRect =
+            GetSettingsInvisibleRect(
+                left,
+                top,
+                right
+            );
+
+        DrawText(
+            left + 24,
+            top - 66,
+            T("settings.invisible"),
+            0.08f,
+            0.55f,
+            1.00f
+        );
+
+        DrawFilledRect(
+            invisibleRect,
+            0.015f,
+            0.040f,
+            0.065f,
+            1.00f
+        );
+
+        DrawRectOutline(
+            invisibleRect,
+            0.18f,
+            0.40f,
+            0.52f,
+            0.95f
+        );
+
+        CustomRect checkbox =
+            { invisibleRect.left + 12, invisibleRect.top - 11, invisibleRect.left + 30, invisibleRect.top - 29 };
+
+        DrawRectOutline(
+            checkbox,
+            0.08f,
+            0.55f,
+            1.00f,
+            0.95f
+        );
+
+        if (gIsInvisible)
+        {
+            DrawText(
+                checkbox.left + 4,
+                checkbox.top - 13,
+                "X",
+                0.90f,
+                0.96f,
+                1.00f
+            );
+        }
+
+        DrawText(
+            invisibleRect.left + 44,
+            invisibleRect.top - 25,
+            T("settings.invisible_hint"),
+            0.82f,
+            0.88f,
+            0.95f
+        );
+    }
+
+    DrawSettingsLanguageSelect(
+        left,
+        top,
+        right
+    );
+}
+
+
+int SettingsHandleCursor(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    void* inRefcon
+)
+{
+    return xplm_CursorDefault;
+}
+
+
+int SettingsHandleMouseWheel(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    int wheel,
+    int clicks,
+    void* inRefcon
+)
+{
+    return 1;
+}
+
+
+int SettingsHandleMouse(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    XPLMMouseStatus inMouse,
+    void* inRefcon
+)
+{
+    int left;
+    int top;
+    int right;
+    int bottom;
+
+    XPLMGetWindowGeometry(
+        inWindowID,
+        &left,
+        &top,
+        &right,
+        &bottom
+    );
+
+    if (inMouse == xplm_MouseDown)
+    {
+        if (PointInWindowRect(x, y, GetSettingsCloseRect(left, top, right), left, top, bottom))
+        {
+            XPLMSetWindowIsVisible(
+                inWindowID,
+                0
+            );
+
+            return 1;
+        }
+
+        if (
+            gCanUseInvisible &&
+            PointInWindowRect(x, y, GetSettingsInvisibleRect(left, top, right), left, top, bottom)
+        )
+        {
+            gSettingsLanguageDropdownOpen = false;
+
+            ToggleCustomInvisible();
+
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetSettingsLanguageSelectRect(left, top, right), left, top, bottom))
+        {
+            gSettingsLanguageDropdownOpen =
+                !gSettingsLanguageDropdownOpen;
+
+            return 1;
+        }
+
+        if (
+            gSettingsLanguageDropdownOpen &&
+            PointInWindowRect(x, y, GetSettingsLanguageOptionRect(left, top, right, 0), left, top, bottom)
+        )
+        {
+            ApplyPluginLanguageSelection(
+                "de"
+            );
+
+            gSettingsLanguageDropdownOpen = false;
+            return 1;
+        }
+
+        if (
+            gSettingsLanguageDropdownOpen &&
+            PointInWindowRect(x, y, GetSettingsLanguageOptionRect(left, top, right, 1), left, top, bottom)
+        )
+        {
+            ApplyPluginLanguageSelection(
+                "en"
+            );
+
+            gSettingsLanguageDropdownOpen = false;
+            return 1;
+        }
+
+        gSettingsLanguageDropdownOpen = false;
+
+        if (y >= top - 38)
+        {
+            gSettingsWindowDragging = true;
+            gSettingsWindowDragOffsetX = x - left;
+            gSettingsWindowDragOffsetY = top - y;
+            return 1;
+        }
+    }
+    else if (inMouse == xplm_MouseDrag && gSettingsWindowDragging)
+    {
+        int width =
+            right - left;
+
+        int height =
+            top - bottom;
+
+        int newLeft =
+            x - gSettingsWindowDragOffsetX;
+
+        int newTop =
+            y + gSettingsWindowDragOffsetY;
+
+        XPLMSetWindowGeometry(
+            inWindowID,
+            newLeft,
+            newTop,
+            newLeft + width,
+            newTop - height
+        );
+
+        return 1;
+    }
+    else if (inMouse == xplm_MouseUp)
+    {
+        gSettingsWindowDragging = false;
+        return 1;
+    }
+
+    return 1;
+}
+
+
+void CreateSettingsWindow()
+{
+    if (gSettingsWindow != nullptr)
+    {
+        return;
+    }
+
+    XPLMCreateWindow_t params = {};
+    params.structSize = sizeof(params);
+    params.left = 130;
+    params.top = 650;
+    params.right = 490;
+    params.bottom = 360;
+    params.visible = 0;
+    params.drawWindowFunc = DrawSettingsWindow;
+    params.handleMouseClickFunc = SettingsHandleMouse;
+    params.handleCursorFunc = SettingsHandleCursor;
+    params.handleMouseWheelFunc = SettingsHandleMouseWheel;
+    params.refcon = nullptr;
+    params.decorateAsFloatingWindow =
+        xplm_WindowDecorationRoundRectangle;
+    params.layer =
+        xplm_WindowLayerFloatingWindows;
+    params.handleRightClickFunc = SettingsHandleMouse;
+
+    gSettingsWindow =
+        XPLMCreateWindowEx(
+            &params
+        );
+
+    if (gSettingsWindow != nullptr)
+    {
+        XPLMSetWindowTitle(
+            gSettingsWindow,
+            T("window.settings.title")
+        );
+
+        XPLMSetWindowResizingLimits(
+            gSettingsWindow,
+            360,
+            290,
+            360,
+            290
+        );
+    }
+}
+
+
+void ShowSettingsWindow()
+{
+    gSettingsLanguageDropdownOpen = false;
+
+    CreateSettingsWindow();
+
+    if (gSettingsWindow == nullptr)
+    {
+        return;
+    }
+
+    int windowLeft =
+        130;
+    int windowTop =
+        650;
+
+    if (gCompactWindow != nullptr)
+    {
+        int compactLeft;
+        int compactTop;
+        int compactRight;
+        int compactBottom;
+
+        XPLMGetWindowGeometry(
+            gCompactWindow,
+            &compactLeft,
+            &compactTop,
+            &compactRight,
+            &compactBottom
+        );
+
+        windowLeft =
+            compactRight - 380;
+        windowTop =
+            compactTop - 60;
+    }
+
+    XPLMSetWindowGeometry(
+        gSettingsWindow,
+        windowLeft,
+        windowTop,
+        windowLeft + 360,
+        windowTop - 290
+    );
+
+    XPLMSetWindowIsVisible(
+        gSettingsWindow,
+        1
+    );
+
+    XPLMBringWindowToFront(
+        gSettingsWindow
+    );
+}
+
+
 std::string GetTransponderModeLabel(int mode)
 {
     if (mode == 1)
@@ -6251,6 +8500,18 @@ void DrawCompactWindow(
             senderGreen = 0.92f;
             senderBlue = 0.25f;
         }
+        else if (line.type == "private")
+        {
+            senderRed = 0.86f;
+            senderGreen = 0.58f;
+            senderBlue = 1.00f;
+        }
+        else if (line.type == "admin")
+        {
+            senderRed = 1.00f;
+            senderGreen = 0.34f;
+            senderBlue = 0.24f;
+        }
         else if (line.sender == gCurrentCallsign)
         {
             senderRed = 0.55f;
@@ -6349,7 +8610,7 @@ void DrawCompactWindow(
     DrawCompactTab(GetCompactTabRect(left, top, 1), "MSG", false);
     DrawCompactTab(GetCompactTabRect(left, top, 2), "FP", false);
     DrawCompactTab(GetCompactTabRect(left, top, 3), "D-ATIS", false);
-    DrawCompactTab(GetCompactTabRect(left, top, 4), "SETTINGS", false);
+    DrawCompactTab(GetCompactTabRect(left, top, 4), T("button.settings"), false);
 }
 
 
@@ -6537,6 +8798,309 @@ int LogoutConfirmHandleMouseWheel(
 )
 {
     return 0;
+}
+
+
+CustomRect GetKickNoticeOkRect(int left, int top, int right)
+{
+    return { right - 132, top - 182, right - 28, top - 216 };
+}
+
+
+void DrawKickNoticeWindow(
+    XPLMWindowID inWindowID,
+    void* inRefcon
+)
+{
+    int left;
+    int top;
+    int right;
+    int bottom;
+
+    XPLMGetWindowGeometry(
+        inWindowID,
+        &left,
+        &top,
+        &right,
+        &bottom
+    );
+
+    XPLMSetGraphicsState(
+        0,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0
+    );
+
+    DrawFilledRect(
+        { left, top, right, bottom },
+        0.015f,
+        0.040f,
+        0.065f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        { left, top, right, bottom },
+        0.28f,
+        0.48f,
+        0.60f,
+        0.95f
+    );
+
+    DrawFilledRect(
+        { left + 1, top - 34, right - 1, top - 1 },
+        0.018f,
+        0.075f,
+        0.115f,
+        1.00f
+    );
+
+    DrawText(
+        left + 22,
+        top - 20,
+        "VFN Network",
+        0.94f,
+        0.97f,
+        1.00f
+    );
+
+    DrawText(
+        left + 24,
+        top - 62,
+        "Du wurdest aus dem Netzwerk gekickt.",
+        1.00f,
+        0.42f,
+        0.36f
+    );
+
+    std::vector<std::string> wrappedLines =
+        WrapTextForWidth(
+            gKickNoticeMessage,
+            right - left - 48
+        );
+
+    int y =
+        top - 92;
+
+    for (
+        size_t i = 0;
+        i < wrappedLines.size() && i < 4;
+        ++i
+    ) {
+        DrawText(
+            left + 24,
+            y,
+            wrappedLines[i],
+            0.78f,
+            0.86f,
+            0.94f
+        );
+
+        y -= 18;
+    }
+
+    DrawCustomLoginButton(
+        GetKickNoticeOkRect(left, top, right),
+        "OK",
+        true
+    );
+}
+
+
+int KickNoticeHandleMouse(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    XPLMMouseStatus inMouse,
+    void* inRefcon
+)
+{
+    int left;
+    int top;
+    int right;
+    int bottom;
+
+    XPLMGetWindowGeometry(
+        inWindowID,
+        &left,
+        &top,
+        &right,
+        &bottom
+    );
+
+    if (inMouse == xplm_MouseDown)
+    {
+        if (PointInRect(x, y, GetKickNoticeOkRect(left, top, right)))
+        {
+            XPLMSetWindowIsVisible(
+                inWindowID,
+                0
+            );
+
+            return 1;
+        }
+
+        if (y > top - 42)
+        {
+            gKickNoticeDragging = true;
+            gKickNoticeDragOffsetX = x - left;
+            gKickNoticeDragOffsetY = top - y;
+            return 1;
+        }
+    }
+    else if (inMouse == xplm_MouseDrag && gKickNoticeDragging)
+    {
+        int width =
+            right - left;
+
+        int height =
+            top - bottom;
+
+        int newLeft =
+            x - gKickNoticeDragOffsetX;
+
+        int newTop =
+            y + gKickNoticeDragOffsetY;
+
+        XPLMSetWindowGeometry(
+            inWindowID,
+            newLeft,
+            newTop,
+            newLeft + width,
+            newTop - height
+        );
+
+        return 1;
+    }
+    else if (inMouse == xplm_MouseUp)
+    {
+        gKickNoticeDragging = false;
+        return 1;
+    }
+
+    return 1;
+}
+
+
+int KickNoticeHandleCursor(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    void* inRefcon
+)
+{
+    return xplm_CursorDefault;
+}
+
+
+int KickNoticeHandleMouseWheel(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    int wheel,
+    int clicks,
+    void* inRefcon
+)
+{
+    return 0;
+}
+
+
+void ShowKickNoticeWindow(
+    const std::string& message
+)
+{
+    gKickNoticeMessage =
+        message.empty()
+            ? "Kein Grund angegeben."
+            : message;
+
+    int noticeLeft = 420;
+    int noticeTop = 650;
+    int noticeWidth = 430;
+    int noticeHeight = 235;
+
+    if (gCustomLoginWindow != nullptr)
+    {
+        int loginLeft;
+        int loginTop;
+        int loginRight;
+        int loginBottom;
+
+        XPLMGetWindowGeometry(
+            gCustomLoginWindow,
+            &loginLeft,
+            &loginTop,
+            &loginRight,
+            &loginBottom
+        );
+
+        noticeLeft =
+            loginRight + 20;
+
+        noticeTop =
+            loginTop;
+    }
+
+    if (gKickNoticeWindow == nullptr)
+    {
+        XPLMCreateWindow_t params = {};
+        params.structSize = sizeof(params);
+        params.left = noticeLeft;
+        params.top = noticeTop;
+        params.right = noticeLeft + noticeWidth;
+        params.bottom = noticeTop - noticeHeight;
+        params.visible = 0;
+        params.drawWindowFunc = DrawKickNoticeWindow;
+        params.handleMouseClickFunc = KickNoticeHandleMouse;
+        params.handleCursorFunc = KickNoticeHandleCursor;
+        params.handleMouseWheelFunc = KickNoticeHandleMouseWheel;
+        params.refcon = nullptr;
+        params.decorateAsFloatingWindow =
+            xplm_WindowDecorationRoundRectangle;
+        params.layer =
+            xplm_WindowLayerFloatingWindows;
+        params.handleRightClickFunc = KickNoticeHandleMouse;
+
+        gKickNoticeWindow =
+            XPLMCreateWindowEx(
+                &params
+            );
+
+        if (gKickNoticeWindow != nullptr)
+        {
+            XPLMSetWindowTitle(
+                gKickNoticeWindow,
+                "VFN Network"
+            );
+        }
+    }
+
+    if (gKickNoticeWindow == nullptr)
+    {
+        return;
+    }
+
+    XPLMSetWindowGeometry(
+        gKickNoticeWindow,
+        noticeLeft,
+        noticeTop,
+        noticeLeft + noticeWidth,
+        noticeTop - noticeHeight
+    );
+
+    XPLMSetWindowIsVisible(
+        gKickNoticeWindow,
+        1
+    );
+
+    XPLMBringWindowToFront(
+        gKickNoticeWindow
+    );
 }
 
 
@@ -7194,6 +9758,54 @@ int CompactHandleMouse(
             };
         CustomRect transponderRect =
             { left + 12, top - 230, left + 255, top - 300 };
+        CustomRect com1Rect =
+            { left + 12, top - 50, left + 255, top - 132 };
+        CustomRect com2Rect =
+            { left + 12, top - 140, left + 255, top - 222 };
+
+        if (
+            PointInWindowRect(
+                x,
+                y,
+                GetCompactRadioKnobRect(com1Rect),
+                left,
+                top,
+                bottom
+            )
+        )
+        {
+            gChatInputFocused = false;
+            gChatSendButtonPressed = false;
+
+            XPLMTakeKeyboardFocus(
+                nullptr
+            );
+
+            ShowFrequencyWindow(1);
+            return 1;
+        }
+
+        if (
+            PointInWindowRect(
+                x,
+                y,
+                GetCompactRadioKnobRect(com2Rect),
+                left,
+                top,
+                bottom
+            )
+        )
+        {
+            gChatInputFocused = false;
+            gChatSendButtonPressed = false;
+
+            XPLMTakeKeyboardFocus(
+                nullptr
+            );
+
+            ShowFrequencyWindow(2);
+            return 1;
+        }
 
         if (
             PointInWindowRect(
@@ -7302,6 +9914,19 @@ int CompactHandleMouse(
                 UpdateFlightplanWindowState();
             }
 
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCompactTabRect(left, top, 4), left, top, bottom))
+        {
+            gChatInputFocused = false;
+            gChatSendButtonPressed = false;
+
+            XPLMTakeKeyboardFocus(
+                nullptr
+            );
+
+            ShowSettingsWindow();
             return 1;
         }
 
@@ -7949,15 +10574,9 @@ int LoginWindowHandler(
                     gCurrentAtcRatingName = "New ATC Cadet";
                 }
 
-                gCanUseInvisible =
-                    (
-                        response.find("\"can_use_invisible\":true")
-                        != std::string::npos ||
-                        response.find("\"can_use_invisible\": true")
-                        != std::string::npos
-                        );
-
-                gIsInvisible = false;
+                ApplyOperatorPermissionFromResponse(
+                    response
+                );
 
                 if (gAuthToken.empty())
                 {
@@ -8031,6 +10650,7 @@ int LoginWindowHandler(
                 gAuthToken = "";
                 gCanUseInvisible = false;
                 gIsInvisible = false;
+                gCurrentOpPermission = 0;
 
                 std::string message =
                     ExtractMessageFromResponse(response);
@@ -9340,7 +11960,7 @@ void CreateLoginWindow()
     compactParams.structSize = sizeof(compactParams);
     compactParams.left = 80;
     compactParams.top = 700;
-    compactParams.right = 700;
+    compactParams.right = 760;
     compactParams.bottom = 320;
     compactParams.visible = 0;
     compactParams.drawWindowFunc = DrawCompactWindow;
@@ -9369,9 +11989,9 @@ void CreateLoginWindow()
 
         XPLMSetWindowResizingLimits(
             gCompactWindow,
-            620,
+            680,
             380,
-            620,
+            680,
             380
         );
     }
@@ -10178,6 +12798,16 @@ PLUGIN_API int XPluginStart(
         "Reads flight data from X-Plane."
     );
 
+    if (gGdiplusToken == 0)
+    {
+        GdiplusStartupInput gdiplusStartupInput;
+        GdiplusStartup(
+            &gGdiplusToken,
+            &gdiplusStartupInput,
+            nullptr
+        );
+    }
+
     LoadInternalEnglishLanguage();
 
     XPLMDebugString(
@@ -10530,6 +13160,33 @@ PLUGIN_API void XPluginStop(void)
         gLogoutConfirmWindow = nullptr;
     }
 
+    if (gFrequencyWindow != nullptr)
+    {
+        XPLMDestroyWindow(
+            gFrequencyWindow
+        );
+
+        gFrequencyWindow = nullptr;
+    }
+
+    if (gSettingsWindow != nullptr)
+    {
+        XPLMDestroyWindow(
+            gSettingsWindow
+        );
+
+        gSettingsWindow = nullptr;
+    }
+
+    if (gKickNoticeWindow != nullptr)
+    {
+        XPLMDestroyWindow(
+            gKickNoticeWindow
+        );
+
+        gKickNoticeWindow = nullptr;
+    }
+
     if (gLoginWindow != nullptr)
     {
         XPDestroyWidget(
@@ -10538,6 +13195,15 @@ PLUGIN_API void XPluginStop(void)
         );
 
         gLoginWindow = nullptr;
+    }
+
+    DestroyTexture(gGermanFlagTexture);
+    DestroyTexture(gEnglishFlagTexture);
+
+    if (gGdiplusToken != 0)
+    {
+        GdiplusShutdown(gGdiplusToken);
+        gGdiplusToken = 0;
     }
 
     XPLMDebugString(
