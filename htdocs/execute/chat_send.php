@@ -302,6 +302,81 @@ try {
         exit;
     }
 
+    if (preg_match('/^\/playerinfo\s+([A-Z0-9_\-]+)\s*$/i', $message, $matches)) {
+        $targetIdentifier =
+            strtoupper(trim($matches[1]));
+
+        $targetStmt = $pdo->prepare(
+            "SELECT
+                u.id,
+                u.username,
+                s.callsign
+             FROM users u
+             LEFT JOIN user_sessions s
+                ON s.user_id = u.id
+               AND s.is_active = 1
+             WHERE UPPER(s.callsign) = :identifier
+                OR UPPER(u.username) = :identifier
+             ORDER BY s.is_active DESC, s.last_seen DESC
+             LIMIT 1"
+        );
+
+        $targetStmt->execute([
+            'identifier' => $targetIdentifier
+        ]);
+
+        $targetUser =
+            $targetStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$targetUser) {
+            insertUserChatSystemMessage(
+                $pdo,
+                $senderUserId,
+                'system',
+                'Spieler nicht gefunden: ' . $targetIdentifier
+            );
+
+            echo json_encode([
+                'success' => false,
+                'message' => 'Spieler nicht gefunden.'
+            ]);
+            exit;
+        }
+
+        $scheme =
+            (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+                ? 'https'
+                : 'http';
+
+        $host =
+            $_SERVER['HTTP_HOST'] ?? '127.0.0.1';
+
+        $profileUrl =
+            $scheme . '://' . $host . '/profile.php?id=' . (int)$targetUser['id'];
+
+        $displayName =
+            strtoupper(trim((string)($targetUser['callsign'] ?? '')));
+
+        if ($displayName === '') {
+            $displayName =
+                (string)$targetUser['username'];
+        }
+
+        insertUserChatSystemMessage(
+            $pdo,
+            $senderUserId,
+            'system',
+            'Profil wird geoeffnet: ' . $displayName
+        );
+
+        echo json_encode([
+            'success' => true,
+            'message' => 'Profil wird geoeffnet: ' . $displayName,
+            'open_url' => $profileUrl
+        ], JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
     if (preg_match('/^\/kick\s+([A-Z0-9_\-]+)(?:\s+(.+))?\s*$/i', $message, $matches)) {
         if ((int)$session['op_permission'] < 1) {
             insertUserChatSystemMessage(
@@ -470,6 +545,21 @@ try {
         echo json_encode([
             'success' => false,
             'message' => 'Ungueltiger /msg Befehl.'
+        ]);
+        exit;
+    }
+
+    if (preg_match('/^\/playerinfo\b/i', $message)) {
+        insertUserChatSystemMessage(
+            $pdo,
+            $senderUserId,
+            'system',
+            'Syntax: /playerinfo CALLSIGN'
+        );
+
+        echo json_encode([
+            'success' => false,
+            'message' => 'Ungueltiger /playerinfo Befehl.'
         ]);
         exit;
     }

@@ -33,6 +33,7 @@
 #include <thread>
 #include <cstring>
 #include <windows.h>
+#include <shellapi.h>
 #include <mmsystem.h>
 #include <objidl.h>
 #include <olectl.h>
@@ -3236,6 +3237,47 @@ bool ResponseIsSuccess(
     return false;
 }
 
+bool IsHttpUrl(
+    const std::string& url
+)
+{
+    return
+        url.rfind("http://", 0) == 0 ||
+        url.rfind("https://", 0) == 0;
+}
+
+
+void OpenExternalUrl(
+    const std::string& url
+)
+{
+    if (!IsHttpUrl(url))
+    {
+        XPLMDebugString(
+            "Flight Radar Plugin: Refused to open non-http URL.\n"
+        );
+
+        return;
+    }
+
+    HINSTANCE result =
+        ShellExecuteA(
+            nullptr,
+            "open",
+            url.c_str(),
+            nullptr,
+            nullptr,
+            SW_SHOWNORMAL
+        );
+
+    if ((INT_PTR)result <= 32)
+    {
+        XPLMDebugString(
+            "Flight Radar Plugin: Failed to open profile URL.\n"
+        );
+    }
+}
+
 
 std::string ExtractJsonStringValue(
     const std::string& response,
@@ -4487,6 +4529,19 @@ void ProcessChatSendResult()
 
     std::string responseMessage =
         ExtractMessageFromResponse(response);
+
+    std::string openUrl =
+        ExtractJsonStringValue(
+            response,
+            "open_url"
+        );
+
+    if (!openUrl.empty())
+    {
+        OpenExternalUrl(
+            openUrl
+        );
+    }
 
     if (ExtractJsonBoolValue(response, "kicked", false))
     {
