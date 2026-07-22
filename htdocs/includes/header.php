@@ -389,10 +389,6 @@ if (isset($_SESSION['web_user_id'])) {
             <?php echo htmlspecialchars(t('nav_download')); ?>
         </a>
 
-        <a href="imprint.php">
-            <?php echo htmlspecialchars(t('nav_imprint')); ?>
-        </a>
-
         <?php if (isset($_SESSION['web_user_id'])): ?>
 
             <span style="color:#00ffcc;font-weight:bold;">

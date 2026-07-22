@@ -141,6 +141,89 @@ try {
         exit;
     }
 
+    if (preg_match('/^\/announcement\s+(.+)$/i', $message, $matches)) {
+        if ((int)$session['op_permission'] < 1) {
+            insertUserChatSystemMessage(
+                $pdo,
+                $senderUserId,
+                'system',
+                'Keine Berechtigung fuer /announcement.'
+            );
+
+            echo json_encode([
+                'success' => false,
+                'message' => 'Keine Berechtigung.'
+            ]);
+            exit;
+        }
+
+        $announcementText =
+            trim($matches[1]);
+
+        if ($announcementText === '') {
+            insertUserChatSystemMessage(
+                $pdo,
+                $senderUserId,
+                'system',
+                'Syntax: /announcement Nachricht'
+            );
+
+            echo json_encode([
+                'success' => false,
+                'message' => 'Ungueltiger /announcement Befehl.'
+            ]);
+            exit;
+        }
+
+        $announcementText =
+            mb_substr($announcementText, 0, 220);
+
+        $onlineStmt = $pdo->prepare(
+            "SELECT DISTINCT
+                user_id
+             FROM user_sessions
+             WHERE is_active = 1"
+        );
+
+        $onlineStmt->execute();
+
+        $onlineUserIds =
+            array_map('intval', $onlineStmt->fetchAll(PDO::FETCH_COLUMN));
+
+        if (empty($onlineUserIds)) {
+            insertUserChatSystemMessage(
+                $pdo,
+                $senderUserId,
+                'system',
+                'Keine Spieler online.'
+            );
+
+            echo json_encode([
+                'success' => false,
+                'message' => 'Keine Spieler online.'
+            ]);
+            exit;
+        }
+
+        foreach ($onlineUserIds as $onlineUserId) {
+            insertChatMessage(
+                $pdo,
+                null,
+                $onlineUserId,
+                $senderUserId,
+                'ANNOUNCEMENT',
+                'system',
+                '[ANNOUNCEMENT] ' . $announcementText
+            );
+        }
+
+        echo json_encode([
+            'success' => true,
+            'message' => 'Announcement gesendet.'
+        ]);
+        exit;
+    }
+
     if (preg_match('/^\/staff\s+(.+)$/i', $message, $matches)) {
         $staffText =
             trim($matches[1]);
@@ -441,8 +524,6 @@ try {
             exit;
         }
 
-        // Temporarily disabled for local kick testing.
-        /*
         if ((int)$targetSession['user_id'] === $senderUserId) {
             insertUserChatSystemMessage(
                 $pdo,
@@ -457,7 +538,6 @@ try {
             ]);
             exit;
         }
-        */
 
         $kickToken =
             (string)$targetSession['token'];
@@ -590,6 +670,21 @@ try {
         echo json_encode([
             'success' => false,
             'message' => 'Ungueltiger /list Befehl.'
+        ]);
+        exit;
+    }
+
+    if (preg_match('/^\/announcement\b/i', $message)) {
+        insertUserChatSystemMessage(
+            $pdo,
+            $senderUserId,
+            'system',
+            'Syntax: /announcement Nachricht'
+        );
+
+        echo json_encode([
+            'success' => false,
+            'message' => 'Ungueltiger /announcement Befehl.'
         ]);
         exit;
     }

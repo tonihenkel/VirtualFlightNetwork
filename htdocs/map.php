@@ -47,7 +47,7 @@ if (!isset($showRatings)) {
 
         #map {
             width: 100%;
-            height: calc(100vh - 82px);
+            height: calc(100vh - 128px);
         }
 
         #statusBox {
@@ -2459,6 +2459,8 @@ if ($statusMessage !== '') {
         1000
     );
 </script>
+
+<?php require_once 'includes/footer.php'; ?>
 
 </body>
 </html>

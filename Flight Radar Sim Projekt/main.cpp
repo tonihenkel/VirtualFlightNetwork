@@ -8489,7 +8489,7 @@ void DrawCompactWindow(
     int senderTextLeft =
         chatRect.left + 58;
     int messageTextLeft =
-        chatRect.left + 116;
+        chatRect.left + 144;
     int messageTextWidth =
         chatRect.right - messageTextLeft - 20;
 
@@ -8507,7 +8507,13 @@ void DrawCompactWindow(
                 {
                     &line,
                     rowIndex == 0 ? line.timestamp : "",
-                    rowIndex == 0 ? TruncateForField(line.sender + ":", 11) : "",
+                    rowIndex == 0
+                        ? (
+                            line.sender == "ANNOUNCEMENT"
+                                ? "ANNOUNCE:"
+                                : TruncateForField(line.sender + ":", 11)
+                            )
+                        : "",
                     wrappedRows[rowIndex],
                     rowIndex == 0
                 }
@@ -8568,6 +8574,12 @@ void DrawCompactWindow(
             senderGreen = 0.34f;
             senderBlue = 0.24f;
         }
+        else if (line.sender == "ANNOUNCEMENT")
+        {
+            senderRed = 1.00f;
+            senderGreen = 0.18f;
+            senderBlue = 0.14f;
+        }
         else if (line.sender == gCurrentCallsign)
         {
             senderRed = 0.55f;
@@ -8593,13 +8605,24 @@ void DrawCompactWindow(
             senderBlue
         );
 
+        float messageRed = 0.72f;
+        float messageGreen = 0.80f;
+        float messageBlue = 0.88f;
+
+        if (line.sender == "ANNOUNCEMENT")
+        {
+            messageRed = 1.00f;
+            messageGreen = 0.42f;
+            messageBlue = 0.32f;
+        }
+
         DrawText(
             messageTextLeft,
             messageY,
             row.messageText,
-            0.72f,
-            0.80f,
-            0.88f
+            messageRed,
+            messageGreen,
+            messageBlue
         );
 
         messageY -= chatLineHeight;
@@ -12018,7 +12041,7 @@ void CreateLoginWindow()
     compactParams.structSize = sizeof(compactParams);
     compactParams.left = 80;
     compactParams.top = 700;
-    compactParams.right = 760;
+    compactParams.right = 900;
     compactParams.bottom = 320;
     compactParams.visible = 0;
     compactParams.drawWindowFunc = DrawCompactWindow;
@@ -12047,9 +12070,9 @@ void CreateLoginWindow()
 
         XPLMSetWindowResizingLimits(
             gCompactWindow,
-            680,
+            820,
             380,
-            680,
+            820,
             380
         );
     }

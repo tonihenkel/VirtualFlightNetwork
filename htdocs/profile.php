@@ -907,6 +907,8 @@ $awardImages = [
     </div>
 </main>
 
+<?php require_once 'includes/footer.php'; ?>
+
 <?php require_once 'includes/auth_modals.php'; ?>
 
 </body>

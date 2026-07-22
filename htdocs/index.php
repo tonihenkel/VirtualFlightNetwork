@@ -566,11 +566,14 @@ if ($statusMessage !== '') {
 
     </section>
 
+    <?php require_once 'includes/footer.php'; ?>
+    <!--
     <footer class="footer">
         <?php echo htmlspecialchars($projectName); ?>
         · Local Development Version ·
         <?php echo date("Y"); ?>
     </footer>
+    -->
 
 </div>
 
