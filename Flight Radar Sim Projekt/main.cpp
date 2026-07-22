@@ -162,6 +162,7 @@ static bool gWindowsChatMouseDown = false;
 static char gLastCompactKey = 0;
 static char gLastCompactVirtualKey = 0;
 static float gLastCompactKeyTime = -1.0f;
+static float gLastXPlaneChatInputTime = -1.0f;
 static bool gWindowsChatKeyDown[256] = {};
 static char gLastLoginKey = 0;
 static char gLastLoginVirtualKey = 0;
@@ -9263,6 +9264,9 @@ bool HandleChatKeyInput(
     gLastCompactKeyTime =
         now;
 
+    gLastXPlaneChatInputTime =
+        now;
+
     if (inVirtualKey == 8 || inKey == 8)
     {
         if (!gChatInputText.empty())
@@ -9308,19 +9312,7 @@ int ChatKeySniffer(
     void* inRefcon
 )
 {
-    if (
-        !gChatInputFocused ||
-        gCompactWindow == nullptr ||
-        !XPLMGetWindowIsVisible(gCompactWindow)
-    ) {
-        return 1;
-    }
-
-    return HandleChatKeyInput(
-        inChar,
-        inFlags,
-        inVirtualKey
-    ) ? 0 : 1;
+    return 1;
 }
 
 
@@ -9402,7 +9394,18 @@ void PollWindowsChatKeyboard()
         !gLoggedIn ||
         !gChatInputFocused ||
         gCompactWindow == nullptr ||
-        !XPLMGetWindowIsVisible(gCompactWindow)
+        !XPLMGetWindowIsVisible(gCompactWindow) ||
+        !XPLMWindowIsPoppedOut(gCompactWindow)
+    ) {
+        return;
+    }
+
+    float now =
+        XPLMGetElapsedTime();
+
+    if (
+        gLastXPlaneChatInputTime > 0.0f &&
+        now - gLastXPlaneChatInputTime < 0.12f
     ) {
         return;
     }
