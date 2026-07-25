@@ -773,6 +773,84 @@ return [
     'admin_tab_voice' =>
         'Voice Monitor',
 
+    'admin_tab_players' =>
+        'Spielerliste',
+
+    'admin_search_messages' =>
+        'Nachrichten durchsuchen',
+
+    'admin_filter_user' =>
+        'Benutzer / Callsign',
+
+    'admin_filter_frequency' =>
+        'Frequenz',
+
+    'admin_filter_type' =>
+        'Typ',
+
+    'admin_filter_from' =>
+        'Datum / Uhrzeit von',
+
+    'admin_filter_to' =>
+        'Datum / Uhrzeit bis',
+
+    'admin_filter_all' =>
+        'Alle',
+
+    'admin_players_title' =>
+        'Spielerliste',
+
+    'admin_players_text' =>
+        'Alle registrierten Spieler suchen und nach Kontodaten, Division, Rang oder Status filtern.',
+
+    'admin_players_search' =>
+        'Name, Benutzername oder E-Mail',
+
+    'admin_players_country' =>
+        'Land',
+
+    'admin_players_division' =>
+        'Division',
+
+    'admin_players_rank' =>
+        'Rang',
+
+    'admin_players_status' =>
+        'Status',
+
+    'admin_players_active' =>
+        'Aktiv',
+
+    'admin_players_inactive' =>
+        'Inaktiv',
+
+    'admin_players_network_status' =>
+        'Netzwerkstatus',
+
+    'admin_players_online' =>
+        'Online',
+
+    'admin_players_offline' =>
+        'Offline',
+
+    'admin_players_name' =>
+        'Spieler',
+
+    'admin_players_email' =>
+        'E-Mail',
+
+    'admin_players_registered' =>
+        'Registriert',
+
+    'admin_players_last_login' =>
+        'Letzter Login',
+
+    'admin_players_no_results' =>
+        'Keine passenden Spieler gefunden.',
+
+    'admin_players_result_count' =>
+        'Spieler gefunden',
+
     'admin_monitor_title' =>
         'Frequenzueberwachung',
 

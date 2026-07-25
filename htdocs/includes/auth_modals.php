@@ -80,6 +80,15 @@ catch (Exception $e)
 
         </form>
 
+        <p style="margin:14px 0 0;text-align:center;">
+            <a href="forgot_password.php?lang=<?php echo urlencode($currentLanguage); ?>"
+               style="color:#49adff;text-decoration:none;">
+                <?php echo $currentLanguage === 'de'
+                    ? 'Passwort vergessen?'
+                    : 'Forgot password?'; ?>
+            </a>
+        </p>
+
     </div>
 
 </div>

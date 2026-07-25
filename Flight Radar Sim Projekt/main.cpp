@@ -434,6 +434,8 @@ static std::string gSelectedVoiceInputDeviceId = "default";
 static std::string gSelectedVoiceOutputDeviceId = "default";
 static std::atomic<float> gVoiceInputPeakLevel(0.0f);
 static std::atomic<float> gVoiceInputPeakLastUpdate(-1.0f);
+static std::atomic<float> gVoiceCapturedPeakLevel(0.0f);
+static std::atomic<float> gVoiceCapturedPeakLastUpdate(-1.0f);
 static std::atomic<float> gVoiceOutputPeakLevel(0.0f);
 static std::string gVoiceShortcutLabel = "";
 static float gVoiceShortcutLastRefresh = -100.0f;
@@ -454,11 +456,17 @@ static HWAVEOUT gVoiceWaveOut = nullptr;
 static WAVEHDR gVoiceCaptureHeaders[4] = {};
 static std::vector<short> gVoiceCaptureBuffers[4];
 static const int gVoiceSampleRate = 16000;
+static std::atomic<int> gVoiceCaptureSampleRate(16000);
 
 std::string FormatComFrequency(int rawFrequency);
 std::string ExtractJsonStringValue(
     const std::string& json,
     const std::string& key
+);
+int ExtractJsonIntValue(
+    const std::string& json,
+    const std::string& key,
+    int fallbackValue
 );
 
 std::string VoiceBase64Encode(const unsigned char* data, size_t length)
@@ -555,8 +563,7 @@ void CALLBACK VoiceWaveInCallback(
     }
 
     WAVEHDR* header = reinterpret_cast<WAVEHDR*>(parameter1);
-    if (gVoicePttActive && gVoiceAuthenticated.load() &&
-        header->dwBytesRecorded > 0)
+    if (header->dwBytesRecorded > 0)
     {
         const short* samples =
             reinterpret_cast<const short*>(header->lpData);
@@ -567,20 +574,27 @@ void CALLBACK VoiceWaveInCallback(
             double value = static_cast<double>(samples[i]) / 32768.0;
             sum += value * value;
         }
-        gVoiceInputPeakLevel = sampleCount > 0
+        float capturedPeak = sampleCount > 0
             ? static_cast<float>(std::sqrt(sum / sampleCount))
             : 0.0f;
-        gVoiceInputPeakLastUpdate = gVoiceElapsedTime.load();
+        gVoiceCapturedPeakLevel = capturedPeak;
+        gVoiceCapturedPeakLastUpdate = gVoiceElapsedTime.load();
 
-        std::string encoded = VoiceBase64Encode(
-            reinterpret_cast<const unsigned char*>(header->lpData),
-            header->dwBytesRecorded
-        );
-        SendVoiceMessage(
-            "{\"type\":\"audio\",\"codec\":\"pcm16\",\"sampleRate\":16000,"
-            "\"frequency\":\"" + GetVoiceFrequency(gVoiceTransmitCom) +
-            "\",\"payload\":\"" + encoded + "\"}"
-        );
+        if (gVoicePttActive && gVoiceAuthenticated.load())
+        {
+            int captureSampleRate =
+                gVoiceCaptureSampleRate.load();
+            std::string encoded = VoiceBase64Encode(
+                reinterpret_cast<const unsigned char*>(header->lpData),
+                header->dwBytesRecorded
+            );
+            SendVoiceMessage(
+                "{\"type\":\"audio\",\"codec\":\"pcm16\",\"sampleRate\":" +
+                std::to_string(captureSampleRate) + ","
+                "\"frequency\":\"" + GetVoiceFrequency(gVoiceTransmitCom) +
+                "\",\"payload\":\"" + encoded + "\"}"
+            );
+        }
     }
 
     if (!gVoiceStopRequested.load())
@@ -597,22 +611,39 @@ bool StartVoiceCapture()
         return true;
     }
 
-    WAVEFORMATEX format = {};
-    format.wFormatTag = WAVE_FORMAT_PCM;
-    format.nChannels = 1;
-    format.nSamplesPerSec = gVoiceSampleRate;
-    format.wBitsPerSample = 16;
-    format.nBlockAlign = format.nChannels * format.wBitsPerSample / 8;
-    format.nAvgBytesPerSec = format.nSamplesPerSec * format.nBlockAlign;
+    const int sampleRates[] = { 48000, 44100, 16000 };
+    MMRESULT result = WAVERR_BADFORMAT;
 
-    MMRESULT result = waveInOpen(
-        &gVoiceWaveIn,
-        WAVE_MAPPER,
-        &format,
-        reinterpret_cast<DWORD_PTR>(VoiceWaveInCallback),
-        0,
-        CALLBACK_FUNCTION
-    );
+    for (int sampleRate : sampleRates)
+    {
+        WAVEFORMATEX format = {};
+        format.wFormatTag = WAVE_FORMAT_PCM;
+        format.nChannels = 1;
+        format.nSamplesPerSec = sampleRate;
+        format.wBitsPerSample = 16;
+        format.nBlockAlign =
+            format.nChannels * format.wBitsPerSample / 8;
+        format.nAvgBytesPerSec =
+            format.nSamplesPerSec * format.nBlockAlign;
+
+        result = waveInOpen(
+            &gVoiceWaveIn,
+            WAVE_MAPPER,
+            &format,
+            reinterpret_cast<DWORD_PTR>(VoiceWaveInCallback),
+            0,
+            CALLBACK_FUNCTION
+        );
+
+        if (result == MMSYSERR_NOERROR)
+        {
+            gVoiceCaptureSampleRate = sampleRate;
+            break;
+        }
+
+        gVoiceWaveIn = nullptr;
+    }
+
     if (result != MMSYSERR_NOERROR)
     {
         gVoiceWaveIn = nullptr;
@@ -707,6 +738,8 @@ void ProcessIncomingVoiceMessage(const std::string& message)
 
     std::string payload = ExtractJsonStringValue(message, "payload");
     std::string frequency = ExtractJsonStringValue(message, "frequency");
+    int sampleRate =
+        ExtractJsonIntValue(message, "sampleRate", gVoiceSampleRate);
     std::vector<unsigned char> pcm = VoiceBase64Decode(payload);
     if (pcm.empty()) return;
 
@@ -726,7 +759,7 @@ void ProcessIncomingVoiceMessage(const std::string& message)
     gVoiceOutputPeakLevel = count > 0
         ? static_cast<float>(std::sqrt(sum / count))
         : 0.0f;
-    PlayVoicePcm(pcm, gVoiceSampleRate);
+    PlayVoicePcm(pcm, sampleRate);
 }
 
 void VoiceWorker(std::string token, std::string callsign)
@@ -5692,7 +5725,6 @@ CustomRect GetCustomLoginRememberRect(int left, int top)
     return { left + 28, top - 286, left + 150, top - 306 };
 }
 
-
 CustomRect GetCustomLoginButtonRect(int left, int top)
 {
     return { left + 28, top - 322, left + 332, top - 356 };
@@ -9717,8 +9749,16 @@ void DrawSettingsWindow(
     float rxLevel = rxActive
         ? gVoiceOutputPeakLevel.load()
         : 0.0f;
+    float capturedPeakAge =
+        now - gVoiceCapturedPeakLastUpdate.load();
     float inputLevel =
-        ReadWindowsInputPeakLevel();
+        (
+            gVoicePttActive &&
+            capturedPeakAge >= 0.0f &&
+            capturedPeakAge < 0.5f
+        )
+            ? gVoiceCapturedPeakLevel.load()
+            : ReadWindowsInputPeakLevel();
     bool inputActive =
         gVoicePttActive || inputLevel > 0.02f;
 
@@ -9842,12 +9882,12 @@ void DrawSettingsVoiceLevelMeter(
     bool active
 )
 {
-    const float noiseFloor = 0.02f;
+    const float noiseFloor = 0.005f;
     float normalizedLevel = 0.0f;
     if (active && level > noiseFloor)
     {
         normalizedLevel =
-            (std::min)(1.0f, (level - noiseFloor) / 0.18f);
+            (std::min)(1.0f, (level - noiseFloor) / 0.14f);
     }
     int percentage =
         (int)std::round(normalizedLevel * 100.0f);
@@ -9872,14 +9912,6 @@ void DrawSettingsVoiceLevelMeter(
         1.00f
     );
 
-    DrawRectOutline(
-        meterRect,
-        0.18f,
-        0.40f,
-        0.52f,
-        0.95f
-    );
-
     int innerLeft = meterRect.left + 3;
     int innerRight = meterRect.right - 3;
     int innerWidth = (std::max)(0, innerRight - innerLeft);
@@ -9887,46 +9919,95 @@ void DrawSettingsVoiceLevelMeter(
         (int)std::round(normalizedLevel * (float)innerWidth);
     int greenEnd = innerLeft + (int)std::round(innerWidth * 0.70f);
     int yellowEnd = innerLeft + (int)std::round(innerWidth * 0.90f);
+    int innerTop = meterRect.top - 3;
+    int innerBottom = meterRect.bottom + 3;
 
-    if (filledRight > innerLeft)
+    // Draw the complete colour scale first, like the browser voice monitor.
+    DrawFilledRect(
+        { innerLeft, innerTop, greenEnd, innerBottom },
+        0.18f, 1.00f, 0.38f, 1.00f
+    );
+    DrawFilledRect(
+        { greenEnd, innerTop, yellowEnd, innerBottom },
+        0.98f, 0.86f, 0.18f, 1.00f
+    );
+    DrawFilledRect(
+        { yellowEnd, innerTop, innerRight, innerBottom },
+        1.00f, 0.24f, 0.14f, 1.00f
+    );
+
+    // Cover the part above the current level with the dark inactive colour.
+    if (filledRight < innerRight)
     {
         DrawFilledRect(
-            {
-                innerLeft,
-                meterRect.top - 2,
-                (std::min)(filledRight, greenEnd),
-                meterRect.bottom + 2
-            },
-            0.14f, 0.86f, 0.32f,
-            1.00f
+            { filledRight, innerTop, innerRight, innerBottom },
+            0.035f, 0.055f, 0.070f, 1.00f
         );
     }
 
-    if (filledRight > greenEnd)
+    // Fine separators reproduce the visual slots used by the web monitor.
+    const int slotCount = 20;
+    int activeSlots =
+        (int)std::ceil(normalizedLevel * (float)slotCount);
+
+    for (int index = 0; index < slotCount; ++index)
     {
-        DrawFilledRect(
-            {
-                greenEnd,
-                meterRect.top - 2,
-                (std::min)(filledRight, yellowEnd),
-                meterRect.bottom + 2
-            },
-            0.95f, 0.78f, 0.10f, 1.00f
-        );
+        int slotLeft =
+            innerLeft + (index * innerWidth / slotCount);
+        int slotRight =
+            innerLeft + ((index + 1) * innerWidth / slotCount) - 1;
+        CustomRect slotRect = {
+            slotLeft + 1,
+            innerTop,
+            slotRight,
+            innerBottom
+        };
+
+        if (index < activeSlots)
+        {
+            float red = index >= 18 ? 1.00f : (index >= 14 ? 0.98f : 0.18f);
+            float green = index >= 18 ? 0.24f : (index >= 14 ? 0.86f : 1.00f);
+            float blue = index >= 18 ? 0.14f : (index >= 14 ? 0.18f : 0.38f);
+            DrawFilledRect(slotRect, red, green, blue, 1.00f);
+
+            /*
+                Fill every scan line as well. Some X-Plane OpenGL contexts
+                display the outline of these very small quads but discard
+                their interior. Lines are rendered reliably in all window
+                and pop-out modes.
+            */
+            for (
+                int fillY = slotRect.bottom + 1;
+                fillY < slotRect.top;
+                ++fillY
+            ) {
+                DrawLine(
+                    slotRect.left + 1,
+                    fillY,
+                    slotRect.right - 1,
+                    fillY,
+                    red, green, blue, 1.00f
+                );
+            }
+
+            DrawRectOutline(slotRect, red, green, blue, 1.00f);
+        }
+        else
+        {
+            DrawRectOutline(
+                slotRect,
+                0.07f, 0.13f, 0.17f, 0.90f
+            );
+        }
     }
 
-    if (filledRight > yellowEnd)
-    {
-        DrawFilledRect(
-            {
-                yellowEnd,
-                meterRect.top - 2,
-                filledRight,
-                meterRect.bottom + 2
-            },
-            0.95f, 0.20f, 0.12f, 1.00f
-        );
-    }
+    DrawRectOutline(
+        meterRect,
+        0.18f,
+        0.40f,
+        0.52f,
+        0.95f
+    );
 }
 
 

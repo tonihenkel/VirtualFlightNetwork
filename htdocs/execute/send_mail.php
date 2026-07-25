@@ -13,17 +13,11 @@ function sendMail(
 ): bool
 {
     /*
-        SMTP Einstellungen
+        PHP hands messages to the local MailEnable SMTP service.
     */
 
-    $smtpHost = "smtp.example.com";
-    $smtpPort = 587;
-
-    $smtpUsername = "noreply@example.com";
-    $smtpPassword = "YOUR_SMTP_PASSWORD";
-
-    $fromEmail = "noreply@example.com";
-    $fromName = "Flight Radar Sim Project";
+    $fromEmail = "noreply@virtualflightnetwork.com";
+    $fromName = "Virtual Flight Network";
 
     /*
         Header

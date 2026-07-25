@@ -50,6 +50,61 @@ try {
         'frequency IS NOT NULL'
     ];
 
+    $search =
+        trim((string)($_GET['search'] ?? ''));
+    $userFilter =
+        trim((string)($_GET['user'] ?? ''));
+    $typeFilter =
+        trim((string)($_GET['type'] ?? ''));
+    $frequencyFilter =
+        normalizeChatFrequency((string)($_GET['frequency'] ?? ''));
+    $dateFrom =
+        trim((string)($_GET['date_from'] ?? ''));
+    $dateTo =
+        trim((string)($_GET['date_to'] ?? ''));
+
+    if ($search !== '') {
+        $where[] =
+            '(message_text LIKE :search OR sender_callsign LIKE :search)';
+        $params['search'] =
+            '%' . mb_substr($search, 0, 120) . '%';
+    }
+
+    if ($userFilter !== '') {
+        $where[] =
+            'sender_callsign LIKE :user_filter';
+        $params['user_filter'] =
+            '%' . mb_substr($userFilter, 0, 60) . '%';
+    }
+
+    if ($typeFilter !== '') {
+        $where[] =
+            'message_type = :type_filter';
+        $params['type_filter'] =
+            mb_substr($typeFilter, 0, 40);
+    }
+
+    if ($frequencyFilter !== null) {
+        $where[] = 'frequency = :frequency_filter';
+        $params['frequency_filter'] = $frequencyFilter;
+    }
+
+    if ($dateFrom !== '') {
+        $timestamp = strtotime($dateFrom);
+        if ($timestamp !== false) {
+            $where[] = 'created_at >= :date_from';
+            $params['date_from'] = date('Y-m-d H:i:s', $timestamp);
+        }
+    }
+
+    if ($dateTo !== '') {
+        $timestamp = strtotime($dateTo);
+        if ($timestamp !== false) {
+            $where[] = 'created_at <= :date_to';
+            $params['date_to'] = date('Y-m-d H:i:s', $timestamp);
+        }
+    }
+
     if ($sinceId > 0) {
         $where[] =
             'id > :since_id';
@@ -91,7 +146,7 @@ try {
          FROM chat_messages
          WHERE " . implode(' AND ', $where) . "
          ORDER BY id $order
-         LIMIT 120"
+         LIMIT 250"
     );
 
     $stmt->execute($params);
@@ -111,6 +166,7 @@ try {
                 return [
                     'id' => (int)$message['id'],
                     'time' => date('H:i:s', strtotime((string)$message['created_at'])),
+                    'date_time' => date('d.m.Y H:i:s', strtotime((string)$message['created_at'])),
                     'frequency' => (string)$message['frequency'],
                     'sender' => (string)$message['sender_callsign'],
                     'type' => (string)$message['message_type'],

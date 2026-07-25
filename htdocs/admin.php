@@ -275,6 +275,59 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             box-shadow: 0 0 0 2px rgba(17, 140, 255, 0.18);
         }
 
+        .filter-grid {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(140px, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .filter-grid.players {
+            grid-template-columns: 2fr repeat(4, minmax(130px, 1fr));
+        }
+
+        .filter-field {
+            display: grid;
+            gap: 5px;
+            color: #9eb9d7;
+            font-size: 12px;
+        }
+
+        .table-scroll {
+            width: 100%;
+            overflow-x: auto;
+        }
+
+        .player-status {
+            display: inline-block;
+            padding: 4px 7px;
+            border-radius: 999px;
+            color: #ffb8b8;
+            background: rgba(180, 35, 35, 0.22);
+            white-space: nowrap;
+        }
+
+        .player-status.active {
+            color: #7dffb0;
+            background: rgba(23, 155, 82, 0.20);
+        }
+
+        .result-count {
+            margin: 0 0 12px;
+            color: #8fb3d5;
+        }
+
+        .player-profile-link {
+            color: #39a7ff;
+            text-decoration: none;
+        }
+
+        .player-profile-link:hover,
+        .player-profile-link:focus {
+            color: #00f5c4;
+            text-decoration: underline;
+        }
+
         select.admin-input option {
             color: #d7e8ff;
             background: #07111b !important;
@@ -517,6 +570,11 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             .admin-tabs {
                 flex-direction: column;
             }
+
+            .filter-grid,
+            .filter-grid.players {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -553,6 +611,9 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 </button>
                 <button class="admin-tab" type="button" data-tab="voice">
                     <?php echo htmlspecialchars(t('admin_tab_voice')); ?>
+                </button>
+                <button class="admin-tab" type="button" data-tab="players">
+                    <?php echo htmlspecialchars(t('admin_tab_players')); ?>
                 </button>
             </div>
 
@@ -596,6 +657,32 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
 
                     <section class="admin-box">
                         <h2><?php echo htmlspecialchars(t('admin_live_messages')); ?></h2>
+                        <div class="filter-grid">
+                            <label class="filter-field">
+                                <?php echo htmlspecialchars(t('admin_search_messages')); ?>
+                                <input class="admin-input" id="chatSearchInput" type="search">
+                            </label>
+                            <label class="filter-field">
+                                <?php echo htmlspecialchars(t('admin_filter_user')); ?>
+                                <input class="admin-input" id="chatUserFilter" type="search">
+                            </label>
+                            <label class="filter-field">
+                                <?php echo htmlspecialchars(t('admin_filter_frequency')); ?>
+                                <input class="admin-input" id="chatFrequencyFilter" type="text" inputmode="decimal" placeholder="122.800">
+                            </label>
+                            <label class="filter-field">
+                                <?php echo htmlspecialchars(t('admin_filter_type')); ?>
+                                <input class="admin-input" id="chatTypeFilter" type="search">
+                            </label>
+                            <label class="filter-field">
+                                <?php echo htmlspecialchars(t('admin_filter_from')); ?>
+                                <input class="admin-input" id="chatDateFrom" type="datetime-local">
+                            </label>
+                            <label class="filter-field">
+                                <?php echo htmlspecialchars(t('admin_filter_to')); ?>
+                                <input class="admin-input" id="chatDateTo" type="datetime-local">
+                            </label>
+                        </div>
                         <div id="messageEmpty" class="empty-state">
                             <?php echo htmlspecialchars(t('admin_no_messages')); ?>
                         </div>
@@ -709,6 +796,72 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                     </div>
                 </div>
             </div>
+
+            <div class="admin-panel" id="admin-panel-players">
+                <div class="admin-box">
+                    <h2><?php echo htmlspecialchars(t('admin_players_title')); ?></h2>
+                    <p><?php echo htmlspecialchars(t('admin_players_text')); ?></p>
+
+                    <div class="filter-grid players">
+                        <label class="filter-field">
+                            <?php echo htmlspecialchars(t('admin_players_search')); ?>
+                            <input class="admin-input" id="playerSearchInput" type="search">
+                        </label>
+                        <label class="filter-field">
+                            <?php echo htmlspecialchars(t('admin_players_country')); ?>
+                            <select class="admin-input" id="playerCountryFilter">
+                                <option value=""><?php echo htmlspecialchars(t('admin_filter_all')); ?></option>
+                            </select>
+                        </label>
+                        <label class="filter-field">
+                            <?php echo htmlspecialchars(t('admin_players_division')); ?>
+                            <select class="admin-input" id="playerDivisionFilter">
+                                <option value=""><?php echo htmlspecialchars(t('admin_filter_all')); ?></option>
+                            </select>
+                        </label>
+                        <label class="filter-field">
+                            <?php echo htmlspecialchars(t('admin_players_rank')); ?>
+                            <input class="admin-input" id="playerRankFilter" type="search">
+                        </label>
+                        <label class="filter-field">
+                            <?php echo htmlspecialchars(t('admin_players_status')); ?>
+                            <select class="admin-input" id="playerStatusFilter">
+                                <option value=""><?php echo htmlspecialchars(t('admin_filter_all')); ?></option>
+                                <option value="active"><?php echo htmlspecialchars(t('admin_players_active')); ?></option>
+                                <option value="inactive"><?php echo htmlspecialchars(t('admin_players_inactive')); ?></option>
+                            </select>
+                        </label>
+                        <label class="filter-field">
+                            <?php echo htmlspecialchars(t('admin_players_network_status')); ?>
+                            <select class="admin-input" id="playerOnlineFilter">
+                                <option value=""><?php echo htmlspecialchars(t('admin_filter_all')); ?></option>
+                                <option value="online"><?php echo htmlspecialchars(t('admin_players_online')); ?></option>
+                                <option value="offline"><?php echo htmlspecialchars(t('admin_players_offline')); ?></option>
+                            </select>
+                        </label>
+                    </div>
+
+                    <div class="result-count" id="playerResultCount"></div>
+                    <div id="playerEmpty" class="empty-state"><?php echo htmlspecialchars(t('admin_loading')); ?></div>
+                    <div class="table-scroll">
+                        <table class="monitor-table" id="playerTable" hidden>
+                            <thead><tr>
+                                <th><?php echo htmlspecialchars(t('admin_players_name')); ?></th>
+                                <th><?php echo htmlspecialchars(t('admin_players_email')); ?></th>
+                                <th><?php echo htmlspecialchars(t('admin_players_country')); ?></th>
+                                <th><?php echo htmlspecialchars(t('admin_players_division')); ?></th>
+                                <th><?php echo htmlspecialchars(t('admin_players_rank')); ?></th>
+                                <th>OP</th>
+                                <th><?php echo htmlspecialchars(t('admin_players_status')); ?></th>
+                                <th><?php echo htmlspecialchars(t('admin_players_network_status')); ?></th>
+                                <th><?php echo htmlspecialchars(t('admin_players_registered')); ?></th>
+                                <th><?php echo htmlspecialchars(t('admin_players_last_login')); ?></th>
+                            </tr></thead>
+                            <tbody id="playerRows"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </section>
     <?php endif; ?>
 </main>
@@ -724,6 +877,12 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         'noMessages' => t('admin_no_messages'),
         'serverError' => t('admin_server_error'),
         'noActivity' => t('admin_no_activity'),
+        'noPlayers' => t('admin_players_no_results'),
+        'playersFound' => t('admin_players_result_count'),
+        'playerActive' => t('admin_players_active'),
+        'playerInactive' => t('admin_players_inactive'),
+        'playerOnline' => t('admin_players_online'),
+        'playerOffline' => t('admin_players_offline'),
         'allFrequenciesActive' => t('admin_all_frequencies_active'),
         'deviceDefault' => t('admin_voice_device_default'),
         'deviceInputPrefix' => t('admin_voice_device_input_prefix'),
@@ -763,6 +922,10 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
 
     let lastMessageId = 0;
     let activityLoaded = false;
+    let playersLoaded = false;
+    let playerOptionsLoaded = false;
+    let chatFilterTimer = null;
+    let playerFilterTimer = null;
     let voiceAudioContext = null;
     let voiceAnalyser = null;
     let voiceLevelData = null;
@@ -876,7 +1039,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                     : '';
 
             row.innerHTML =
-                '<td>' + escapeHtml(message.time) + '</td>' +
+                '<td>' + escapeHtml(message.date_time || message.time) + '</td>' +
                 '<td class="frequency">' + escapeHtml(message.frequency) + '</td>' +
                 '<td class="sender">' + escapeHtml(message.sender) + '</td>' +
                 '<td>' + escapeHtml(message.type) + '</td>' +
@@ -905,6 +1068,21 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         const params = new URLSearchParams();
         params.set('since_id', String(lastMessageId));
         params.set('frequencies', monitoredFrequencies.join(','));
+
+        const chatFilters = {
+            search: document.getElementById('chatSearchInput').value.trim(),
+            user: document.getElementById('chatUserFilter').value.trim(),
+            frequency: document.getElementById('chatFrequencyFilter').value.trim(),
+            type: document.getElementById('chatTypeFilter').value.trim(),
+            date_from: document.getElementById('chatDateFrom').value,
+            date_to: document.getElementById('chatDateTo').value
+        };
+
+        Object.entries(chatFilters).forEach(function(entry) {
+            if (entry[1] !== '') {
+                params.set(entry[0], entry[1]);
+            }
+        });
 
         if (monitorAllFrequencies) {
             params.set('all', '1');
@@ -962,6 +1140,134 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         }
     }
 
+    function populatePlayerOptions(data)
+    {
+        if (playerOptionsLoaded) {
+            return;
+        }
+
+        const countrySelect = document.getElementById('playerCountryFilter');
+        const divisionSelect = document.getElementById('playerDivisionFilter');
+
+        (data.countries || []).forEach(function(country) {
+            const option = document.createElement('option');
+            option.value = country;
+            option.textContent = country;
+            countrySelect.appendChild(option);
+        });
+
+        (data.divisions || []).forEach(function(division) {
+            const option = document.createElement('option');
+            option.value = division.code;
+            option.textContent =
+                division.name && division.name !== division.code
+                    ? division.code + ' - ' + division.name
+                    : division.code;
+            divisionSelect.appendChild(option);
+        });
+
+        playerOptionsLoaded = true;
+    }
+
+    async function loadPlayers()
+    {
+        const rows = document.getElementById('playerRows');
+        const table = document.getElementById('playerTable');
+        const empty = document.getElementById('playerEmpty');
+        const count = document.getElementById('playerResultCount');
+        const params = new URLSearchParams();
+        const filters = {
+            search: document.getElementById('playerSearchInput').value.trim(),
+            country: document.getElementById('playerCountryFilter').value,
+            division: document.getElementById('playerDivisionFilter').value,
+            rank: document.getElementById('playerRankFilter').value.trim(),
+            status: document.getElementById('playerStatusFilter').value,
+            online: document.getElementById('playerOnlineFilter').value
+        };
+
+        Object.entries(filters).forEach(function(entry) {
+            if (entry[1] !== '') {
+                params.set(entry[0], entry[1]);
+            }
+        });
+
+        empty.hidden = false;
+        empty.textContent = ADMIN_I18N.noPlayers;
+
+        try {
+            const response =
+                await fetch('execute/admin_players.php?' + params.toString());
+            const data = await response.json();
+
+            if (!data.success || !Array.isArray(data.players)) {
+                throw new Error('players_failed');
+            }
+
+            populatePlayerOptions(data);
+            rows.innerHTML = '';
+
+            data.players.forEach(function(player) {
+                const row = document.createElement('tr');
+                const displayName =
+                    player.real_name
+                        ? player.real_name + ' (' + player.username + ')'
+                        : player.username;
+                const division =
+                    player.division_name
+                        ? player.division + ' - ' + player.division_name
+                        : (player.division || '-');
+                const ranks =
+                    [player.pilot_rank, player.atc_rank, player.special_rank]
+                        .filter(Boolean)
+                        .join('<br>');
+                const statusLabel =
+                    player.active
+                        ? ADMIN_I18N.playerActive
+                        : ADMIN_I18N.playerInactive;
+                const onlineLabel =
+                    player.online
+                        ? ADMIN_I18N.playerOnline
+                        : ADMIN_I18N.playerOffline;
+
+                row.innerHTML =
+                    '<td class="sender"><a class="player-profile-link" href="profile.php?id=' +
+                    encodeURIComponent(player.id) + '">' + escapeHtml(displayName) + '</a></td>' +
+                    '<td>' + escapeHtml(player.email || '-') + '</td>' +
+                    '<td>' + escapeHtml(player.country || '-') + '</td>' +
+                    '<td>' + escapeHtml(division) + '</td>' +
+                    '<td>' + ranks.split('<br>').map(escapeHtml).join('<br>') + '</td>' +
+                    '<td>' + escapeHtml(player.op_permission) + '</td>' +
+                    '<td><span class="player-status ' + (player.active ? 'active' : '') + '">' +
+                    escapeHtml(statusLabel) + '</span></td>' +
+                    '<td><span class="player-status ' + (player.online ? 'active' : '') + '">' +
+                    escapeHtml(onlineLabel) + '</span></td>' +
+                    '<td>' + escapeHtml(player.registered) + '</td>' +
+                    '<td>' + escapeHtml(player.last_login) + '</td>';
+                rows.appendChild(row);
+            });
+
+            table.hidden = data.players.length === 0;
+            empty.hidden = data.players.length !== 0;
+            count.textContent =
+                String(data.players.length) + ' ' + ADMIN_I18N.playersFound;
+        } catch (error) {
+            rows.innerHTML = '';
+            table.hidden = true;
+            empty.hidden = false;
+            empty.textContent = ADMIN_I18N.serverError;
+            count.textContent = '';
+        }
+    }
+
+    function refreshChatFilters()
+    {
+        lastMessageId = 0;
+        document.getElementById('messageRows').innerHTML = '';
+        document.getElementById('messageTable').hidden = true;
+        document.getElementById('messageEmpty').hidden = false;
+        pollMessages();
+    }
+
     function escapeHtml(value)
     {
         return String(value ?? '')
@@ -992,7 +1298,44 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 activityLoaded = true;
                 loadActivities();
             }
+
+            if (tabName === 'players' && !playersLoaded) {
+                playersLoaded = true;
+                loadPlayers();
+            }
         });
+    });
+
+    [
+        'chatSearchInput',
+        'chatUserFilter',
+        'chatFrequencyFilter',
+        'chatTypeFilter',
+        'chatDateFrom',
+        'chatDateTo'
+    ].forEach(function(id) {
+        document.getElementById(id).addEventListener('input', function() {
+            window.clearTimeout(chatFilterTimer);
+            chatFilterTimer = window.setTimeout(refreshChatFilters, 300);
+        });
+    });
+
+    [
+        'playerSearchInput',
+        'playerCountryFilter',
+        'playerDivisionFilter',
+        'playerRankFilter',
+        'playerStatusFilter',
+        'playerOnlineFilter'
+    ].forEach(function(id) {
+        const element = document.getElementById(id);
+        element.addEventListener(
+            element.tagName === 'SELECT' ? 'change' : 'input',
+            function() {
+                window.clearTimeout(playerFilterTimer);
+                playerFilterTimer = window.setTimeout(loadPlayers, 300);
+            }
+        );
     });
 
     document.getElementById('addFrequencyButton').addEventListener('click', function() {
@@ -2025,6 +2368,11 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             if (savedAdminTab === 'activity' && !activityLoaded) {
                 activityLoaded = true;
                 loadActivities();
+            }
+
+            if (savedAdminTab === 'players' && !playersLoaded) {
+                playersLoaded = true;
+                loadPlayers();
             }
         }
     }
