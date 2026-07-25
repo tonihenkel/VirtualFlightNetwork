@@ -1,12 +1,18 @@
 require('dotenv').config();
 
 const http = require('http');
+const https = require('https');
+const fs = require('fs');
 const mysql = require('mysql2/promise');
 const WebSocket = require('ws');
 
 const config = {
   host: process.env.VOICE_HOST || '0.0.0.0',
   port: Number(process.env.VOICE_PORT || 8090),
+  tls: {
+    cert: process.env.VOICE_TLS_CERT || '',
+    key: process.env.VOICE_TLS_KEY || ''
+  },
   db: {
     host: process.env.DB_HOST || '127.0.0.1',
     database: process.env.DB_NAME || 'flight_network',
@@ -62,7 +68,10 @@ function distanceNm(aLat, aLon, bLat, bLon) {
 }
 
 async function authenticate(token) {
-  const [rows] = await pool.execute(
+  // Use the text protocol here. The prepared-statement binary protocol used by
+  // mysql2.execute() can stall against this server while reading result-set
+  // metadata. query() still escapes the token through its placeholder binding.
+  const [rows] = await pool.query(
     `SELECT
         s.user_id,
         UPPER(s.callsign) AS callsign,
@@ -175,6 +184,7 @@ function forwardAudio(sender, payload) {
       from: sender.callsign,
       frequency,
       codec: payload.codec || 'opus',
+      sampleRate: Number(payload.sampleRate || 0),
       sequence: Number(payload.sequence || 0),
       payload: payload.payload
     });
@@ -209,7 +219,18 @@ function handleMonitor(client, payload) {
   });
 }
 
-const server = http.createServer((req, res) => {
+function createHttpServer(handler) {
+  if (config.tls.cert && config.tls.key) {
+    return https.createServer({
+      cert: fs.readFileSync(config.tls.cert),
+      key: fs.readFileSync(config.tls.key)
+    }, handler);
+  }
+
+  return http.createServer(handler);
+}
+
+const server = createHttpServer((req, res) => {
   if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
@@ -227,6 +248,11 @@ const wss = new WebSocket.Server({ server });
 
 wss.on('connection', (ws) => {
   const id = cryptoRandomId();
+  ws.isAlive = true;
+  ws.on('pong', () => {
+    ws.isAlive = true;
+  });
+  console.log(`Voice client connected: ${id}`);
   const client = {
     id,
     ws,
@@ -242,92 +268,121 @@ wss.on('connection', (ws) => {
     station: '',
     monitor: false,
     monitorFrequency: null,
-    monitorGlobal: false
+    monitorGlobal: false,
+    messageQueue: Promise.resolve()
   };
 
   clients.set(id, client);
 
-  ws.on('message', async (raw) => {
-    const payload = parseJsonMessage(raw);
+  ws.on('message', (raw) => {
+    client.messageQueue = client.messageQueue.then(async () => {
+      const payload = parseJsonMessage(raw);
 
-    if (!payload || typeof payload.type !== 'string') {
-      send(ws, { type: 'error', message: 'Invalid message.' });
-      return;
-    }
-
-    if (!client.authenticated) {
-      if (payload.type !== 'hello' || typeof payload.token !== 'string') {
-        send(ws, { type: 'error', message: 'Authentication required.' });
-        ws.close();
+      if (!payload || typeof payload.type !== 'string') {
+        send(ws, { type: 'error', message: 'Invalid message.' });
         return;
       }
 
-      try {
-        const session = await authenticate(payload.token);
-
-        if (!session) {
-          send(ws, { type: 'error', message: 'Invalid or expired session.' });
+      if (!client.authenticated) {
+        if (payload.type !== 'hello' || typeof payload.token !== 'string') {
+          console.warn(`Voice client sent ${payload.type} before hello: ${id}`);
+          send(ws, { type: 'error', message: 'Authentication required.' });
           ws.close();
           return;
         }
 
-        client.authenticated = true;
-        client.userId = Number(session.user_id);
-        client.callsign = String(session.callsign || payload.callsign || '').toUpperCase();
-        client.opPermission = Number(session.op_permission || 0);
+        try {
+          console.log(`Voice client authentication started: ${id}`);
+          const session = await authenticate(payload.token);
+
+          if (!session) {
+            console.warn(`Voice client authentication rejected: ${id}`);
+            send(ws, { type: 'error', message: 'Invalid or expired session.' });
+            ws.close();
+            return;
+          }
+
+          client.authenticated = true;
+          client.userId = Number(session.user_id);
+          client.callsign = String(session.callsign || payload.callsign || '').toUpperCase();
+          client.opPermission = Number(session.op_permission || 0);
+          updateClientState(client, payload);
+          console.log(`Voice client authenticated: ${id}`);
+
+          send(ws, {
+            type: 'hello',
+            success: true,
+            callsign: client.callsign,
+            opPermission: client.opPermission
+          });
+        } catch (error) {
+          console.error('Authentication failed:', error);
+          send(ws, { type: 'error', message: 'Voice server authentication error.' });
+          ws.close();
+        }
+
+        return;
+      }
+
+      if (payload.type === 'state') {
         updateClientState(client, payload);
+        return;
+      }
 
+      if (payload.type === 'ptt') {
+        client.ptt = payload.active === true;
+        client.txCom = Number(payload.txCom || client.txCom) === 2 ? 2 : 1;
         send(ws, {
-          type: 'hello',
-          success: true,
-          callsign: client.callsign,
-          opPermission: client.opPermission
+          type: 'tx',
+          active: client.ptt,
+          frequency: normalizeFrequency(payload.frequency) || (client.txCom === 2 ? client.com2 : client.com1)
         });
-      } catch (error) {
-        console.error('Authentication failed:', error);
-        send(ws, { type: 'error', message: 'Voice server authentication error.' });
-        ws.close();
+        return;
       }
 
-      return;
-    }
-
-    if (payload.type === 'state') {
-      updateClientState(client, payload);
-      return;
-    }
-
-    if (payload.type === 'ptt') {
-      client.ptt = payload.active === true;
-      client.txCom = Number(payload.txCom || client.txCom) === 2 ? 2 : 1;
-      send(ws, {
-        type: 'tx',
-        active: client.ptt,
-        frequency: normalizeFrequency(payload.frequency) || (client.txCom === 2 ? client.com2 : client.com1)
-      });
-      return;
-    }
-
-    if (payload.type === 'audio') {
-      if (client.ptt) {
-        forwardAudio(client, payload);
+      if (payload.type === 'audio') {
+        if (client.ptt) {
+          forwardAudio(client, payload);
+        }
+        return;
       }
-      return;
-    }
 
-    if (payload.type === 'monitor') {
-      handleMonitor(client, payload);
-      return;
-    }
+      if (payload.type === 'monitor') {
+        handleMonitor(client, payload);
+        return;
+      }
+    }).catch((error) => {
+      console.error('Voice message processing failed:', error);
+      send(ws, { type: 'error', message: 'Voice server message error.' });
+      ws.close();
+    });
   });
 
   ws.on('close', () => {
+    console.log(`Voice client disconnected: ${id}`);
     clients.delete(id);
   });
 });
 
+const heartbeatTimer = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) {
+      ws.terminate();
+      continue;
+    }
+
+    ws.isAlive = false;
+    ws.ping();
+  }
+}, 25000);
+
+wss.on('close', () => {
+  clearInterval(heartbeatTimer);
+});
+
 server.listen(config.port, config.host, () => {
-  console.log(`VFN voice service listening on ${config.host}:${config.port}`);
+  const protocol = config.tls.cert && config.tls.key ? 'wss' : 'ws';
+  console.log(`VFN voice service listening on ${protocol}://${config.host}:${config.port}`);
 });
 
 function cryptoRandomId() {

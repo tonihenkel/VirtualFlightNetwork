@@ -4,14 +4,10 @@
         {
             "label": "Build Plugin Release x64",
             "type": "shell",
-            "command": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe",
-            "args": [
-                "${workspaceFolder}\\Flight Radar Sim Projekt.slnx",
-                "/p:Configuration=Release",
-                "/p:Platform=x64"
-            ],
+            "command": "${workspaceFolder}\\build.cmd",
+            "args": [],
             "options": {
-                "cwd": "${workspaceFolder}\\Flight Radar Sim Projekt"
+                "cwd": "${workspaceFolder}"
             },
             "group": {
                 "kind": "build",
@@ -22,15 +18,12 @@
         {
             "label": "Rebuild Plugin Release x64",
             "type": "shell",
-            "command": "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe",
+            "command": "${workspaceFolder}\\build.cmd",
             "args": [
-                "${workspaceFolder}\\Flight Radar Sim Projekt.slnx",
-                "/t:Rebuild",
-                "/p:Configuration=Release",
-                "/p:Platform=x64"
+                "rebuild"
             ],
             "options": {
-                "cwd": "${workspaceFolder}\\Flight Radar Sim Projekt"
+                "cwd": "${workspaceFolder}"
             },
             "group": "build",
             "problemMatcher": "$msCompile"

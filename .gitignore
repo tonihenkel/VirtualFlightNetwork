@@ -10,6 +10,9 @@ Release/
 *.ilk
 *.ipch
 *.xpl
+*.exp
+*.lib
+*.log
 
 # Konfigurationen mit Zugangsdaten
 config.txt

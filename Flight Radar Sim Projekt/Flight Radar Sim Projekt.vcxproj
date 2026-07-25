@@ -70,6 +70,16 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <OutDir>$(SolutionDir)htdocs\_downloads_\</OutDir>
+    <TargetName>Flight Radar Sim Projekt</TargetName>
+    <TargetExt>.xpl</TargetExt>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>$(SolutionDir)htdocs\_downloads_\</OutDir>
+    <TargetName>Flight Radar Sim Projekt</TargetName>
+    <TargetExt>.xpl</TargetExt>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
@@ -113,21 +123,15 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>C:\Users\tonih\Desktop\Xplane Development\SDK\CHeaders\Wrappers;C:\Users\tonih\Desktop\Xplane Development\SDK\CHeaders\Widgets;C:\Users\tonih\Desktop\Xplane Development\SDK\CHeaders\XPLM;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)..\SDK\CHeaders\Wrappers;$(SolutionDir)..\SDK\CHeaders\Widgets;$(SolutionDir)..\SDK\CHeaders\XPLM;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <AdditionalLibraryDirectories>C:\Users\tonih\Desktop\Xplane Development\SDK\Libraries\Win;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)..\SDK\Libraries\Win;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>XPLM_64.lib;XPWidgets_64.lib;winhttp.lib;gdiplus.lib;winmm.lib;propsys.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <OutputFile>C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\win_x64\Flight Radar Sim Projekt.xpl</OutputFile>
     </Link>
-    <PostBuildEvent>
-      <Command>if not exist "C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\resources" mkdir "C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\resources"
-if exist "$(ProjectDir)resources\msg_input_sound.mp3" copy /Y "$(ProjectDir)resources\msg_input_sound.mp3" "C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\resources\msg_input_sound.mp3"
-exit /b 0</Command>
-    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -140,21 +144,15 @@ exit /b 0</Command>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-      <AdditionalIncludeDirectories>C:\Users\tonih\Desktop\Xplane Development\SDK\CHeaders\Wrappers;C:\Users\tonih\Desktop\Xplane Development\SDK\CHeaders\Widgets;C:\Users\tonih\Desktop\Xplane Development\SDK\CHeaders\XPLM;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)..\SDK\CHeaders\Wrappers;$(SolutionDir)..\SDK\CHeaders\Widgets;$(SolutionDir)..\SDK\CHeaders\XPLM;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <AdditionalLibraryDirectories>C:\Users\tonih\Desktop\Xplane Development\SDK\Libraries\Win;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(SolutionDir)..\SDK\Libraries\Win;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>XPLM_64.lib;XPWidgets_64.lib;winhttp.lib;gdiplus.lib;winmm.lib;propsys.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <OutputFile>C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\win_x64\Flight Radar Sim Projekt.xpl</OutputFile>
     </Link>
-    <PostBuildEvent>
-      <Command>if not exist "C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\resources" mkdir "C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\resources"
-if exist "$(ProjectDir)resources\msg_input_sound.mp3" copy /Y "$(ProjectDir)resources\msg_input_sound.mp3" "C:\X-Plane 12\Resources\plugins\Flight Radar Sim Projekt\resources\msg_input_sound.mp3"
-exit /b 0</Command>
-    </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="framework.h" />

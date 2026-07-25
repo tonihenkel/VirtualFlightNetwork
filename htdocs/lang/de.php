@@ -848,6 +848,12 @@ return [
     'admin_voice_connect' =>
         'Voice Monitor verbinden',
 
+    'admin_voice_disconnect' =>
+        'Voice Monitor trennen',
+
+    'admin_voice_disconnected' =>
+        'Voice-Monitor getrennt.',
+
     'admin_voice_device_default' =>
         'Systemstandard',
 
@@ -866,6 +872,15 @@ return [
     'admin_voice_refresh_devices' =>
         'Geraete aktualisieren',
 
+    'admin_voice_continuous_mode' =>
+        'Dauersenden',
+
+    'admin_voice_continuous_start' =>
+        'Dauersenden starten',
+
+    'admin_voice_continuous_stop' =>
+        'Dauersenden stoppen',
+
     'admin_voice_device_permission_hint' =>
         'Browserzugriff auf Mikrofon erlauben, um Geraete auszuwaehlen.',
 
@@ -874,6 +889,21 @@ return [
 
     'admin_voice_transmit_prepared' =>
         'Senden auf dieser Frequenz vorbereitet.',
+
+    'admin_voice_connecting' =>
+        'Verbinde mit Voice-Service...',
+
+    'admin_voice_connected' =>
+        'Voice-Monitor verbunden.',
+
+    'admin_voice_connection_failed' =>
+        'Voice-Service nicht erreichbar.',
+
+    'admin_voice_receiving' =>
+        'Empfange von',
+
+    'admin_voice_auth_missing' =>
+        'Keine aktive Voice-Session gefunden.',
 
     'admin_voice_tx_level' =>
         'Senden',

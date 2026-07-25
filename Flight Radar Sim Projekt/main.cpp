@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <ctime>
 #include <fstream>
+#include <filesystem>
 #include <string>
 #include <sstream>
 #include <map>
@@ -36,6 +37,7 @@
 #include <shellapi.h>
 #include <mmsystem.h>
 #include <mmdeviceapi.h>
+#include <endpointvolume.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <objidl.h>
 #include <olectl.h>
@@ -78,15 +80,15 @@ static TextureImage gGermanFlagTexture = { 0, 0, 0, false };
 static TextureImage gEnglishFlagTexture = { 0, 0, 0, false };
 
 
-/*
+
 static const std::string gServerAddress =
 "https://virtualflightnetwork.com";
-*/
 
 
+/*
 static const std::string gServerAddress =
 "http://127.0.0.1";
-
+*/
 
 
 static const std::string gLoginUrl =
@@ -124,6 +126,7 @@ static std::string gAuthToken = "";
 
 static bool gCanUseInvisible = false;
 static bool gIsInvisible = false;
+static bool gRestoreInvisibleOnLogin = false;
 static int gCurrentOpPermission = 0;
 
 static bool gCloseFlightplanAfterSend = false;
@@ -414,9 +417,10 @@ static XPLMCommandRef gG1000XpdrOnCommands[3] = {};
 static XPLMCommandRef gG1000XpdrIdentCommands[3] = {};
 static float gTransponderIdentUntil = -1.0f;
 static bool gVoicePttActive = false;
+static bool gVoiceContinuousTransmit = false;
 static int gVoiceTransmitCom = 1;
-static float gVoiceLastRxCom1Until = -1.0f;
-static float gVoiceLastRxCom2Until = -1.0f;
+static std::atomic<float> gVoiceLastRxCom1Until(-1.0f);
+static std::atomic<float> gVoiceLastRxCom2Until(-1.0f);
 
 struct VoiceAudioDevice
 {
@@ -428,6 +432,422 @@ static std::vector<VoiceAudioDevice> gVoiceInputDevices;
 static std::vector<VoiceAudioDevice> gVoiceOutputDevices;
 static std::string gSelectedVoiceInputDeviceId = "default";
 static std::string gSelectedVoiceOutputDeviceId = "default";
+static std::atomic<float> gVoiceInputPeakLevel(0.0f);
+static std::atomic<float> gVoiceInputPeakLastUpdate(-1.0f);
+static std::atomic<float> gVoiceOutputPeakLevel(0.0f);
+static std::string gVoiceShortcutLabel = "";
+static float gVoiceShortcutLastRefresh = -100.0f;
+static std::atomic<int> gVoiceCom1Raw(0);
+static std::atomic<int> gVoiceCom2Raw(0);
+static std::atomic<double> gVoiceLatitude(0.0);
+static std::atomic<double> gVoiceLongitude(0.0);
+static std::atomic<float> gVoiceElapsedTime(0.0f);
+static std::atomic<bool> gVoiceRunning(false);
+static std::atomic<bool> gVoiceConnected(false);
+static std::atomic<bool> gVoiceAuthenticated(false);
+static std::atomic<bool> gVoiceStopRequested(false);
+static std::thread gVoiceThread;
+static std::mutex gVoiceSocketMutex;
+static HINTERNET gVoiceWebSocket = nullptr;
+static HWAVEIN gVoiceWaveIn = nullptr;
+static HWAVEOUT gVoiceWaveOut = nullptr;
+static WAVEHDR gVoiceCaptureHeaders[4] = {};
+static std::vector<short> gVoiceCaptureBuffers[4];
+static const int gVoiceSampleRate = 16000;
+
+std::string FormatComFrequency(int rawFrequency);
+std::string ExtractJsonStringValue(
+    const std::string& json,
+    const std::string& key
+);
+
+std::string VoiceBase64Encode(const unsigned char* data, size_t length)
+{
+    static const char alphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string result;
+    result.reserve(((length + 2) / 3) * 4);
+
+    for (size_t i = 0; i < length; i += 3)
+    {
+        unsigned int value = static_cast<unsigned int>(data[i]) << 16;
+        if (i + 1 < length) value |= static_cast<unsigned int>(data[i + 1]) << 8;
+        if (i + 2 < length) value |= static_cast<unsigned int>(data[i + 2]);
+        result.push_back(alphabet[(value >> 18) & 63]);
+        result.push_back(alphabet[(value >> 12) & 63]);
+        result.push_back(i + 1 < length ? alphabet[(value >> 6) & 63] : '=');
+        result.push_back(i + 2 < length ? alphabet[value & 63] : '=');
+    }
+    return result;
+}
+
+std::vector<unsigned char> VoiceBase64Decode(const std::string& text)
+{
+    static const std::string alphabet =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::vector<unsigned char> result;
+    unsigned int value = 0;
+    int bits = -8;
+    for (unsigned char c : text)
+    {
+        if (c == '=') break;
+        size_t index = alphabet.find(static_cast<char>(c));
+        if (index == std::string::npos) continue;
+        value = (value << 6) | static_cast<unsigned int>(index);
+        bits += 6;
+        if (bits >= 0)
+        {
+            result.push_back(static_cast<unsigned char>((value >> bits) & 0xff));
+            bits -= 8;
+        }
+    }
+    return result;
+}
+
+bool SendVoiceMessage(const std::string& message)
+{
+    std::lock_guard<std::mutex> lock(gVoiceSocketMutex);
+    if (gVoiceWebSocket == nullptr || !gVoiceConnected.load())
+    {
+        return false;
+    }
+    DWORD bytes = static_cast<DWORD>(message.size());
+    return WinHttpWebSocketSend(
+        gVoiceWebSocket,
+        WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
+        const_cast<char*>(message.data()),
+        bytes
+    ) == NO_ERROR;
+}
+
+std::string GetVoiceFrequency(int com)
+{
+    int raw = com == 2 ? gVoiceCom2Raw.load() : gVoiceCom1Raw.load();
+    return FormatComFrequency(raw);
+}
+
+void SendVoiceState()
+{
+    if (!gVoiceAuthenticated.load())
+    {
+        return;
+    }
+    SendVoiceMessage(
+        "{\"type\":\"state\",\"com1\":\"" + GetVoiceFrequency(1) +
+        "\",\"com2\":\"" + GetVoiceFrequency(2) +
+        "\",\"txCom\":" + std::to_string(gVoiceTransmitCom) +
+        ",\"latitude\":" + std::to_string(gVoiceLatitude.load()) +
+        ",\"longitude\":" + std::to_string(gVoiceLongitude.load()) + "}"
+    );
+}
+
+void CALLBACK VoiceWaveInCallback(
+    HWAVEIN waveIn,
+    UINT message,
+    DWORD_PTR,
+    DWORD_PTR parameter1,
+    DWORD_PTR
+)
+{
+    if (message != WIM_DATA || parameter1 == 0)
+    {
+        return;
+    }
+
+    WAVEHDR* header = reinterpret_cast<WAVEHDR*>(parameter1);
+    if (gVoicePttActive && gVoiceAuthenticated.load() &&
+        header->dwBytesRecorded > 0)
+    {
+        const short* samples =
+            reinterpret_cast<const short*>(header->lpData);
+        size_t sampleCount = header->dwBytesRecorded / sizeof(short);
+        double sum = 0.0;
+        for (size_t i = 0; i < sampleCount; ++i)
+        {
+            double value = static_cast<double>(samples[i]) / 32768.0;
+            sum += value * value;
+        }
+        gVoiceInputPeakLevel = sampleCount > 0
+            ? static_cast<float>(std::sqrt(sum / sampleCount))
+            : 0.0f;
+        gVoiceInputPeakLastUpdate = gVoiceElapsedTime.load();
+
+        std::string encoded = VoiceBase64Encode(
+            reinterpret_cast<const unsigned char*>(header->lpData),
+            header->dwBytesRecorded
+        );
+        SendVoiceMessage(
+            "{\"type\":\"audio\",\"codec\":\"pcm16\",\"sampleRate\":16000,"
+            "\"frequency\":\"" + GetVoiceFrequency(gVoiceTransmitCom) +
+            "\",\"payload\":\"" + encoded + "\"}"
+        );
+    }
+
+    if (!gVoiceStopRequested.load())
+    {
+        header->dwBytesRecorded = 0;
+        waveInAddBuffer(waveIn, header, sizeof(WAVEHDR));
+    }
+}
+
+bool StartVoiceCapture()
+{
+    if (gVoiceWaveIn != nullptr)
+    {
+        return true;
+    }
+
+    WAVEFORMATEX format = {};
+    format.wFormatTag = WAVE_FORMAT_PCM;
+    format.nChannels = 1;
+    format.nSamplesPerSec = gVoiceSampleRate;
+    format.wBitsPerSample = 16;
+    format.nBlockAlign = format.nChannels * format.wBitsPerSample / 8;
+    format.nAvgBytesPerSec = format.nSamplesPerSec * format.nBlockAlign;
+
+    MMRESULT result = waveInOpen(
+        &gVoiceWaveIn,
+        WAVE_MAPPER,
+        &format,
+        reinterpret_cast<DWORD_PTR>(VoiceWaveInCallback),
+        0,
+        CALLBACK_FUNCTION
+    );
+    if (result != MMSYSERR_NOERROR)
+    {
+        gVoiceWaveIn = nullptr;
+        XPLMDebugString("VFN Voice: microphone could not be opened.\n");
+        return false;
+    }
+
+    const size_t samplesPerBuffer = 2048;
+    for (int i = 0; i < 4; ++i)
+    {
+        gVoiceCaptureBuffers[i].assign(samplesPerBuffer, 0);
+        gVoiceCaptureHeaders[i] = {};
+        gVoiceCaptureHeaders[i].lpData =
+            reinterpret_cast<LPSTR>(gVoiceCaptureBuffers[i].data());
+        gVoiceCaptureHeaders[i].dwBufferLength =
+            static_cast<DWORD>(samplesPerBuffer * sizeof(short));
+        waveInPrepareHeader(gVoiceWaveIn, &gVoiceCaptureHeaders[i], sizeof(WAVEHDR));
+        waveInAddBuffer(gVoiceWaveIn, &gVoiceCaptureHeaders[i], sizeof(WAVEHDR));
+    }
+    waveInStart(gVoiceWaveIn);
+    return true;
+}
+
+void StopVoiceCapture()
+{
+    HWAVEIN waveIn = gVoiceWaveIn;
+    gVoiceWaveIn = nullptr;
+    if (waveIn == nullptr) return;
+    waveInStop(waveIn);
+    waveInReset(waveIn);
+    for (WAVEHDR& header : gVoiceCaptureHeaders)
+    {
+        waveInUnprepareHeader(waveIn, &header, sizeof(WAVEHDR));
+    }
+    waveInClose(waveIn);
+}
+
+void PlayVoicePcm(const std::vector<unsigned char>& bytes, int sampleRate)
+{
+    if (bytes.empty()) return;
+    if (gVoiceWaveOut == nullptr)
+    {
+        WAVEFORMATEX format = {};
+        format.wFormatTag = WAVE_FORMAT_PCM;
+        format.nChannels = 1;
+        format.nSamplesPerSec = sampleRate > 0 ? sampleRate : gVoiceSampleRate;
+        format.wBitsPerSample = 16;
+        format.nBlockAlign = 2;
+        format.nAvgBytesPerSec = format.nSamplesPerSec * format.nBlockAlign;
+        if (waveOutOpen(&gVoiceWaveOut, WAVE_MAPPER, &format, 0, 0, CALLBACK_NULL)
+            != MMSYSERR_NOERROR)
+        {
+            gVoiceWaveOut = nullptr;
+            return;
+        }
+    }
+
+    WAVEHDR header = {};
+    header.lpData = reinterpret_cast<LPSTR>(
+        const_cast<unsigned char*>(bytes.data()));
+    header.dwBufferLength = static_cast<DWORD>(bytes.size());
+    if (waveOutPrepareHeader(gVoiceWaveOut, &header, sizeof(header)) != MMSYSERR_NOERROR)
+        return;
+    if (waveOutWrite(gVoiceWaveOut, &header, sizeof(header)) == MMSYSERR_NOERROR)
+    {
+        while (!(header.dwFlags & WHDR_DONE) && !gVoiceStopRequested.load())
+            Sleep(5);
+    }
+    waveOutUnprepareHeader(gVoiceWaveOut, &header, sizeof(header));
+}
+
+void ProcessIncomingVoiceMessage(const std::string& message)
+{
+    std::string type = ExtractJsonStringValue(message, "type");
+    if (type == "hello" && message.find("\"success\":true") != std::string::npos)
+    {
+        gVoiceAuthenticated = true;
+        XPLMDebugString("VFN Voice: authenticated.\n");
+        SendVoiceState();
+        if (gVoicePttActive)
+        {
+            SendVoiceMessage(
+                "{\"type\":\"ptt\",\"active\":true,\"txCom\":" +
+                std::to_string(gVoiceTransmitCom) +
+                ",\"frequency\":\"" +
+                GetVoiceFrequency(gVoiceTransmitCom) + "\"}"
+            );
+        }
+        return;
+    }
+    if (type != "audio") return;
+
+    std::string payload = ExtractJsonStringValue(message, "payload");
+    std::string frequency = ExtractJsonStringValue(message, "frequency");
+    std::vector<unsigned char> pcm = VoiceBase64Decode(payload);
+    if (pcm.empty()) return;
+
+    if (frequency == GetVoiceFrequency(2))
+        gVoiceLastRxCom2Until = gVoiceElapsedTime.load() + 0.4f;
+    else
+        gVoiceLastRxCom1Until = gVoiceElapsedTime.load() + 0.4f;
+
+    double sum = 0.0;
+    const short* samples = reinterpret_cast<const short*>(pcm.data());
+    size_t count = pcm.size() / sizeof(short);
+    for (size_t i = 0; i < count; ++i)
+    {
+        double value = static_cast<double>(samples[i]) / 32768.0;
+        sum += value * value;
+    }
+    gVoiceOutputPeakLevel = count > 0
+        ? static_cast<float>(std::sqrt(sum / count))
+        : 0.0f;
+    PlayVoicePcm(pcm, gVoiceSampleRate);
+}
+
+void VoiceWorker(std::string token, std::string callsign)
+{
+    gVoiceRunning = true;
+    while (!gVoiceStopRequested.load() && !token.empty())
+    {
+        HINTERNET session = WinHttpOpen(
+            L"VFN-XPlane-Voice/1.0",
+            WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+            WINHTTP_NO_PROXY_NAME,
+            WINHTTP_NO_PROXY_BYPASS,
+            0);
+        HINTERNET connection = session
+            ? WinHttpConnect(session, L"virtualflightnetwork.com",
+                INTERNET_DEFAULT_HTTPS_PORT, 0)
+            : nullptr;
+        HINTERNET request = connection
+            ? WinHttpOpenRequest(connection, L"GET", L"/voice", nullptr,
+                WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+                WINHTTP_FLAG_SECURE)
+            : nullptr;
+        if (request)
+        {
+            WinHttpSetOption(request, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr, 0);
+        }
+        BOOL sent = request && WinHttpSendRequest(
+            request, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+            WINHTTP_NO_REQUEST_DATA, 0, 0, 0);
+        BOOL received = sent && WinHttpReceiveResponse(request, nullptr);
+        HINTERNET socket = received ? WinHttpWebSocketCompleteUpgrade(request, 0) : nullptr;
+        if (request) WinHttpCloseHandle(request);
+
+        if (socket)
+        {
+            {
+                std::lock_guard<std::mutex> lock(gVoiceSocketMutex);
+                gVoiceWebSocket = socket;
+                gVoiceConnected = true;
+            }
+            SendVoiceMessage(
+                "{\"type\":\"hello\",\"token\":\"" + token +
+                "\",\"callsign\":\"" + callsign +
+                "\",\"com1\":\"" + GetVoiceFrequency(1) +
+                "\",\"com2\":\"" + GetVoiceFrequency(2) +
+                "\",\"txCom\":1}"
+            );
+
+            std::string assembled;
+            while (!gVoiceStopRequested.load())
+            {
+                char buffer[65536];
+                DWORD read = 0;
+                WINHTTP_WEB_SOCKET_BUFFER_TYPE bufferType;
+                DWORD error = WinHttpWebSocketReceive(
+                    socket, buffer, sizeof(buffer), &read, &bufferType);
+                if (error != NO_ERROR ||
+                    bufferType == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE)
+                    break;
+                assembled.append(buffer, read);
+                if (bufferType == WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE)
+                {
+                    ProcessIncomingVoiceMessage(assembled);
+                    assembled.clear();
+                }
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(gVoiceSocketMutex);
+            if (gVoiceWebSocket)
+            {
+                WinHttpWebSocketClose(
+                    gVoiceWebSocket,
+                    WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS,
+                    nullptr, 0);
+                WinHttpCloseHandle(gVoiceWebSocket);
+                gVoiceWebSocket = nullptr;
+            }
+            gVoiceConnected = false;
+            gVoiceAuthenticated = false;
+        }
+        if (connection) WinHttpCloseHandle(connection);
+        if (session) WinHttpCloseHandle(session);
+        if (!gVoiceStopRequested.load()) Sleep(3000);
+    }
+    gVoiceRunning = false;
+}
+
+void StartVoiceService()
+{
+    if (!gLoggedIn || gAuthToken.empty() || gVoiceRunning.load()) return;
+    if (gVoiceThread.joinable()) gVoiceThread.join();
+    gVoiceStopRequested = false;
+    if (gVoiceContinuousTransmit)
+    {
+        gVoicePttActive = true;
+    }
+    StartVoiceCapture();
+    gVoiceThread = std::thread(VoiceWorker, gAuthToken, gCurrentCallsign);
+}
+
+void StopVoiceService()
+{
+    gVoiceStopRequested = true;
+    StopVoiceCapture();
+    {
+        std::lock_guard<std::mutex> lock(gVoiceSocketMutex);
+        if (gVoiceWebSocket)
+            WinHttpWebSocketShutdown(gVoiceWebSocket, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS,
+                nullptr, 0);
+    }
+    if (gVoiceThread.joinable()) gVoiceThread.join();
+    if (gVoiceWaveOut)
+    {
+        waveOutReset(gVoiceWaveOut);
+        waveOutClose(gVoiceWaveOut);
+        gVoiceWaveOut = nullptr;
+    }
+    gVoicePttActive = false;
+}
 
 static XPLMDataRef gOnGround = nullptr;
 
@@ -1001,10 +1421,15 @@ void LoadInternalEnglishLanguage()
     gText["settings.language_en"] = "English";
     gText["settings.voice"] = "Voice radio";
     gText["settings.voice_ptt"] = "PTT command";
-    gText["settings.voice_ptt_hint"] = "Assign this command in X-Plane controls.";
+    gText["settings.voice_ptt_hint"] = "Keyboard assignment";
+    gText["settings.voice_ptt_path"] = "(VFN > Voice > VFN Voice Push To Talk)";
+    gText["settings.voice_continuous"] = "Continuous transmit";
+    gText["settings.voice_shortcut"] = "Current shortcut";
+    gText["settings.voice_shortcut_none"] = "Not assigned";
     gText["settings.voice_input"] = "Input device";
     gText["settings.voice_output"] = "Output device";
     gText["settings.voice_default_device"] = "System default";
+    gText["settings.voice_level"] = "Voice level";
     gText["messages.title"] = "Messages";
     gText["messages.inbox"] = "Inbox";
     gText["messages.sent"] = "Sent";
@@ -1168,10 +1593,15 @@ void ApplyInternalGermanLanguageFallbacks()
     gText["settings.language_en"] = "Englisch";
     gText["settings.voice"] = "Sprachfunk";
     gText["settings.voice_ptt"] = "PTT-Kommando";
-    gText["settings.voice_ptt_hint"] = "Dieses Kommando in X-Plane Steuerung belegen.";
+    gText["settings.voice_ptt_hint"] = "Tastaturbelegung";
+    gText["settings.voice_ptt_path"] = "(VFN > Voice > VFN Voice Push To Talk)";
+    gText["settings.voice_continuous"] = "Dauersenden";
+    gText["settings.voice_shortcut"] = "Aktueller Shortkey";
+    gText["settings.voice_shortcut_none"] = "Nicht belegt";
     gText["settings.voice_input"] = "Eingabegeraet";
     gText["settings.voice_output"] = "Ausgabegeraet";
     gText["settings.voice_default_device"] = "Systemstandard";
+    gText["settings.voice_level"] = "Sprachpegel";
     gText["messages.title"] = "Nachrichten";
     gText["messages.inbox"] = "Eingang";
     gText["messages.sent"] = "Gesendet";
@@ -1264,10 +1694,15 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "settings.language_en=English\n";
             enFile << "settings.voice=Voice radio\n";
             enFile << "settings.voice_ptt=PTT command\n";
-            enFile << "settings.voice_ptt_hint=Assign this command in X-Plane controls.\n";
+            enFile << "settings.voice_ptt_hint=Keyboard assignment\n";
+            enFile << "settings.voice_ptt_path=(VFN > Voice > VFN Voice Push To Talk)\n";
+            enFile << "settings.voice_continuous=Continuous transmit\n";
+            enFile << "settings.voice_shortcut=Current shortcut\n";
+            enFile << "settings.voice_shortcut_none=Not assigned\n";
             enFile << "settings.voice_input=Input device\n";
             enFile << "settings.voice_output=Output device\n";
             enFile << "settings.voice_default_device=System default\n";
+            enFile << "settings.voice_level=Voice level\n";
             enFile << "messages.title=Messages\n";
             enFile << "messages.inbox=Inbox\n";
             enFile << "messages.sent=Sent\n";
@@ -1428,10 +1863,15 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "settings.language_en=Englisch\n";
             deFile << "settings.voice=Sprachfunk\n";
             deFile << "settings.voice_ptt=PTT-Kommando\n";
-            deFile << "settings.voice_ptt_hint=Dieses Kommando in X-Plane Steuerung belegen.\n";
+            deFile << "settings.voice_ptt_hint=Tastaturbelegung\n";
+            deFile << "settings.voice_ptt_path=(VFN > Voice > VFN Voice Push To Talk)\n";
+            deFile << "settings.voice_continuous=Dauersenden\n";
+            deFile << "settings.voice_shortcut=Aktueller Shortkey\n";
+            deFile << "settings.voice_shortcut_none=Nicht belegt\n";
             deFile << "settings.voice_input=Eingabegeraet\n";
             deFile << "settings.voice_output=Ausgabegeraet\n";
             deFile << "settings.voice_default_device=Systemstandard\n";
+            deFile << "settings.voice_level=Sprachpegel\n";
             deFile << "messages.title=Nachrichten\n";
             deFile << "messages.inbox=Eingang\n";
             deFile << "messages.sent=Gesendet\n";
@@ -2237,6 +2677,8 @@ void LoadConfig()
     gConfiguredLanguage = "";
     gSelectedVoiceInputDeviceId = "default";
     gSelectedVoiceOutputDeviceId = "default";
+    gVoiceContinuousTransmit = false;
+    gRestoreInvisibleOnLogin = false;
 
     CreateDefaultConfigIfMissing();
 
@@ -2292,6 +2734,22 @@ void LoadConfig()
             {
                 gSelectedVoiceOutputDeviceId = "default";
             }
+        }
+        else if (line == "voice_continuous_transmit=true")
+        {
+            gVoiceContinuousTransmit = true;
+        }
+        else if (line == "voice_continuous_transmit=false")
+        {
+            gVoiceContinuousTransmit = false;
+        }
+        else if (line == "restore_invisible_on_login=true")
+        {
+            gRestoreInvisibleOnLogin = true;
+        }
+        else if (line == "restore_invisible_on_login=false")
+        {
+            gRestoreInvisibleOnLogin = false;
         }
     }
 
@@ -2844,6 +3302,10 @@ void SaveConfig()
         << "\n";
     configFile << "voice_input_device=" << gSelectedVoiceInputDeviceId << "\n";
     configFile << "voice_output_device=" << gSelectedVoiceOutputDeviceId << "\n";
+    configFile << "voice_continuous_transmit="
+        << (gVoiceContinuousTransmit ? "true" : "false") << "\n";
+    configFile << "restore_invisible_on_login="
+        << (gRestoreInvisibleOnLogin ? "true" : "false") << "\n";
 
     configFile.close();
 }
@@ -4073,6 +4535,9 @@ void DoLogout()
         XPLMDebugString("\n");
     }
 
+    StopVoiceService();
+    gRestoreInvisibleOnLogin = gCanUseInvisible && gIsInvisible;
+    SaveConfig();
     gLoggedIn = false;
     gCurrentUsername = "";
     gCurrentCallsign = "";
@@ -4153,6 +4618,36 @@ void DoLogout()
     UpdateLoginWindowState();
     UpdateFlightplanWindowState();
 
+    if (gMessagesWindow != nullptr)
+    {
+        XPLMSetWindowIsVisible(
+            gMessagesWindow,
+            0
+        );
+        gMessagesWindowDragging = false;
+    }
+
+    if (gDatisWindow != nullptr)
+    {
+        XPLMSetWindowIsVisible(
+            gDatisWindow,
+            0
+        );
+        gDatisWindowDragging = false;
+    }
+
+    if (gSettingsWindow != nullptr)
+    {
+        XPLMSetWindowIsVisible(
+            gSettingsWindow,
+            0
+        );
+        gSettingsWindowDragging = false;
+        gSettingsLanguageDropdownOpen = false;
+        gSettingsVoiceInputDropdownOpen = false;
+        gSettingsVoiceOutputDropdownOpen = false;
+    }
+
     if (gCompactWindow != nullptr)
     {
         XPLMSetWindowIsVisible(
@@ -4192,6 +4687,9 @@ void ForceLocalLogoutAfterConnectionFailures(
         return;
     }
 
+    StopVoiceService();
+    gRestoreInvisibleOnLogin = gCanUseInvisible && gIsInvisible;
+    SaveConfig();
     gLoggedIn = false;
     gCurrentUsername = "";
     gCurrentCallsign = "";
@@ -4242,6 +4740,36 @@ void ForceLocalLogoutAfterConnectionFailures(
 
     UpdateLoginWindowState();
     UpdateFlightplanWindowState();
+
+    if (gMessagesWindow != nullptr)
+    {
+        XPLMSetWindowIsVisible(
+            gMessagesWindow,
+            0
+        );
+        gMessagesWindowDragging = false;
+    }
+
+    if (gDatisWindow != nullptr)
+    {
+        XPLMSetWindowIsVisible(
+            gDatisWindow,
+            0
+        );
+        gDatisWindowDragging = false;
+    }
+
+    if (gSettingsWindow != nullptr)
+    {
+        XPLMSetWindowIsVisible(
+            gSettingsWindow,
+            0
+        );
+        gSettingsWindowDragging = false;
+        gSettingsLanguageDropdownOpen = false;
+        gSettingsVoiceInputDropdownOpen = false;
+        gSettingsVoiceOutputDropdownOpen = false;
+    }
 
     if (gCompactWindow != nullptr)
     {
@@ -5508,6 +6036,14 @@ void PerformCustomLogin()
             return;
         }
 
+        if (
+            gCanUseInvisible &&
+            gIsInvisible != gRestoreInvisibleOnLogin
+        )
+        {
+            ToggleCustomInvisible();
+        }
+
         gChatLines.clear();
         gChatInputText = "";
         gChatInputFocused = false;
@@ -5613,6 +6149,8 @@ void ToggleCustomInvisible()
                 "is_invisible",
                 newInvisibleState
             );
+        gRestoreInvisibleOnLogin = gIsInvisible;
+        SaveConfig();
 
         SetCustomLoginStatus(
             gIsInvisible
@@ -7834,6 +8372,385 @@ std::string GetVoiceDeviceLabel(
 }
 
 
+float ReadWindowsEndpointPeakLevel(IMMDevice* device);
+
+
+float ReadWindowsInputPeakLevel()
+{
+    float now =
+        XPLMGetElapsedTime();
+
+    if (
+        gVoiceInputPeakLastUpdate >= 0.0f &&
+        now - gVoiceInputPeakLastUpdate < 0.05f
+    ) {
+        return gVoiceInputPeakLevel;
+    }
+
+    gVoiceInputPeakLastUpdate =
+        now;
+
+    HRESULT initResult =
+        CoInitializeEx(
+            nullptr,
+            COINIT_MULTITHREADED
+        );
+
+    bool shouldUninitialize =
+        SUCCEEDED(initResult);
+
+    if (
+        FAILED(initResult) &&
+        initResult != RPC_E_CHANGED_MODE
+    ) {
+        return gVoiceInputPeakLevel;
+    }
+
+    IMMDeviceEnumerator* enumerator =
+        nullptr;
+
+    HRESULT result =
+        CoCreateInstance(
+            __uuidof(MMDeviceEnumerator),
+            nullptr,
+            CLSCTX_ALL,
+            __uuidof(IMMDeviceEnumerator),
+            reinterpret_cast<void**>(&enumerator)
+        );
+
+    if (FAILED(result) || enumerator == nullptr)
+    {
+        if (shouldUninitialize)
+        {
+            CoUninitialize();
+        }
+
+        return gVoiceInputPeakLevel;
+    }
+
+    IMMDevice* selectedDevice =
+        nullptr;
+
+    if (
+        gSelectedVoiceInputDeviceId.empty() ||
+        gSelectedVoiceInputDeviceId == "default"
+    ) {
+        ERole roles[] =
+            {
+                eCommunications,
+                eMultimedia,
+                eConsole
+            };
+
+        for (ERole role : roles)
+        {
+            IMMDevice* defaultDevice =
+                nullptr;
+
+            if (
+                SUCCEEDED(
+                    enumerator->GetDefaultAudioEndpoint(
+                        eCapture,
+                        role,
+                        &defaultDevice
+                    )
+                ) &&
+                defaultDevice != nullptr
+            ) {
+                gVoiceInputPeakLevel =
+                    ReadWindowsEndpointPeakLevel(defaultDevice);
+                defaultDevice->Release();
+                break;
+            }
+        }
+    }
+    else
+    {
+        IMMDeviceCollection* collection =
+            nullptr;
+
+        if (
+            SUCCEEDED(
+                enumerator->EnumAudioEndpoints(
+                    eCapture,
+                    DEVICE_STATE_ACTIVE,
+                    &collection
+                )
+            ) &&
+            collection != nullptr
+        ) {
+            UINT count =
+                0;
+
+            collection->GetCount(
+                &count
+            );
+
+            for (UINT index = 0; index < count; ++index)
+            {
+                IMMDevice* device =
+                    nullptr;
+
+                if (
+                    FAILED(collection->Item(index, &device)) ||
+                    device == nullptr
+                ) {
+                    continue;
+                }
+
+                LPWSTR rawDeviceId =
+                    nullptr;
+
+                std::string id =
+                    "";
+
+                if (
+                    SUCCEEDED(device->GetId(&rawDeviceId)) &&
+                    rawDeviceId != nullptr
+                ) {
+                    id =
+                        WideToUtf8(rawDeviceId);
+
+                    CoTaskMemFree(rawDeviceId);
+                }
+
+                if (id == gSelectedVoiceInputDeviceId)
+                {
+                    selectedDevice =
+                        device;
+                    break;
+                }
+
+                device->Release();
+            }
+
+            collection->Release();
+        }
+    }
+
+    if (selectedDevice != nullptr)
+    {
+        gVoiceInputPeakLevel =
+            ReadWindowsEndpointPeakLevel(selectedDevice);
+
+        selectedDevice->Release();
+    }
+
+    enumerator->Release();
+
+    if (shouldUninitialize)
+    {
+        CoUninitialize();
+    }
+
+    return gVoiceInputPeakLevel;
+}
+
+
+float ReadWindowsEndpointPeakLevel(IMMDevice* device)
+{
+    if (device == nullptr)
+    {
+        return 0.0f;
+    }
+
+    IAudioEndpointVolume* endpointVolume =
+        nullptr;
+    if (
+        SUCCEEDED(
+            device->Activate(
+                __uuidof(IAudioEndpointVolume),
+                CLSCTX_ALL,
+                nullptr,
+                reinterpret_cast<void**>(&endpointVolume)
+            )
+        ) &&
+        endpointVolume != nullptr
+    ) {
+        BOOL muted = FALSE;
+        endpointVolume->GetMute(&muted);
+        endpointVolume->Release();
+        if (muted)
+        {
+            return 0.0f;
+        }
+    }
+
+    IAudioMeterInformation* meter =
+        nullptr;
+
+    float peakValue =
+        0.0f;
+
+    if (
+        SUCCEEDED(
+            device->Activate(
+                __uuidof(IAudioMeterInformation),
+                CLSCTX_ALL,
+                nullptr,
+                reinterpret_cast<void**>(&meter)
+            )
+        ) &&
+        meter != nullptr
+    ) {
+        meter->GetPeakValue(
+            &peakValue
+        );
+
+        meter->Release();
+    }
+
+    return (std::max)(
+        0.0f,
+        (std::min)(
+            1.0f,
+            peakValue
+        )
+    );
+}
+
+std::string ReadVoiceShortcutFromPreferences()
+{
+    char systemPath[2048] = {};
+    XPLMGetSystemPath(systemPath);
+
+    std::filesystem::path preferences =
+        std::filesystem::path(systemPath) / "Output" / "preferences";
+    std::error_code error;
+    if (!std::filesystem::exists(preferences, error))
+    {
+        return "";
+    }
+
+    std::string bestShortcut;
+    std::filesystem::file_time_type bestTime =
+        (std::filesystem::file_time_type::min)();
+
+    for (std::filesystem::recursive_directory_iterator iterator(
+            preferences,
+            std::filesystem::directory_options::skip_permission_denied,
+            error), end;
+         iterator != end;
+         iterator.increment(error))
+    {
+        if (error)
+        {
+            error.clear();
+            continue;
+        }
+        if (!iterator->is_regular_file(error))
+        {
+            continue;
+        }
+
+        std::string fileName = iterator->path().filename().string();
+        std::string lowerName = fileName;
+        std::transform(
+            lowerName.begin(), lowerName.end(), lowerName.begin(),
+            [](unsigned char value) { return (char)std::tolower(value); });
+        if (lowerName.find("keys.prf") == std::string::npos)
+        {
+            continue;
+        }
+
+        std::ifstream file(iterator->path());
+        std::string line;
+        while (std::getline(file, line))
+        {
+            const std::string command = "vfn/voice/push_to_talk";
+            size_t commandPosition = line.find(command);
+            if (commandPosition == std::string::npos)
+            {
+                continue;
+            }
+
+            std::string prefix = TrimString(line.substr(0, commandPosition));
+            std::istringstream parts(prefix);
+            std::string key;
+            std::string modifiers;
+            parts >> key >> modifiers;
+            if (key.empty())
+            {
+                continue;
+            }
+
+            std::string shortcut = key;
+            std::string upperModifiers = ToUpperString(modifiers);
+            if (!modifiers.empty() &&
+                upperModifiers != "<NONE>" &&
+                upperModifiers != "NONE")
+            {
+                shortcut = upperModifiers + " + " + key;
+            }
+
+            std::filesystem::file_time_type modified =
+                std::filesystem::last_write_time(iterator->path(), error);
+            if (!error && (bestShortcut.empty() || modified >= bestTime))
+            {
+                bestTime = modified;
+                bestShortcut = shortcut;
+            }
+            error.clear();
+        }
+    }
+
+    return bestShortcut;
+}
+
+void RefreshVoiceShortcutLabel(bool force)
+{
+    float now = XPLMGetElapsedTime();
+    if (!force && now - gVoiceShortcutLastRefresh < 2.0f)
+    {
+        return;
+    }
+    gVoiceShortcutLastRefresh = now;
+    gVoiceShortcutLabel = ReadVoiceShortcutFromPreferences();
+}
+
+void OpenXPlaneKeyboardSettings()
+{
+    const char* commandNames[] = {
+        "sim/operation/toggle_settings_window",
+        "sim/operation/show_settings",
+        "sim/operation/toggle_controllers_window"
+    };
+
+    for (const char* commandName : commandNames)
+    {
+        XPLMCommandRef command = XPLMFindCommand(commandName);
+        if (command != nullptr)
+        {
+            XPLMCommandOnce(command);
+            return;
+        }
+    }
+
+    XPLMDebugString(
+        "VFN: X-Plane settings command is not available in this version.\n"
+    );
+}
+
+void SetVoiceTransmissionActive(bool active)
+{
+    gVoicePttActive = active;
+    if (active)
+    {
+        StartVoiceService();
+    }
+    if (gVoiceAuthenticated.load())
+    {
+        SendVoiceMessage(
+            "{\"type\":\"ptt\",\"active\":" +
+            std::string(active ? "true" : "false") +
+            ",\"txCom\":" + std::to_string(gVoiceTransmitCom) +
+            ",\"frequency\":\"" +
+            GetVoiceFrequency(gVoiceTransmitCom) + "\"}"
+        );
+    }
+}
+
+
 CustomRect GetSettingsCloseRect(int left, int top, int right)
 {
     return { right - 36, top - 32, right - 6, top - 4 };
@@ -7884,6 +8801,18 @@ CustomRect GetSettingsVoiceOutputSelectRect(int left, int top, int right)
         GetSettingsVoiceTop(top);
 
     return { left + 154, voiceTop - 84, right - 36, voiceTop - 114 };
+}
+
+CustomRect GetSettingsVoiceContinuousRect(int left, int top, int right)
+{
+    int voiceTop = GetSettingsVoiceTop(top);
+    return { left + 36, voiceTop - 184, right - 36, voiceTop - 210 };
+}
+
+CustomRect GetSettingsVoiceHintRect(int left, int top, int right)
+{
+    int voiceTop = GetSettingsVoiceTop(top);
+    return { left + 36, voiceTop - 216, right - 36, voiceTop - 254 };
 }
 
 
@@ -8268,9 +9197,9 @@ void DrawSettingsVoiceDeviceOption(
 {
     DrawFilledRect(
         rect,
-        selected ? 0.035f : 0.030f,
-        selected ? 0.050f : 0.037f,
-        selected ? 0.065f : 0.045f,
+        selected ? 0.105f : 0.145f,
+        selected ? 0.135f : 0.157f,
+        selected ? 0.165f : 0.173f,
         1.00f
     );
 
@@ -8382,9 +9311,9 @@ void DrawSettingsVoiceDeviceDropdown(
 
     DrawFilledRect(
         dropdownPanel,
-        0.030f,
-        0.037f,
-        0.045f,
+        0.145f,
+        0.157f,
+        0.173f,
         1.00f
     );
 
@@ -8395,9 +9324,9 @@ void DrawSettingsVoiceDeviceDropdown(
             dropdownPanel.right - 1,
             dropdownPanel.bottom + 1
         },
-        0.030f,
-        0.037f,
-        0.045f,
+        0.145f,
+        0.157f,
+        0.173f,
         1.00f
     );
 
@@ -8493,6 +9422,20 @@ void ApplyPluginLanguageSelection(
         );
     }
 }
+
+
+float GetVoiceMeterLevel(
+    bool active,
+    float phase
+);
+
+
+void DrawSettingsVoiceLevelMeter(
+    const CustomRect& rect,
+    const std::string& label,
+    float level,
+    bool active
+);
 
 
 void DrawSettingsWindow(
@@ -8688,7 +9631,7 @@ void DrawSettingsWindow(
     );
 
     CustomRect voiceRect =
-        { left + 24, voiceTop - 24, right - 24, voiceTop - 172 };
+        { left + 24, voiceTop - 24, right - 24, voiceTop - 300 };
 
     DrawFilledRect(
         voiceRect,
@@ -8758,11 +9701,103 @@ void DrawSettingsWindow(
 
     DrawText(
         voiceRect.left + 12,
-        voiceRect.top - 144,
+        voiceRect.top - 132,
+        T("settings.voice_level"),
+        0.62f,
+        0.72f,
+        0.82f
+    );
+
+    float now =
+        XPLMGetElapsedTime();
+
+    bool rxActive =
+        now < gVoiceLastRxCom1Until ||
+        now < gVoiceLastRxCom2Until;
+    float rxLevel = rxActive
+        ? gVoiceOutputPeakLevel.load()
+        : 0.0f;
+    float inputLevel =
+        ReadWindowsInputPeakLevel();
+    bool inputActive =
+        gVoicePttActive || inputLevel > 0.02f;
+
+    DrawSettingsVoiceLevelMeter(
+        {
+            voiceRect.left + 130,
+            voiceRect.top - 122,
+            voiceRect.right - 14,
+            voiceRect.top - 144
+        },
+        "RX",
+        rxLevel,
+        rxActive
+    );
+
+    DrawSettingsVoiceLevelMeter(
+        {
+            voiceRect.left + 130,
+            voiceRect.top - 152,
+            voiceRect.right - 14,
+            voiceRect.top - 174
+        },
+        "TX",
+        inputLevel,
+        inputActive
+    );
+
+    CustomRect continuousRect =
+        GetSettingsVoiceContinuousRect(left, top, right);
+    CustomRect continuousCheckbox = {
+        continuousRect.left,
+        continuousRect.top - 3,
+        continuousRect.left + 18,
+        continuousRect.bottom + 3
+    };
+    DrawRectOutline(
+        continuousCheckbox,
+        0.08f, 0.55f, 1.00f, 0.95f
+    );
+    if (gVoiceContinuousTransmit)
+    {
+        DrawText(
+            continuousCheckbox.left + 4,
+            continuousCheckbox.top - 13,
+            "X",
+            0.20f, 0.92f, 0.25f
+        );
+    }
+    DrawText(
+        continuousRect.left + 28,
+        continuousRect.top - 16,
+        T("settings.voice_continuous"),
+        0.76f, 0.84f, 0.92f
+    );
+
+    CustomRect hintRect =
+        GetSettingsVoiceHintRect(left, top, right);
+    DrawText(
+        hintRect.left,
+        hintRect.top - 13,
         T("settings.voice_ptt_hint"),
-        0.58f,
-        0.68f,
-        0.78f
+        0.30f, 0.68f, 0.96f
+    );
+    DrawText(
+        hintRect.left,
+        hintRect.top - 29,
+        T("settings.voice_ptt_path"),
+        0.30f, 0.68f, 0.96f
+    );
+
+    RefreshVoiceShortcutLabel(false);
+    DrawText(
+        voiceRect.left + 12,
+        voiceRect.top - 274,
+        std::string(T("settings.voice_shortcut")) + ": " +
+            (gVoiceShortcutLabel.empty()
+                ? T("settings.voice_shortcut_none")
+                : gVoiceShortcutLabel),
+        0.62f, 0.72f, 0.82f
     );
 
     DrawSettingsVoiceDeviceDropdown(
@@ -8780,6 +9815,118 @@ void DrawSettingsWindow(
         gSettingsVoiceInputDropdownOpen,
         true
     );
+}
+
+
+float GetVoiceMeterLevel(
+    bool active,
+    float phase
+)
+{
+    if (!active)
+    {
+        return 0.04f;
+    }
+
+    float now =
+        XPLMGetElapsedTime();
+
+    return 0.46f + (0.42f * std::fabs(std::sin((now * 8.0f) + phase)));
+}
+
+
+void DrawSettingsVoiceLevelMeter(
+    const CustomRect& rect,
+    const std::string& label,
+    float level,
+    bool active
+)
+{
+    const float noiseFloor = 0.02f;
+    float normalizedLevel = 0.0f;
+    if (active && level > noiseFloor)
+    {
+        normalizedLevel =
+            (std::min)(1.0f, (level - noiseFloor) / 0.18f);
+    }
+    int percentage =
+        (int)std::round(normalizedLevel * 100.0f);
+
+    DrawText(
+        rect.left,
+        rect.top - 10,
+        label + " " + std::to_string(percentage) + "%",
+        active ? 0.20f : 0.58f,
+        active ? 0.92f : 0.68f,
+        active ? 0.25f : 0.78f
+    );
+
+    CustomRect meterRect =
+        { rect.left + 66, rect.top, rect.right, rect.bottom };
+
+    DrawFilledRect(
+        meterRect,
+        0.045f,
+        0.065f,
+        0.080f,
+        1.00f
+    );
+
+    DrawRectOutline(
+        meterRect,
+        0.18f,
+        0.40f,
+        0.52f,
+        0.95f
+    );
+
+    int innerLeft = meterRect.left + 3;
+    int innerRight = meterRect.right - 3;
+    int innerWidth = (std::max)(0, innerRight - innerLeft);
+    int filledRight = innerLeft +
+        (int)std::round(normalizedLevel * (float)innerWidth);
+    int greenEnd = innerLeft + (int)std::round(innerWidth * 0.70f);
+    int yellowEnd = innerLeft + (int)std::round(innerWidth * 0.90f);
+
+    if (filledRight > innerLeft)
+    {
+        DrawFilledRect(
+            {
+                innerLeft,
+                meterRect.top - 2,
+                (std::min)(filledRight, greenEnd),
+                meterRect.bottom + 2
+            },
+            0.14f, 0.86f, 0.32f,
+            1.00f
+        );
+    }
+
+    if (filledRight > greenEnd)
+    {
+        DrawFilledRect(
+            {
+                greenEnd,
+                meterRect.top - 2,
+                (std::min)(filledRight, yellowEnd),
+                meterRect.bottom + 2
+            },
+            0.95f, 0.78f, 0.10f, 1.00f
+        );
+    }
+
+    if (filledRight > yellowEnd)
+    {
+        DrawFilledRect(
+            {
+                yellowEnd,
+                meterRect.top - 2,
+                filledRight,
+                meterRect.bottom + 2
+            },
+            0.95f, 0.20f, 0.12f, 1.00f
+        );
+    }
 }
 
 
@@ -8860,6 +10007,20 @@ int SettingsHandleMouse(
         CustomRect outputSelectRect =
             GetSettingsVoiceOutputSelectRect(left, top, right);
 
+        // Voice controls use their exact drawn rectangles in popped-out windows.
+        if (PointInRect(
+            x, y,
+            GetSettingsVoiceContinuousRect(left, top, right)))
+        {
+            gSettingsLanguageDropdownOpen = false;
+            gSettingsVoiceInputDropdownOpen = false;
+            gSettingsVoiceOutputDropdownOpen = false;
+            gVoiceContinuousTransmit = !gVoiceContinuousTransmit;
+            SaveConfig();
+            SetVoiceTransmissionActive(gVoiceContinuousTransmit);
+            return 1;
+        }
+
         if (gSettingsVoiceInputDropdownOpen)
         {
             int visibleCount =
@@ -8871,17 +10032,14 @@ int SettingsHandleMouse(
             for (int index = 0; index < visibleCount; ++index)
             {
                 if (
-                    PointInWindowRect(
+                    PointInRect(
                         x,
                         y,
                         GetSettingsVoiceDeviceOptionRectForDirection(
                             inputSelectRect,
                             index,
                             true
-                        ),
-                        left,
-                        top,
-                        bottom
+                        )
                     )
                 ) {
                     gSelectedVoiceInputDeviceId =
@@ -8905,17 +10063,14 @@ int SettingsHandleMouse(
             for (int index = 0; index < visibleCount; ++index)
             {
                 if (
-                    PointInWindowRect(
+                    PointInRect(
                         x,
                         y,
                         GetSettingsVoiceDeviceOptionRectForDirection(
                             outputSelectRect,
                             index,
                             false
-                        ),
-                        left,
-                        top,
-                        bottom
+                        )
                     )
                 ) {
                     gSelectedVoiceOutputDeviceId =
@@ -8928,7 +10083,7 @@ int SettingsHandleMouse(
             }
         }
 
-        if (PointInWindowRect(x, y, inputSelectRect, left, top, bottom))
+        if (PointInRect(x, y, inputSelectRect))
         {
             gSettingsLanguageDropdownOpen = false;
             gSettingsVoiceOutputDropdownOpen = false;
@@ -8938,13 +10093,26 @@ int SettingsHandleMouse(
             return 1;
         }
 
-        if (PointInWindowRect(x, y, outputSelectRect, left, top, bottom))
+        if (PointInRect(x, y, outputSelectRect))
         {
             gSettingsLanguageDropdownOpen = false;
             gSettingsVoiceInputDropdownOpen = false;
             gSettingsVoiceOutputDropdownOpen =
                 !gSettingsVoiceOutputDropdownOpen;
 
+            return 1;
+        }
+
+        if (PointInWindowRect(
+            x, y,
+            GetSettingsVoiceHintRect(left, top, right),
+            left, top, bottom))
+        {
+            gSettingsLanguageDropdownOpen = false;
+            gSettingsVoiceInputDropdownOpen = false;
+            gSettingsVoiceOutputDropdownOpen = false;
+            OpenXPlaneKeyboardSettings();
+            gVoiceShortcutLastRefresh = -100.0f;
             return 1;
         }
 
@@ -9042,7 +10210,7 @@ void CreateSettingsWindow()
     params.left = 130;
     params.top = 650;
     params.right = 650;
-    params.bottom = 110;
+    params.bottom = 50;
     params.visible = 0;
     params.drawWindowFunc = DrawSettingsWindow;
     params.handleMouseClickFunc = SettingsHandleMouse;
@@ -9070,9 +10238,9 @@ void CreateSettingsWindow()
         XPLMSetWindowResizingLimits(
             gSettingsWindow,
             520,
-            540,
+            600,
             520,
-            540
+            600
         );
     }
 }
@@ -11757,13 +12925,15 @@ int VoicePttCommandHandler(
 {
     if (inPhase == xplm_CommandBegin)
     {
-        gVoicePttActive = true;
+        if (!gVoiceContinuousTransmit)
+            SetVoiceTransmissionActive(true);
         return 1;
     }
 
     if (inPhase == xplm_CommandEnd)
     {
-        gVoicePttActive = false;
+        if (!gVoiceContinuousTransmit)
+            SetVoiceTransmissionActive(false);
         return 1;
     }
 
@@ -13455,6 +14625,14 @@ int LoginWindowHandler(
                     );
 
                     return 1;
+                }
+
+                if (
+                    gCanUseInvisible &&
+                    gIsInvisible != gRestoreInvisibleOnLogin
+                )
+                {
+                    ToggleCustomInvisible();
                 }
 
                 gChatLines.clear();
@@ -15545,6 +16723,14 @@ float FlightLoopCallback(
     void* inRefcon
 )
 {
+    gVoiceElapsedTime = XPLMGetElapsedTime();
+    gVoiceCom1Raw = gCom1 ? XPLMGetDatai(gCom1) : 0;
+    gVoiceCom2Raw = gCom2 ? XPLMGetDatai(gCom2) : 0;
+    gVoiceLatitude = gLatitude ? XPLMGetDatad(gLatitude) : 0.0;
+    gVoiceLongitude = gLongitude ? XPLMGetDatad(gLongitude) : 0.0;
+    StartVoiceService();
+    SendVoiceState();
+
     ProcessPositionUpdateResult();
     ProcessChatPollResult();
     ProcessChatSendResult();
@@ -15935,6 +17121,8 @@ PLUGIN_API int XPluginStart(
 
 PLUGIN_API void XPluginStop(void)
 {
+    StopVoiceService();
+
     if (gTransponderIdentCommand != nullptr)
     {
         XPLMUnregisterCommandHandler(

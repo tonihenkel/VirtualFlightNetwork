@@ -833,6 +833,12 @@
         'admin_voice_connect' =>
             'Connect Voice Monitor',
 
+        'admin_voice_disconnect' =>
+            'Disconnect Voice Monitor',
+
+        'admin_voice_disconnected' =>
+            'Voice monitor disconnected.',
+
         'admin_voice_device_default' =>
             'System default',
 
@@ -851,6 +857,15 @@
         'admin_voice_refresh_devices' =>
             'Refresh devices',
 
+        'admin_voice_continuous_mode' =>
+            'Continuous transmit',
+
+        'admin_voice_continuous_start' =>
+            'Start continuous transmit',
+
+        'admin_voice_continuous_stop' =>
+            'Stop continuous transmit',
+
         'admin_voice_device_permission_hint' =>
             'Allow browser microphone access to select devices.',
 
@@ -859,6 +874,21 @@
 
         'admin_voice_transmit_prepared' =>
             'Transmit on this frequency is prepared.',
+
+        'admin_voice_connecting' =>
+            'Connecting to voice service...',
+
+        'admin_voice_connected' =>
+            'Voice monitor connected.',
+
+        'admin_voice_connection_failed' =>
+            'Voice service is not reachable.',
+
+        'admin_voice_receiving' =>
+            'Receiving from',
+
+        'admin_voice_auth_missing' =>
+            'No active voice session found.',
 
         'admin_voice_tx_level' =>
             'Transmit',

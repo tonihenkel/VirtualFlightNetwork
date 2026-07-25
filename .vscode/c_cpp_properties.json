@@ -5,9 +5,9 @@
             "includePath": [
                 "${workspaceFolder}/Flight Radar Sim Projekt",
                 "${workspaceFolder}/Flight Radar Sim Projekt/**",
-                "C:/Users/tonih/Desktop/Xplane Development/SDK/CHeaders/Wrappers",
-                "C:/Users/tonih/Desktop/Xplane Development/SDK/CHeaders/Widgets",
-                "C:/Users/tonih/Desktop/Xplane Development/SDK/CHeaders/XPLM"
+                "${workspaceFolder}/../SDK/CHeaders/Wrappers",
+                "${workspaceFolder}/../SDK/CHeaders/Widgets",
+                "${workspaceFolder}/../SDK/CHeaders/XPLM"
             ],
             "defines": [
                 "NDEBUG",

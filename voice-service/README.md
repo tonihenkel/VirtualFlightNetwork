@@ -14,6 +14,37 @@ copy .env.example .env
 npm start
 ```
 
+## Local HTTPS/WSS for LAN Tests
+
+Browsers only allow microphone access on secure origins. `localhost` is trusted, but a LAN address like `192.168.87.104` must use HTTPS. When the website is opened with `https://192.168.87.104`, the admin panel automatically connects to `wss://192.168.87.104:8090`.
+
+Enable WSS by setting both certificate paths in `.env`:
+
+```env
+VOICE_TLS_CERT=C:\path\to\cert.pem
+VOICE_TLS_KEY=C:\path\to\key.pem
+```
+
+Use a certificate trusted by every test device. For phones, installing a local CA certificate is usually required.
+
+## Production behind IIS
+
+The production service listens only on `127.0.0.1:8090`. IIS terminates TLS
+and proxies WebSocket requests from:
+
+```text
+wss://virtualflightnetwork.com/voice
+```
+
+to:
+
+```text
+ws://127.0.0.1:8090/
+```
+
+Do not expose port 8090 publicly and do not configure Node.js TLS when IIS is
+used as the reverse proxy.
+
 ## Client Protocol
 
 All messages are JSON over WebSocket, except encoded audio packets which are still JSON envelopes with a base64 payload for the first implementation phase.
