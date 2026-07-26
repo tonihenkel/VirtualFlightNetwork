@@ -22,7 +22,7 @@ function validateVfnWebSession(PDO $pdo): bool
     require_once __DIR__ . '/ban_status.php';
 
     $stmt = $pdo->prepare(
-        "SELECT password_hash, id
+        "SELECT password_hash, id, op_permission
          FROM users
          WHERE id = :user_id
            AND is_active = 1
@@ -34,6 +34,14 @@ function validateVfnWebSession(PDO $pdo): bool
 
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
     $passwordHash = (string)($user['password_hash'] ?? '');
+
+    if (
+        !empty($GLOBALS['maintenanceMode'])
+        && (int)($user['op_permission'] ?? 0) < 5
+    ) {
+        clearVfnWebSession();
+        return false;
+    }
 
     if (
         $user

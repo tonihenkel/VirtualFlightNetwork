@@ -243,6 +243,7 @@ try {
             sender_user_id,
             sender_latitude,
             sender_longitude,
+            delivery_range_nm,
             sender_callsign,
             message_type,
             message_text,
@@ -316,7 +317,11 @@ try {
                 );
 
             $canReceive =
-                $distanceNm <= $chatFrequencyRangeNm;
+            $distanceNm <= (
+                $message['delivery_range_nm'] !== null
+                    ? (float)$message['delivery_range_nm']
+                    : $chatFrequencyRangeNm
+            );
         }
 
         if (!$canReceive) {

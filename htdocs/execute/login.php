@@ -12,9 +12,27 @@ require_once '../includes/ban_status.php';
 $username = $_POST["username"] ?? "";
 $password = $_POST["password"] ?? "";
 $callsign = $_POST["callsign"] ?? "";
+$pluginVersion = trim((string)($_POST["plugin_version"] ?? ""));
 
 $username = trim($username);
 $callsign = strtoupper(trim($callsign));
+
+if (
+    $pluginVersion === ''
+    || !hash_equals((string)$requiredPluginVersion, $pluginVersion)
+) {
+    echo json_encode([
+        "success" => false,
+        "update_required" => true,
+        "required_plugin_version" => (string)$requiredPluginVersion,
+        "client_plugin_version" => $pluginVersion,
+        "message" =>
+            "Plugin-Update erforderlich. Benoetigte Version: "
+            . (string)$requiredPluginVersion
+            . ($pluginVersion !== '' ? " (installiert: " . $pluginVersion . ")" : "")
+    ]);
+    exit;
+}
 
 if ($username === "" || $password === "" || $callsign === "") {
     echo json_encode([
@@ -85,6 +103,20 @@ try {
         exit;
     }
 
+    if (
+        !empty($maintenanceMode)
+        && (int)$user["op_permission"] < 5
+    ) {
+        echo json_encode([
+            "success" => false,
+            "maintenance_mode" => true,
+            "message" =>
+                "Das VFN-Netzwerk befindet sich im Wartungsmodus. "
+                . "Der Login ist derzeit nur fuer OP-Level 5 moeglich."
+        ]);
+        exit;
+    }
+
     $banStatus = getActiveBanStatus($pdo, (int)$user["id"]);
     if ($banStatus['active']) {
         $banMessage = "Account gebannt: " . $banStatus['reason'];
@@ -110,6 +142,12 @@ try {
         ((int)$user["op_permission"] >= $minimumInvisibleLevel);
 
     $token = bin2hex(random_bytes(32));
+
+    $pdo->prepare(
+        "UPDATE pilot_flights
+         SET status = 'aborted', completed_at = NOW()
+         WHERE user_id = :user_id AND status = 'active'"
+    )->execute(['user_id' => (int)$user['id']]);
 
     $pilotRating =
         getPilotRating((int)($user["rating_pilot"] ?? 0));

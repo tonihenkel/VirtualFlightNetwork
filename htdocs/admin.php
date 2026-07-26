@@ -698,6 +698,17 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                         <h3><?php echo htmlspecialchars(t('admin_staff_chat_title')); ?></h3>
                         <label for="staffChatFrequency"><?php echo htmlspecialchars(t('admin_frequency')); ?></label>
                         <input id="staffChatFrequency" class="admin-input" type="text" inputmode="decimal" value="122.800">
+                        <label for="staffChatScope"><?php echo htmlspecialchars(t('admin_staff_chat_scope')); ?></label>
+                        <select id="staffChatScope" class="admin-input">
+                            <option value="global"><?php echo htmlspecialchars(t('admin_staff_chat_scope_global')); ?></option>
+                            <option value="regional"><?php echo htmlspecialchars(t('admin_staff_chat_scope_regional')); ?></option>
+                        </select>
+                        <div id="staffChatRegionFields" hidden>
+                            <label for="staffChatReferencePilot"><?php echo htmlspecialchars(t('admin_staff_chat_reference')); ?></label>
+                            <select id="staffChatReferencePilot" class="admin-input"></select>
+                            <label for="staffChatRange"><?php echo htmlspecialchars(t('admin_staff_chat_range')); ?></label>
+                            <input id="staffChatRange" class="admin-input" type="number" min="10" max="1000" value="200">
+                        </div>
                         <label for="staffChatMessage"><?php echo htmlspecialchars(t('admin_message')); ?></label>
                         <textarea id="staffChatMessage" class="admin-input" maxlength="255" rows="4"></textarea>
                         <button class="admin-button primary" type="button" id="staffChatSendButton">
@@ -1127,6 +1138,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             'defaultTimezone' => t('admin_configuration_default_timezone'),
             'minimumInvisibleOpPermission' => t('admin_configuration_minimum_invisible_op'),
             'showRatings' => t('admin_configuration_show_ratings'),
+            'maintenanceMode' => t('admin_configuration_maintenance_mode'),
             'chatFrequencyRangeNm' => t('admin_configuration_chat_range'),
             'aviationWeatherMetarCacheUrl' => t('admin_configuration_metar_cache_url'),
             'noaaMetarStationBaseUrl' => t('admin_configuration_metar_station_url'),
@@ -1136,6 +1148,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             'pluginDownloadEnabled' => t('admin_configuration_download_enabled'),
             'pluginDownloadUrl' => t('admin_configuration_download_url'),
             'pluginDownloadName' => t('admin_configuration_download_name'),
+            'requiredPluginVersion' => t('admin_configuration_required_plugin_version'),
             'companyName' => t('admin_configuration_company_name'),
             'companyOwner' => t('admin_configuration_company_owner'),
             'companyAddress' => t('admin_configuration_company_address'),
@@ -2077,6 +2090,9 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         const body = new URLSearchParams();
         body.set('frequency', frequency);
         body.set('message', messageInput.value.trim());
+        body.set('scope', document.getElementById('staffChatScope').value);
+        body.set('reference_user_id', document.getElementById('staffChatReferencePilot').value);
+        body.set('range_nm', document.getElementById('staffChatRange').value);
         body.set('csrf', ADMIN_CSRF);
         try {
             const response = await fetch('execute/admin_chat_send.php', {
@@ -2103,6 +2119,33 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         } catch (error) {
             status.textContent = ADMIN_I18N.serverError;
         }
+    });
+
+    async function loadStaffReferencePilots()
+    {
+        const select = document.getElementById('staffChatReferencePilot');
+        try {
+            const response = await fetch('execute/get_pilots.php');
+            const data = await response.json();
+            const previous = select.value;
+            select.innerHTML = '';
+            (data.pilots || []).forEach(function(pilot) {
+                const option = document.createElement('option');
+                option.value = String(pilot.user_id);
+                option.textContent = pilot.callsign + ' — ' + pilot.com1 + ' / ' + pilot.com2;
+                select.appendChild(option);
+            });
+            if ([...select.options].some(option => option.value === previous)) {
+                select.value = previous;
+            }
+        } catch (error) {
+            select.innerHTML = '';
+        }
+    }
+
+    document.getElementById('staffChatScope').addEventListener('change', function() {
+        document.getElementById('staffChatRegionFields').hidden = this.value !== 'regional';
+        if (this.value === 'regional') loadStaffReferencePilots();
     });
 
     if (CAN_SEND_ANNOUNCEMENT) {

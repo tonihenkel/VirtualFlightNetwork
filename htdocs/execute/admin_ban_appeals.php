@@ -3,6 +3,7 @@
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/admin_auth.php';
 require_once __DIR__ . '/../includes/activity_log.php';
+require_once __DIR__ . '/send_mail.php';
 
 try {
     $pdo = createAdminPdo();
@@ -33,7 +34,7 @@ try {
 
         $pdo->beginTransaction();
         $stmt = $pdo->prepare(
-            "SELECT r.id, r.user_id, u.op_permission
+            "SELECT r.id, r.user_id, u.op_permission, u.email, u.username, u.real_name
              FROM ban_appeal_requests r
              JOIN users u ON u.id = r.user_id
              WHERE r.id = :id AND r.status = 'pending'
@@ -81,6 +82,37 @@ try {
             (int)$admin['id']
         );
         $pdo->commit();
+
+        $approved = $action === 'approve';
+        $mailSubject = $approved
+            ? 'VFN Entbannungsantrag genehmigt / Ban appeal approved'
+            : 'VFN Entbannungsantrag abgelehnt / Ban appeal rejected';
+        $mailTitle = $approved
+            ? 'Dein Entbannungsantrag wurde genehmigt.'
+            : 'Dein Entbannungsantrag wurde abgelehnt.';
+        $mailTitleEn = $approved
+            ? 'Your ban appeal was approved.'
+            : 'Your ban appeal was rejected.';
+        $mailBody =
+            '<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;color:#172033;">'
+            . '<h2>Virtual Flight Network</h2>'
+            . '<p><strong>' . htmlspecialchars($mailTitle) . '</strong></p>'
+            . '<p>Begründung des Moderationsteams: '
+            . htmlspecialchars($reviewReason) . '</p><hr>'
+            . '<p><strong>' . htmlspecialchars($mailTitleEn) . '</strong></p>'
+            . '<p>Moderation team reason: ' . htmlspecialchars($reviewReason) . '</p>'
+            . '</div>';
+        try {
+            sendMail(
+                (string)$request['email'],
+                (string)($request['real_name'] ?: $request['username']),
+                $mailSubject,
+                $mailBody
+            );
+        } catch (Throwable $mailError) {
+            error_log('Ban appeal decision mail failed: ' . $mailError->getMessage());
+        }
+
         echo json_encode(['success' => true]);
         exit;
     }
@@ -116,4 +148,3 @@ try {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => $e->getMessage()]);
 }
-

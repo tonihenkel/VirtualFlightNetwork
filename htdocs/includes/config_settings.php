@@ -22,6 +22,10 @@ function vfnConfigDefinitions(): array
             'type' => 'boolean',
             'category' => 'general'
         ],
+        'maintenanceMode' => [
+            'type' => 'boolean',
+            'category' => 'general'
+        ],
         'chatFrequencyRangeNm' => [
             'type' => 'number',
             'min' => 1,
@@ -67,6 +71,12 @@ function vfnConfigDefinitions(): array
         'pluginDownloadName' => [
             'type' => 'filename',
             'max_length' => 160,
+            'category' => 'download'
+        ],
+        'requiredPluginVersion' => [
+            'type' => 'semantic_version',
+            'min_length' => 5,
+            'max_length' => 32,
             'category' => 'download'
         ],
         'companyName' => [
@@ -226,6 +236,10 @@ function vfnValidateConfigValue(string $key, $value)
     } elseif ($type === 'email') {
         if (filter_var($text, FILTER_VALIDATE_EMAIL) === false) {
             throw new InvalidArgumentException('invalid_email');
+        }
+    } elseif ($type === 'semantic_version') {
+        if (!preg_match('/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/', $text)) {
+            throw new InvalidArgumentException('invalid_semantic_version');
         }
     }
 

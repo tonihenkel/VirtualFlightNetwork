@@ -59,7 +59,7 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Flugstunden und Distanz
 - [x] Landungsanzahl und letzte Aufsetzrate
 - [x] Flugzeugstatistiken
-- [ ] Eigene Pilot-Unterseite mit Flugbuch und Flughistorie
+- [x] Öffentliche Pilot-Unterseite mit paginiertem Flugbuch und Flughistorie
 - [ ] Eigene ATC-Unterseite
 - [x] Profil-Einstellungen für das eigene Profil
 - [ ] Private „Administrative History“ für den Profilbesitzer
@@ -85,7 +85,7 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [ ] Prüfung bestanden/nicht bestanden protokollieren
 - [ ] Training begonnen/abgeschlossen protokollieren
 - [ ] Rating vergeben/entziehen mit Staff-Aktion
-- [ ] Verwarnungen vergeben/entfernen
+- [x] Verwarnungen mit Laufzeit vergeben und ab OP-Level 4 begründet aufheben
 - [x] Kick, zeitlich begrenzte/permanente Banns und Entbannung protokollieren
 - [x] Entbannungsanträge stellen, genehmigen/ablehnen und protokollieren
 - [ ] Staff-Rolle vergeben/entziehen
@@ -159,7 +159,7 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Staff-Chat (`/staff`)
 - [x] Staff-Frequenzchat über das Web-Admin-Panel
 - [x] Positionslose Web-Staff-Nachrichten auf der gewählten Frequenz global zustellen
-- [ ] Im Web-Staff-Chat zwischen globaler Frequenz und regionalem Bezugspiloten wählen
+- [x] Im Web-Staff-Chat zwischen globaler Frequenz und regionalem Bezugspiloten wählen
 - [x] Frequenzunabhängige globale Announcements über das Web-Admin-Panel (OP-Level 5)
 - [x] Netzwerk-Announcements (`/announcement`)
 - [x] Kick-Kommando und Plugin-Kick-Hinweis
@@ -229,9 +229,12 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] X-Plane-SDK im Build eingebunden
 - [x] Build-Skript erzeugt die `.xpl`-Datei im Downloadordner
 - [x] Downloadpaket auf der Webseite
-- [ ] Versionsnummer zentral verwalten und im Plugin/Download anzeigen
-- [ ] Automatischer Release-Build mit ZIP-Erstellung
-- [ ] Signierte Releases und Prüfsumme für Downloads
+- [x] Versionsnummer zentral über `VERSION` verwalten und im Plugin/Download anzeigen
+- [x] Verbindlicher Plugin-Versionscheck beim Login gegen die OP-Level-5-Konfiguration
+- [x] Automatischer Release-Build mit XPL- und ZIP-Erstellung
+- [-] Signierte Releases und Prüfsumme für Downloads
+  - [x] SHA-256-Prüfsumme automatisch erzeugen
+  - [ ] Binäre Codesignatur für die XPL
 - [ ] Tests unter mehreren X-Plane-12-Versionen
 - [ ] Linux- und macOS-Plugin-Builds
 
@@ -264,8 +267,8 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Zeitlich begrenzte und permanente Banns
 - [x] Entbannung ab OP-Level 4 mit Pflichtgrund
 - [x] Entbannungsanträge im Admin Panel mit rotem Benachrichtigungspunkt
-- [ ] Spieler über die Entscheidung eines Entbannungsantrags per E-Mail informieren
-- [ ] Verwarnungssystem
+- [x] Spieler über die Entscheidung eines Entbannungsantrags per E-Mail informieren
+- [x] Verwarnungssystem mit Ablauf, OP-Hierarchie und Activity
 - [ ] Rollen und Rechte feiner als nur OP-Level modellieren
 - [ ] Vollständiger Audit-Log aller Admin-Aktionen
 - [ ] Pagination für Chat und Spielerliste statt fester Limits
@@ -313,6 +316,8 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] `division_transfer_requests`
 - [x] `chat_filter_words`
 - [x] `chat_spam_events`
+- [x] `user_warnings`
+- [x] `pilot_flights`
 
 ## Offene SQL-Arbeiten
 
@@ -331,6 +336,8 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 
 - [x] HTTPS für die Webseite
 - [x] WSS für Voice
+- [x] OP-Level-5-Wartungsmodus für Website und Plugin
+- [x] Bestehende Web- und Plugin-Sitzungen während der Wartung für niedrigere OP-Level beenden
 - [x] Passwort-Hashes
 - [x] Gehashte Passwort-Reset-Tokens
 - [x] Serverseitige Admin-Authentifizierung
@@ -364,6 +371,7 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [ ] CI-Build und Syntaxprüfungen über GitHub Actions
 - [ ] Staging-Umgebung vor Änderungen an Produktion
 - [ ] Changelog und Release-Prozess
+- [x] Startseite um Voice, Chat, Flugbuch, Flugpläne und D-ATIS erweitert
 
 # 16. Zukunft
 

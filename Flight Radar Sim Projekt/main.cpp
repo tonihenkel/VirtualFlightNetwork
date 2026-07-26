@@ -1,4 +1,5 @@
 #include "pch.h"
+#include "version_generated.h"
 
 #define IBM 1
 #define XPLM200 1
@@ -95,7 +96,7 @@ static const std::string gLoginUrl =
 gServerAddress + "/execute/login.php";
 
 static const std::string gLogoutUrl =
-gServerAddress + "/execute/logout.php";
+gServerAddress + "/execute/logout_v2.php";
 
 static const std::string gPositionUrl =
 gServerAddress + "/execute/position_update.php";
@@ -3556,6 +3557,11 @@ void AddLoginChatSummary()
         { 0, "", "", "VFN", "system", T("chat.ready") },
         false
     );
+
+    AddChatLine(
+        { 0, "", "", "VFN", "system", std::string("Plugin v") + VFN_PLUGIN_VERSION },
+        false
+    );
 }
 
 
@@ -6011,7 +6017,8 @@ void PerformCustomLogin()
     std::string postData =
         "username=" + UrlEncode(username) +
         "&password=" + UrlEncode(password) +
-        "&callsign=" + UrlEncode(callsign);
+        "&callsign=" + UrlEncode(callsign) +
+        "&plugin_version=" + UrlEncode(VFN_PLUGIN_VERSION);
 
     std::string response =
         HttpPost(
@@ -14764,7 +14771,8 @@ int LoginWindowHandler(
             std::string postData =
                 "username=" + UrlEncode(username) +
                 "&password=" + UrlEncode(password) +
-                "&callsign=" + UrlEncode(callsign);
+                "&callsign=" + UrlEncode(callsign) +
+                "&plugin_version=" + UrlEncode(VFN_PLUGIN_VERSION);
 
             std::string response =
                 HttpPost(
@@ -17092,7 +17100,7 @@ PLUGIN_API int XPluginStart(
     strcpy_s(
         outDesc,
         256,
-        "Reads flight data from X-Plane."
+        (std::string("VFN Network Pilot Client v") + VFN_PLUGIN_VERSION).c_str()
     );
 
     if (gGdiplusToken == 0)

@@ -116,6 +116,11 @@ try {
              WHERE token = :token"
         )->execute(['token' => $token]);
         $pdo->prepare(
+            "UPDATE pilot_flights
+             SET status = 'aborted', completed_at = NOW()
+             WHERE session_token = :token AND status = 'active'"
+        )->execute(['token' => $token]);
+        $pdo->prepare(
             "DELETE FROM pilot_positions WHERE session_token = :token"
         )->execute(['token' => $token]);
         $pdo->prepare(
@@ -618,6 +623,12 @@ try {
         )->execute([
             'token' => $kickToken
         ]);
+
+        $pdo->prepare(
+            "UPDATE pilot_flights
+             SET status = 'aborted', completed_at = NOW()
+             WHERE session_token = :token AND status = 'active'"
+        )->execute(['token' => $kickToken]);
 
         $pdo->prepare(
             "DELETE FROM pilot_positions

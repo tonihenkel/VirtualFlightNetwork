@@ -286,6 +286,7 @@ $activeTab =
 
 $allowedTabs = [
     'overview',
+    'pilot',
     'activity',
     'awards',
     'settings',
@@ -908,6 +909,12 @@ $awardImages = [
                 🏆 <?php echo htmlspecialchars(t('profile_awards')); ?>
             </a>
 
+            <a
+                class="side-link <?php echo $activeTab === 'pilot' ? 'active' : ''; ?>"
+                href="<?php echo $profileBaseUrl; ?>&a=pilot">
+                ✈ <?php echo htmlspecialchars(t('profile_pilot')); ?>
+            </a>
+
             <?php if ($isOwnProfile): ?>
                 <a
                     class="side-link <?php echo $activeTab === 'settings' ? 'active' : ''; ?>"
@@ -973,6 +980,10 @@ $awardImages = [
 
                     case 'awards':
                         require_once 'includes/profile_awards.php';
+                        break;
+
+                    case 'pilot':
+                        require_once 'includes/profile_pilot.php';
                         break;
 
                     case 'settings':

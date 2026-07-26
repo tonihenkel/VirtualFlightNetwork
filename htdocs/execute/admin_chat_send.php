@@ -23,6 +23,9 @@ try {
     }
     $frequency = normalizeChatFrequency((string)($_POST['frequency'] ?? ''));
     $message = trim((string)($_POST['message'] ?? ''));
+    $scope = (string)($_POST['scope'] ?? 'global');
+    $referenceUserId = (int)($_POST['reference_user_id'] ?? 0);
+    $rangeNm = (float)($_POST['range_nm'] ?? 200);
     if ($frequency === null || $message === '') {
         http_response_code(422);
         echo json_encode(['success' => false, 'message' => 'invalid_data']);
@@ -35,6 +38,44 @@ try {
         exit;
     }
     authRateFail($pdo, 'admin_chat', $rateSubject, 20);
+
+    $senderLatitude = null;
+    $senderLongitude = null;
+    $deliveryRangeNm = null;
+
+    if ($scope === 'regional') {
+        if ($referenceUserId <= 0 || $rangeNm < 10 || $rangeNm > 1000) {
+            http_response_code(422);
+            echo json_encode(['success' => false, 'message' => 'invalid_region']);
+            exit;
+        }
+
+        $referenceStmt = $pdo->prepare(
+            "SELECT p.latitude, p.longitude
+             FROM pilot_positions p
+             INNER JOIN user_sessions s
+                ON s.user_id = p.user_id
+               AND s.is_active = 1
+             WHERE p.user_id = :user_id
+               AND p.last_update >= DATE_SUB(NOW(), INTERVAL 15 SECOND)
+               AND (p.com1 = :frequency OR p.com2 = :frequency)
+             LIMIT 1"
+        );
+        $referenceStmt->execute([
+            'user_id' => $referenceUserId,
+            'frequency' => $frequency
+        ]);
+        $reference = $referenceStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$reference) {
+            http_response_code(409);
+            echo json_encode(['success' => false, 'message' => 'reference_not_available']);
+            exit;
+        }
+        $senderLatitude = (float)$reference['latitude'];
+        $senderLongitude = (float)$reference['longitude'];
+        $deliveryRangeNm = $rangeNm;
+    }
+
     $sentMessage = insertChatMessage(
         $pdo,
         $frequency,
@@ -42,7 +83,10 @@ try {
         (int)$admin['id'],
         'STAFF:' . strtoupper((string)$admin['username']),
         'pilot',
-        mb_substr($message, 0, 255)
+        mb_substr($message, 0, 255),
+        $senderLatitude,
+        $senderLongitude,
+        $deliveryRangeNm
     );
 
     $messageId =

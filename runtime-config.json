@@ -1,0 +1,21 @@
+{
+    "defaultTimezone": "UTC",
+    "minimumInvisibleOpPermission": 1,
+    "showRatings": true,
+    "chatFrequencyRangeNm": 200,
+    "aviationWeatherMetarCacheUrl": "https://aviationweather.gov/data/cache/metars.cache.xml.gz",
+    "noaaMetarStationBaseUrl": "https://tgftp.nws.noaa.gov/data/observations/metar/stations/",
+    "metarCacheSeconds": 1800,
+    "voiceServiceWebSocketUrl": "wss://virtualflightnetwork.com/voice",
+    "projectName": "Flight Radar Sim Project",
+    "pluginDownloadEnabled": false,
+    "pluginDownloadUrl": "execute/download_plugin.php",
+    "pluginDownloadName": "FlightRadarPlugin_latest.zip",
+    "requiredPluginVersion": "0.1.0",
+    "companyName": "Flight Radar Sim Project",
+    "companyOwner": "Toni Henkel",
+    "companyAddress": "Solinger Straße 5",
+    "companyZipCity": "08280 Aue",
+    "companyCountry": "Deutschland",
+    "companyEmail": "tonihenkel@mein-postbote.de"
+}

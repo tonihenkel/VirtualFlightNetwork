@@ -37,7 +37,8 @@ function insertChatMessage(
     string $messageType,
     string $messageText,
     ?float $senderLatitude = null,
-    ?float $senderLongitude = null
+    ?float $senderLongitude = null,
+    ?float $deliveryRangeNm = null
 ): string {
 
     $messageText =
@@ -81,6 +82,7 @@ function insertChatMessage(
             sender_callsign,
             sender_latitude,
             sender_longitude,
+            delivery_range_nm,
             message_type,
             message_text,
             original_message_text,
@@ -94,6 +96,7 @@ function insertChatMessage(
             :sender_callsign,
             :sender_latitude,
             :sender_longitude,
+            :delivery_range_nm,
             :message_type,
             :message_text,
             :original_message_text,
@@ -119,6 +122,9 @@ function insertChatMessage(
 
         'sender_longitude' =>
             $senderLongitude,
+
+        'delivery_range_nm' =>
+            $deliveryRangeNm,
 
         'message_type' =>
             $messageType,

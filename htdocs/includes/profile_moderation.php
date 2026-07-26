@@ -13,6 +13,19 @@ $canUnban =
     $banStatus['active']
     && isset($viewerUser['op_permission'])
     && (int)$viewerUser['op_permission'] >= 4;
+
+$warningsStmt = $pdo->prepare(
+    "SELECT w.id, w.reason, w.expires_at, w.created_at,
+            COALESCE(NULLIF(u.real_name, ''), u.username) AS issued_by
+     FROM user_warnings w
+     JOIN users u ON u.id = w.issued_by_user_id
+     WHERE w.user_id = :user_id
+       AND w.revoked_at IS NULL
+       AND (w.expires_at IS NULL OR w.expires_at > NOW())
+     ORDER BY w.created_at DESC"
+);
+$warningsStmt->execute(['user_id' => (int)$profileUser['id']]);
+$activeWarnings = $warningsStmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <div class="profile-card">
@@ -54,6 +67,27 @@ $canUnban =
         <form method="post" action="execute/profile_moderation.php" class="moderation-box">
             <input type="hidden" name="csrf" value="<?php echo h($moderationCsrf); ?>">
             <input type="hidden" name="target_user_id" value="<?php echo (int)$profileUser['id']; ?>">
+            <input type="hidden" name="moderation_action" value="warning">
+            <h3><?php echo h(t('moderation_warning')); ?></h3>
+            <label><?php echo h(t('moderation_reason')); ?></label>
+            <textarea name="reason" maxlength="255" required></textarea>
+            <label><?php echo h(t('moderation_duration')); ?></label>
+            <div class="moderation-duration">
+                <input type="number" name="duration_value" value="1" min="1">
+                <select name="duration_unit">
+                    <option value="hours"><?php echo h(t('moderation_hours')); ?></option>
+                    <option value="days"><?php echo h(t('moderation_days')); ?></option>
+                    <option value="weeks"><?php echo h(t('moderation_weeks')); ?></option>
+                    <option value="months"><?php echo h(t('moderation_months')); ?></option>
+                    <option value="permanent"><?php echo h(t('moderation_permanent')); ?></option>
+                </select>
+            </div>
+            <button type="submit" class="moderation-button warning"><?php echo h(t('moderation_warning_issue')); ?></button>
+        </form>
+
+        <form method="post" action="execute/profile_moderation.php" class="moderation-box">
+            <input type="hidden" name="csrf" value="<?php echo h($moderationCsrf); ?>">
+            <input type="hidden" name="target_user_id" value="<?php echo (int)$profileUser['id']; ?>">
             <input type="hidden" name="moderation_action" value="kick">
             <h3><?php echo h(t('moderation_kick')); ?></h3>
             <p><?php echo h(t('moderation_kick_online_only')); ?></p>
@@ -89,6 +123,31 @@ $canUnban =
             </button>
         </form>
     </div>
+
+    <?php if ($activeWarnings): ?>
+        <h3><?php echo h(t('moderation_active_warnings')); ?></h3>
+        <?php foreach ($activeWarnings as $warning): ?>
+            <div class="moderation-warning-entry">
+                <strong><?php echo h($warning['reason']); ?></strong><br>
+                <?php echo h($warning['issued_by']); ?> ·
+                <?php echo h(date('d.m.Y H:i', strtotime($warning['created_at']))); ?> ·
+                <?php echo $warning['expires_at']
+                    ? h(date('d.m.Y H:i', strtotime($warning['expires_at'])))
+                    : h(t('moderation_permanent')); ?>
+                <?php if ((int)$viewerUser['op_permission'] >= 4): ?>
+                    <form method="post" action="execute/profile_moderation.php">
+                        <input type="hidden" name="csrf" value="<?php echo h($moderationCsrf); ?>">
+                        <input type="hidden" name="target_user_id" value="<?php echo (int)$profileUser['id']; ?>">
+                        <input type="hidden" name="moderation_action" value="revoke_warning">
+                        <input type="hidden" name="warning_id" value="<?php echo (int)$warning['id']; ?>">
+                        <input class="moderation-inline-reason" name="reason" maxlength="255"
+                               placeholder="<?php echo h(t('moderation_warning_revoke_reason')); ?>" required>
+                        <button class="moderation-button success" type="submit"><?php echo h(t('moderation_warning_revoke')); ?></button>
+                    </form>
+                <?php endif; ?>
+            </div>
+        <?php endforeach; ?>
+    <?php endif; ?>
 </div>
 
 <style>
@@ -109,4 +168,6 @@ $canUnban =
 .moderation-status.success,.moderation-status.error{padding:12px;margin:12px 0;border-radius:5px}
 .moderation-status.success{border:1px solid #2b9b67;background:rgba(30,150,90,.15);color:#65e5a5}
 .moderation-status.error{border:1px solid #d75151;background:rgba(180,35,35,.15);color:#ff8d8d}
+.moderation-warning-entry{margin:10px 0;padding:12px;border:1px solid #9a741d;background:rgba(190,140,20,.1);border-radius:5px}
+.moderation-inline-reason{box-sizing:border-box;width:min(500px,100%);margin-top:10px;padding:9px;color:#fff;background:#071521;border:1px solid #285475;border-radius:4px}
 </style>

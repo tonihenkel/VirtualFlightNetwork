@@ -363,6 +363,37 @@ try {
         exit;
     }
 
+    if (
+        !empty($maintenanceMode)
+        && (int)$session['op_permission'] < 5
+    ) {
+        $pdo->beginTransaction();
+        $pdo->prepare(
+            "UPDATE pilot_flights
+             SET status = 'aborted', completed_at = NOW()
+             WHERE session_token = :token AND status = 'active'"
+        )->execute(['token' => $token]);
+        $pdo->prepare(
+            "UPDATE user_sessions
+             SET is_active = 0, last_seen = NOW()
+             WHERE token = :token"
+        )->execute(['token' => $token]);
+        $pdo->prepare(
+            "DELETE FROM pilot_positions WHERE session_token = :token"
+        )->execute(['token' => $token]);
+        $pdo->commit();
+
+        echo json_encode([
+            "success" => false,
+            "kicked" => true,
+            "maintenance_mode" => true,
+            "message" =>
+                "Das VFN-Netzwerk befindet sich im Wartungsmodus. "
+                . "Die Verbindung wurde getrennt."
+        ]);
+        exit;
+    }
+
     $minimumInvisibleLevel =
         (int)($minimumInvisibleOpPermission ?? 2);
 
@@ -644,6 +675,19 @@ try {
             "distance" =>
                 $distanceNm
         ]);
+
+        $flightProgressStmt = $pdo->prepare(
+            "UPDATE pilot_flights
+             SET duration_seconds = duration_seconds + :seconds,
+                 distance_nm = distance_nm + :distance
+             WHERE session_token = :session_token
+               AND status = 'active'"
+        );
+        $flightProgressStmt->execute([
+            'seconds' => $seconds,
+            'distance' => $distanceNm,
+            'session_token' => $token
+        ]);
     }
 
     /*
@@ -741,6 +785,19 @@ try {
             $landingId =
                 (int)$pdo->lastInsertId();
 
+            $completeFlightStmt = $pdo->prepare(
+                "UPDATE pilot_flights
+                 SET status = 'completed',
+                     completed_at = NOW(),
+                     landing_rate_fpm = :landing_rate
+                 WHERE session_token = :session_token
+                   AND status = 'active'"
+            );
+            $completeFlightStmt->execute([
+                'landing_rate' => $landingRateFpm,
+                'session_token' => $token
+            ]);
+
             $landingCounterStmt = $pdo->prepare(
                 "UPDATE users
                  SET total_landings =
@@ -818,6 +875,40 @@ try {
         ]);
 
     } elseif ($isAirborneNow) {
+        if ($wasAirborne === 0) {
+            $flightplanForHistoryStmt = $pdo->prepare(
+                "SELECT departure_airport, arrival_airport
+                 FROM pilot_flightplans
+                 WHERE session_token = :session_token
+                 LIMIT 1"
+            );
+            $flightplanForHistoryStmt->execute(['session_token' => $token]);
+            $flightplanForHistory =
+                $flightplanForHistoryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+            $startFlightStmt = $pdo->prepare(
+                "INSERT INTO pilot_flights
+                    (user_id, session_token, callsign, aircraft_icao,
+                     departure_airport, arrival_airport, started_at, status)
+                 VALUES
+                    (:user_id, :session_token, :callsign, :aircraft_icao,
+                     :departure_airport, :arrival_airport, NOW(), 'active')
+                 ON DUPLICATE KEY UPDATE
+                    callsign = VALUES(callsign),
+                    aircraft_icao = VALUES(aircraft_icao),
+                    departure_airport = VALUES(departure_airport),
+                    arrival_airport = VALUES(arrival_airport)"
+            );
+            $startFlightStmt->execute([
+                'user_id' => (int)$session['user_id'],
+                'session_token' => $token,
+                'callsign' => $callsign,
+                'aircraft_icao' => $aircraft_icao,
+                'departure_airport' => $flightplanForHistory['departure_airport'] ?? null,
+                'arrival_airport' => $flightplanForHistory['arrival_airport'] ?? null
+            ]);
+        }
+
         $sessionStateStmt = $pdo->prepare(
             "UPDATE user_sessions
              SET

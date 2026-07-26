@@ -22,8 +22,11 @@ $pluginDownloadAvailable =
     isset($pluginDownloadEnabled)
     && $pluginDownloadEnabled === true;
 
+$pluginVersionValue =
+    trim((string)@file_get_contents(__DIR__ . '/../VERSION'));
+
 $pluginVersion =
-    "v0.1.0";
+    'v' . ($pluginVersionValue !== '' ? $pluginVersionValue : '0.1.0');
 
 $apiStatusUrl =
     "/execute/get_pilots.php";
@@ -239,6 +242,23 @@ $apiStatusUrl =
             gap: 18px;
         }
 
+        .maintenance-banner {
+            margin: 22px 70px 0;
+            padding: 18px 22px;
+            border: 1px solid rgba(255, 174, 54, 0.75);
+            border-radius: 12px;
+            color: #ffe0a3;
+            background: rgba(125, 70, 7, 0.38);
+            box-shadow: 0 10px 35px rgba(0, 0, 0, 0.24);
+        }
+
+        .maintenance-banner strong {
+            display: block;
+            margin-bottom: 5px;
+            color: #ffbd52;
+            font-size: 18px;
+        }
+
         .feature-card {
             background: rgba(255, 255, 255, 0.08);
             border: 1px solid rgba(255, 255, 255, 0.12);
@@ -356,6 +376,10 @@ $apiStatusUrl =
                 padding: 10px 25px 45px 25px;
             }
 
+            .maintenance-banner {
+                margin: 20px 25px 0;
+            }
+
             .download-section {
                 padding: 0 25px 45px 25px;
             }
@@ -392,6 +416,13 @@ if ($statusMessage !== '') {
 <div class="page">
 
     <?php require_once 'includes/header.php'; ?>
+
+    <?php if (!empty($maintenanceMode)): ?>
+        <div class="maintenance-banner">
+            <strong><?php echo htmlspecialchars(t('maintenance_banner_title')); ?></strong>
+            <?php echo htmlspecialchars(t('maintenance_banner_text')); ?>
+        </div>
+    <?php endif; ?>
 
     <main class="hero">
 
@@ -516,6 +547,30 @@ if ($statusMessage !== '') {
             <p>
                 <?php echo htmlspecialchars(t('feature_routes_text')); ?>
             </p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">&#127908;</div>
+            <h3><?php echo htmlspecialchars(t('feature_voice_title')); ?></h3>
+            <p><?php echo htmlspecialchars(t('feature_voice_text')); ?></p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">&#128172;</div>
+            <h3><?php echo htmlspecialchars(t('feature_chat_title')); ?></h3>
+            <p><?php echo htmlspecialchars(t('feature_chat_text')); ?></p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">&#128100;</div>
+            <h3><?php echo htmlspecialchars(t('feature_profile_title')); ?></h3>
+            <p><?php echo htmlspecialchars(t('feature_profile_text')); ?></p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">&#127780;</div>
+            <h3><?php echo htmlspecialchars(t('feature_atis_title')); ?></h3>
+            <p><?php echo htmlspecialchars(t('feature_atis_text')); ?></p>
         </div>
 
     </section>

@@ -59,6 +59,7 @@ function activityIcon(string $type): string
             return '🏅';
 
         case 'warning':
+        case 'revoke_warning':
             return '⚠';
 
         case 'ban':

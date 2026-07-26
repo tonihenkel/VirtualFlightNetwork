@@ -62,7 +62,61 @@ if (
 try {
     $pdo->beginTransaction();
 
-    if ($action === 'unban') {
+    if ($action === 'revoke_warning') {
+        if ((int)$actor['op_permission'] < 4) {
+            $pdo->rollBack();
+            moderationRedirect($targetId, 'error', 'moderation_warning_revoke_requires_op4');
+        }
+        $warningId = (int)($_POST['warning_id'] ?? 0);
+        $warningStmt = $pdo->prepare(
+            "SELECT id FROM user_warnings
+             WHERE id = :id AND user_id = :user_id AND revoked_at IS NULL
+             FOR UPDATE"
+        );
+        $warningStmt->execute(['id' => $warningId, 'user_id' => $targetId]);
+        if (!$warningStmt->fetchColumn()) {
+            $pdo->rollBack();
+            moderationRedirect($targetId, 'error', 'moderation_warning_not_active');
+        }
+        $pdo->prepare(
+            "UPDATE user_warnings
+             SET revoked_at = NOW(), revoked_by_user_id = :actor_id,
+                 revoke_reason = :reason
+             WHERE id = :id"
+        )->execute(['actor_id' => $actor['id'], 'reason' => $reason, 'id' => $warningId]);
+        $activityKey = 'activity_warning_revoked';
+        $activityValue = $reason;
+        $successMessage = 'moderation_warning_revoke_success';
+    } elseif ($action === 'warning') {
+        $unit = (string)($_POST['duration_unit'] ?? '');
+        $value = (int)($_POST['duration_value'] ?? 0);
+        $limits = ['hours' => 8760, 'days' => 3650, 'weeks' => 520, 'months' => 120];
+        if ($unit === 'permanent') {
+            $warningExpiresAt = null;
+            $durationLabel = 'permanent';
+        } elseif (!isset($limits[$unit]) || $value < 1 || $value > $limits[$unit]) {
+            $pdo->rollBack();
+            moderationRedirect($targetId, 'error', 'moderation_invalid_duration');
+        } else {
+            $warningExpiresAt = (new DateTimeImmutable('now'))
+                ->modify('+' . $value . ' ' . $unit)
+                ->format('Y-m-d H:i:s');
+            $durationLabel = $value . ' ' . $unit;
+        }
+        $pdo->prepare(
+            "INSERT INTO user_warnings
+                (user_id, issued_by_user_id, reason, expires_at)
+             VALUES (:user_id, :actor_id, :reason, :expires_at)"
+        )->execute([
+            'user_id' => $targetId,
+            'actor_id' => $actor['id'],
+            'reason' => $reason,
+            'expires_at' => $warningExpiresAt
+        ]);
+        $activityKey = 'activity_warning_issued';
+        $activityValue = $reason . ' [' . $durationLabel . ']';
+        $successMessage = 'moderation_warning_success';
+    } elseif ($action === 'unban') {
         if ((int)$actor['op_permission'] < 4) {
             $pdo->rollBack();
             moderationRedirect($targetId, 'error', 'moderation_unban_requires_op4');
@@ -170,7 +224,12 @@ try {
         'activity_value' => $activityValue
     ]);
 
-    if ($action !== 'unban') {
+    if (!in_array($action, ['unban', 'warning', 'revoke_warning'], true)) {
+        $pdo->prepare(
+            "UPDATE pilot_flights
+             SET status = 'aborted', completed_at = NOW()
+             WHERE user_id = :user_id AND status = 'active'"
+        )->execute(['user_id' => $targetId]);
         $pdo->prepare(
             "UPDATE user_sessions
              SET is_active = 0, last_seen = NOW()

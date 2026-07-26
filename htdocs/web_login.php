@@ -115,6 +115,13 @@ try {
         redirectBack('error', 'Dieser Account ist derzeit deaktiviert.');
     }
 
+    if (
+        !empty($maintenanceMode)
+        && (int)$user['op_permission'] < 5
+    ) {
+        redirectBack('error', 'maintenance_mode_active');
+    }
+
     if ((int)$user['email_verified'] !== 1) {
         redirectBack('error', 'Bitte bestätige zuerst deine E-Mail-Adresse.');
     }

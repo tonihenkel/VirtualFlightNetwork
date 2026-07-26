@@ -13,6 +13,7 @@ Release/
 *.exp
 *.lib
 *.log
+Flight Radar Sim Projekt/version_generated.h
 
 # Konfigurationen mit Zugangsdaten
 config.txt
