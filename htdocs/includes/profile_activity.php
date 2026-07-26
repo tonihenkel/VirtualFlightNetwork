@@ -37,9 +37,13 @@ function activityIcon(string $type): string
             return '🔑';
 
         case 'division_changed':
+        case 'division_change_requested':
+        case 'division_change_rejected':
             return '🌍';
 
         case 'country_changed':
+        case 'username_changed':
+        case 'real_name_changed':
             return '🏳';
 
         case 'exam_passed':
@@ -58,6 +62,10 @@ function activityIcon(string $type): string
             return '⚠';
 
         case 'ban':
+        case 'unban':
+        case 'ban_appeal':
+        case 'ban_appeal_rejected':
+        case 'kick':
             return '🚫';
 
         default:

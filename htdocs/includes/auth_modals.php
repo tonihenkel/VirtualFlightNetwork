@@ -88,6 +88,14 @@ catch (Exception $e)
                     : 'Forgot password?'; ?>
             </a>
         </p>
+        <p style="margin:8px 0 0;text-align:center;">
+            <a href="ban_appeal.php?lang=<?php echo urlencode($currentLanguage); ?>"
+               style="color:#49adff;text-decoration:none;">
+                <?php echo $currentLanguage === 'de'
+                    ? 'Entbannungsantrag stellen'
+                    : 'Submit a ban appeal'; ?>
+            </a>
+        </p>
 
     </div>
 

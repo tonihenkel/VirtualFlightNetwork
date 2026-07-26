@@ -33,6 +33,8 @@ function renderFlag(string $language): string
 
 
 $unreadActivityCount = 0;
+$pendingDivisionTransferCount = 0;
+$pendingBanAppealCount = 0;
 $headerOpPermission =
     (int)($_SESSION['web_op_permission'] ?? 0);
 
@@ -49,6 +51,16 @@ if (isset($_SESSION['web_user_id'])) {
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
                 ]
             );
+        }
+
+        require_once __DIR__ . '/web_session.php';
+
+        if (!validateVfnWebSession($headerPdo)) {
+            $headerOpPermission = 0;
+        }
+
+        if (!isset($_SESSION['web_user_id'])) {
+            throw new RuntimeException('web_session_invalid');
         }
 
         $unreadActivityStmt = $headerPdo->prepare(
@@ -81,6 +93,26 @@ if (isset($_SESSION['web_user_id'])) {
 
         $_SESSION['web_op_permission'] =
             $headerOpPermission;
+
+        if ($headerOpPermission > 1) {
+            $pendingDivisionTransferCount = (int)$headerPdo
+                ->query(
+                    "SELECT COUNT(*)
+                     FROM division_transfer_requests
+                     WHERE status = 'pending'"
+                )
+                ->fetchColumn();
+        }
+
+        if ($headerOpPermission >= 4) {
+            $pendingBanAppealCount = (int)$headerPdo
+                ->query(
+                    "SELECT COUNT(*)
+                     FROM ban_appeal_requests
+                     WHERE status = 'pending'"
+                )
+                ->fetchColumn();
+        }
 
     } catch (Exception $e) {
         $unreadActivityCount = 0;
@@ -413,6 +445,9 @@ if (isset($_SESSION['web_user_id'])) {
             <?php if ($headerOpPermission > 1): ?>
                 <a href="admin.php">
                     <?php echo htmlspecialchars(t('nav_admin_panel')); ?>
+                    <?php if ($pendingDivisionTransferCount > 0 || $pendingBanAppealCount > 0): ?>
+                        <span class="header-notification-dot"></span>
+                    <?php endif; ?>
                 </a>
             <?php endif; ?>
 

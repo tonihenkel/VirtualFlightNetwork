@@ -7,6 +7,7 @@ header("Content-Type: application/json; charset=utf-8");
 require_once 'config.php';
 require_once 'aircraft_types.php';
 require_once '../includes/ratings.php';
+require_once '../includes/web_session.php';
 
 $activeSeconds = 10;
 
@@ -142,6 +143,10 @@ try {
     $stmt->execute();
 
     $viewerOpPermission = 0;
+
+    if (isset($_SESSION["web_user_id"])) {
+        validateVfnWebSession($pdo);
+    }
 
     if (isset($_SESSION["web_user_id"])) {
 

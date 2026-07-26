@@ -862,17 +862,38 @@ void StartVoiceService()
     gVoiceThread = std::thread(VoiceWorker, gAuthToken, gCurrentCallsign);
 }
 
-void StopVoiceService()
+void StopVoiceService(bool waitForThread = true)
 {
     gVoiceStopRequested = true;
     StopVoiceCapture();
     {
         std::lock_guard<std::mutex> lock(gVoiceSocketMutex);
         if (gVoiceWebSocket)
-            WinHttpWebSocketShutdown(gVoiceWebSocket, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS,
-                nullptr, 0);
+        {
+            if (waitForThread)
+            {
+                WinHttpWebSocketShutdown(
+                    gVoiceWebSocket,
+                    WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS,
+                    nullptr,
+                    0
+                );
+            }
+            else
+            {
+                WinHttpCloseHandle(gVoiceWebSocket);
+                gVoiceWebSocket = nullptr;
+                gVoiceConnected = false;
+                gVoiceAuthenticated = false;
+            }
+        }
     }
-    if (gVoiceThread.joinable()) gVoiceThread.join();
+    if (waitForThread && gVoiceThread.joinable()) gVoiceThread.join();
+    if (!waitForThread)
+    {
+        gVoicePttActive = false;
+        return;
+    }
     if (gVoiceWaveOut)
     {
         waveOutReset(gVoiceWaveOut);
@@ -1506,6 +1527,7 @@ void LoadInternalEnglishLanguage()
     gText["status.login_first"] = "Please login first.";
     gText["status.connection_lost_auto_logout"] = "Connection lost. Logged out locally.";
     gText["status.kicked"] = "Kicked from network. ";
+    gText["status.kicked_spam"] = "Kicked by automatic chat spam protection.";
     gText["frequency.input_label"] = "Frequency (MHz):";
     gText["frequency.input_placeholder"] = "e.g. 122.800";
     gText["frequency.saved"] = "Frequency set.";
@@ -1597,6 +1619,7 @@ void ApplyInternalGermanLanguageFallbacks()
     gText["frequency.saved"] = "Frequenz gesetzt.";
     gText["frequency.invalid"] = "Bitte eine gueltige COM-Frequenz von 118.000 bis 136.990 eingeben.";
     gText["status.kicked"] = "Aus dem Netzwerk gekickt. ";
+    gText["status.kicked_spam"] = "Wegen Chat-Spam automatisch aus dem Netzwerk gekickt.";
     gText["chat.connected"] = "Mit dem VFN Netzwerk verbunden.";
     gText["chat.rank_status"] = "Pilotenrang: {pilot} / ATC-Rang: {atc}";
     gText["chat.ready"] = "Bereit fuer den Netzwerkbetrieb.";
@@ -1777,6 +1800,7 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "status.login_first=Please login first.\n";
             enFile << "status.connection_lost_auto_logout=Connection lost. Logged out locally.\n";
             enFile << "status.kicked=Kicked from network. \n";
+            enFile << "status.kicked_spam=Kicked by automatic chat spam protection.\n";
             enFile << "frequency.input_label=Frequency (MHz):\n";
             enFile << "frequency.input_placeholder=e.g. 122.800\n";
             enFile << "frequency.saved=Frequency set.\n";
@@ -1946,6 +1970,7 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "status.login_first=Bitte zuerst einloggen.\n";
             deFile << "status.connection_lost_auto_logout=Verbindung verloren. Lokal ausgeloggt.\n";
             deFile << "status.kicked=Aus dem Netzwerk gekickt. \n";
+            deFile << "status.kicked_spam=Wegen Chat-Spam automatisch aus dem Netzwerk gekickt.\n";
             deFile << "frequency.input_label=Frequenz (MHz):\n";
             deFile << "frequency.input_placeholder=z.B. 122.800\n";
             deFile << "frequency.saved=Frequenz gesetzt.\n";
@@ -4720,7 +4745,7 @@ void ForceLocalLogoutAfterConnectionFailures(
         return;
     }
 
-    StopVoiceService();
+    StopVoiceService(false);
     gRestoreInvisibleOnLogin = gCanUseInvisible && gIsInvisible;
     SaveConfig();
     gLoggedIn = false;
@@ -5017,6 +5042,12 @@ void ProcessPositionUpdateResult()
 
     if (ExtractJsonBoolValue(response, "kicked", false))
     {
+        if (ExtractJsonBoolValue(response, "spam_kick", false))
+        {
+            message =
+                T("status.kicked_spam");
+        }
+
         ForceLocalLogoutAfterKick(
             message
         );
@@ -5068,7 +5099,6 @@ void StartChatPollWorker()
     if (!gCanUseInvisible)
     {
         gIsInvisible = false;
-        return;
     }
 
     if (gChatPollInProgress.exchange(true))
@@ -5317,6 +5347,12 @@ void ProcessChatSendResult()
             "open_url"
         );
 
+    std::string filteredMessage =
+        ExtractJsonStringValue(
+            response,
+            "filtered_message"
+        );
+
     if (!openUrl.empty())
     {
         OpenExternalUrl(
@@ -5326,6 +5362,12 @@ void ProcessChatSendResult()
 
     if (ExtractJsonBoolValue(response, "kicked", false))
     {
+        if (ExtractJsonBoolValue(response, "spam_kick", false))
+        {
+            responseMessage =
+                T("status.kicked_spam");
+        }
+
         if (!responseMessage.empty())
         {
             AddChatLine(
@@ -5349,8 +5391,13 @@ void ProcessChatSendResult()
         !gLastChatSendWasCommand &&
         !gPendingChatEchoText.empty()
     ) {
+        const std::string& echoText =
+            filteredMessage.empty()
+                ? gPendingChatEchoText
+                : filteredMessage;
+
         AddChatLine(
-            { 0, gPendingChatEchoFrequency, "", gCurrentCallsign, "pilot", gPendingChatEchoText },
+            { 0, gPendingChatEchoFrequency, "", gCurrentCallsign, "pilot", echoText },
             false
         );
     }
@@ -11107,9 +11154,18 @@ void DrawMessagesWindow(
             line.sender == "ANNOUNCEMENT" ? 0.14f : 1.00f
         );
 
+        std::string displayText =
+            GetLocalizedChatText(line);
+
+        if (!line.frequency.empty())
+        {
+            displayText =
+                "[" + line.frequency + "] " + displayText;
+        }
+
         std::vector<std::string> wrapped =
             WrapTextForWidth(
-                GetLocalizedChatText(line),
+                displayText,
                 maxTextWidth
             );
 
@@ -12416,9 +12472,18 @@ void DrawCompactWindow(
 
     for (const ChatLine& line : gChatLines)
     {
+        std::string displayText =
+            GetLocalizedChatText(line);
+
+        if (!line.frequency.empty())
+        {
+            displayText =
+                "[" + line.frequency + "] " + displayText;
+        }
+
         std::vector<std::string> wrappedRows =
             WrapTextForWidth(
-                GetLocalizedChatText(line),
+                displayText,
                 messageTextWidth
             );
 
@@ -13306,7 +13371,21 @@ bool HandleChatKeyInput(
     {
         if (!gChatInputText.empty())
         {
-            gChatInputText.pop_back();
+            size_t characterStart =
+                gChatInputText.size() - 1;
+
+            while (
+                characterStart > 0 &&
+                (
+                    static_cast<unsigned char>(
+                        gChatInputText[characterStart]
+                    ) & 0xC0
+                ) == 0x80
+            ) {
+                characterStart--;
+            }
+
+            gChatInputText.erase(characterStart);
         }
 
         return true;
@@ -13327,13 +13406,58 @@ bool HandleChatKeyInput(
         return true;
     }
 
-    if (
-        inKey >= 32 &&
-        inKey <= 126 &&
-        gChatInputText.size() < 180
-    ) {
-        gChatInputText.push_back(inKey);
-        return true;
+    unsigned char keyByte =
+        static_cast<unsigned char>(inKey);
+
+    if (keyByte >= 32 && keyByte != 127)
+    {
+        std::string inputText;
+
+        if (keyByte <= 126)
+        {
+            inputText.push_back(
+                static_cast<char>(keyByte)
+            );
+        }
+        else
+        {
+            char ansiText[2] =
+            {
+                static_cast<char>(keyByte),
+                '\0'
+            };
+
+            wchar_t wideText[2] = {};
+
+            int wideLength =
+                MultiByteToWideChar(
+                    CP_ACP,
+                    0,
+                    ansiText,
+                    1,
+                    wideText,
+                    2
+                );
+
+            if (wideLength > 0)
+            {
+                inputText =
+                    WideToUtf8(
+                        std::wstring(
+                            wideText,
+                            wideText + wideLength
+                        )
+                    );
+            }
+        }
+
+        if (
+            !inputText.empty() &&
+            gChatInputText.size() + inputText.size() <= 720
+        ) {
+            gChatInputText += inputText;
+            return true;
+        }
     }
 
     return false;
@@ -13423,80 +13547,117 @@ char GetWindowsChatCharacter(int virtualKey)
 }
 
 
+std::string GetWindowsChatText(int virtualKey)
+{
+    BYTE keyboardState[256] = {};
+
+    if (!GetKeyboardState(keyboardState))
+    {
+        return "";
+    }
+
+    // The flight loop can observe a short key press only after the key was
+    // released. Force the key currently being processed into the down state
+    // and refresh the modifier states from the asynchronous keyboard state.
+    keyboardState[virtualKey] |= 0x80;
+    keyboardState[VK_SHIFT] =
+        (GetAsyncKeyState(VK_SHIFT) & 0x8000) ? 0x80 : 0;
+    keyboardState[VK_CONTROL] =
+        (GetAsyncKeyState(VK_CONTROL) & 0x8000) ? 0x80 : 0;
+    keyboardState[VK_MENU] =
+        (GetAsyncKeyState(VK_MENU) & 0x8000) ? 0x80 : 0;
+
+    HKL keyboardLayout =
+        GetKeyboardLayout(0);
+
+    UINT scanCode =
+        MapVirtualKeyExW(
+            static_cast<UINT>(virtualKey),
+            MAPVK_VK_TO_VSC,
+            keyboardLayout
+        );
+
+    wchar_t characters[8] = {};
+
+    int characterCount =
+        ToUnicodeEx(
+            static_cast<UINT>(virtualKey),
+            scanCode,
+            keyboardState,
+            characters,
+            8,
+            0,
+            keyboardLayout
+        );
+
+    if (characterCount <= 0)
+    {
+        return "";
+    }
+
+    return WideToUtf8(
+        std::wstring(
+            characters,
+            characters + characterCount
+        )
+    );
+}
+
+
 void PollWindowsChatKeyboard()
 {
     if (
         !gLoggedIn ||
         !gChatInputFocused ||
         gCompactWindow == nullptr ||
-        !XPLMGetWindowIsVisible(gCompactWindow) ||
-        !XPLMWindowIsPoppedOut(gCompactWindow)
-    ) {
-        return;
-    }
-
-    float now =
-        XPLMGetElapsedTime();
-
-    if (
-        gLastXPlaneChatInputTime > 0.0f &&
-        now - gLastXPlaneChatInputTime < 0.12f
+        !XPLMGetWindowIsVisible(gCompactWindow)
     ) {
         return;
     }
 
     for (int virtualKey = 0; virtualKey < 256; virtualKey++)
     {
-        bool isDown =
-            (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+        SHORT asynchronousState =
+            GetAsyncKeyState(virtualKey);
 
-        if (!isDown)
+        bool isDown =
+            (asynchronousState & 0x8000) != 0;
+
+        bool wasPressed =
+            (asynchronousState & 0x0001) != 0;
+
+        if (!isDown && !wasPressed)
         {
             gWindowsChatKeyDown[virtualKey] = false;
             continue;
         }
 
-        if (gWindowsChatKeyDown[virtualKey])
+        if (isDown && gWindowsChatKeyDown[virtualKey])
         {
             continue;
         }
 
-        gWindowsChatKeyDown[virtualKey] = true;
+        gWindowsChatKeyDown[virtualKey] =
+            isDown;
 
-        if (virtualKey == VK_BACK)
-        {
-            if (!gChatInputText.empty())
-            {
-                gChatInputText.pop_back();
-            }
+        std::string inputText =
+            GetWindowsChatText(virtualKey);
 
-            continue;
-        }
-
-        if (virtualKey == VK_RETURN)
-        {
-            SendChatMessage();
-            continue;
-        }
-
-        if (virtualKey == VK_ESCAPE)
-        {
-            gChatInputFocused = false;
-            XPLMTakeKeyboardFocus(
-                nullptr
+        bool containsNonAscii =
+            std::any_of(
+                inputText.begin(),
+                inputText.end(),
+                [](unsigned char character)
+                {
+                    return character >= 0x80;
+                }
             );
-            continue;
-        }
-
-        char character =
-            GetWindowsChatCharacter(virtualKey);
 
         if (
-            character >= 32 &&
-            character <= 126 &&
-            gChatInputText.size() < 180
+            containsNonAscii &&
+            gChatInputText.size() + inputText.size() <= 720
         ) {
-            gChatInputText.push_back(character);
+            gChatInputText += inputText;
         }
     }
 }

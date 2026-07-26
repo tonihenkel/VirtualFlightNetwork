@@ -110,7 +110,9 @@ try {
     $receiverPositionStmt = $pdo->prepare(
         "SELECT
             latitude,
-            longitude
+            longitude,
+            com1,
+            com2
          FROM pilot_positions
          WHERE user_id = :user_id
          LIMIT 1"
@@ -129,6 +131,23 @@ try {
 
     $receiverLongitude =
         $receiverPosition ? (float)$receiverPosition['longitude'] : null;
+
+    if ($receiverPosition) {
+        foreach (['com1', 'com2'] as $radioColumn) {
+            $serverFrequency =
+                normalizeChatFrequency(
+                    (string)($receiverPosition[$radioColumn] ?? '')
+                );
+
+            if (
+                $serverFrequency !== null
+                && !in_array($serverFrequency, $frequencies, true)
+            ) {
+                $frequencies[] =
+                    $serverFrequency;
+            }
+        }
+    }
 
     $params = [
         'since_id' => $sinceId,
@@ -155,7 +174,46 @@ try {
             ' OR frequency IN (' . implode(',', $placeholders) . ')';
     }
 
-    if ($sinceId <= 0) {
+    $cursorWasReset =
+        false;
+
+    if ($sinceId > 0) {
+        $currentMaxStmt = $pdo->prepare(
+            "SELECT COALESCE(MAX(id), 0)
+             FROM chat_messages
+             WHERE recipient_user_id = :user_id
+                $frequencyWhere"
+        );
+
+        $currentMaxParams =
+            $params;
+
+        unset($currentMaxParams['since_id']);
+
+        $currentMaxStmt->execute(
+            $currentMaxParams
+        );
+
+        $currentMaxId =
+            (int)$currentMaxStmt->fetchColumn();
+
+        if ($sinceId > $currentMaxId) {
+            // A restored/imported database can restart AUTO_INCREMENT at a
+            // lower value while a running plugin still holds the old cursor.
+            // Replay a small recent window instead of waiting forever for the
+            // old ID to be reached again.
+            $sinceId =
+                max(0, $currentMaxId - 30);
+
+            $params['since_id'] =
+                $sinceId;
+
+            $cursorWasReset =
+                true;
+        }
+    }
+
+    if ($sinceId <= 0 && !$cursorWasReset) {
         $maxStmt = $pdo->prepare(
             "SELECT COALESCE(MAX(id), 0)
              FROM chat_messages
@@ -231,6 +289,15 @@ try {
         if ($messageFrequency === '') {
             $canReceive = true;
         } elseif ($messageFrequency === '122.800') {
+            $canReceive = true;
+        } elseif (
+            strpos((string)$message['sender_callsign'], 'STAFF:') === 0
+            && $message['sender_latitude'] === null
+            && $message['sender_longitude'] === null
+        ) {
+            // Web staff has no simulator position. Treat its selected
+            // frequency as a global channel instead of discarding it during
+            // the normal radio-distance check.
             $canReceive = true;
         } elseif ($senderUserId === $userId) {
             $canReceive = true;

@@ -4,6 +4,7 @@ session_start();
 
 require_once 'execute/config.php';
 require_once 'execute/send_mail.php';
+require_once 'includes/auth_security.php';
 
 $language = strtolower(trim($_GET['lang'] ?? $_POST['lang'] ?? 'de'));
 $language = $language === 'en' ? 'en' : 'de';
@@ -50,6 +51,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $dbPass,
                 [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
             );
+
+            $requestIp = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+            if (
+                authRateIsBlocked($pdo, 'password_reset_ip', $requestIp)
+                || authRateIsBlocked($pdo, 'password_reset_identifier', $identifier)
+            ) {
+                throw new RuntimeException('Password reset rate limit reached.');
+            }
+            authRateFail($pdo, 'password_reset_ip', $requestIp, 5);
+            authRateFail($pdo, 'password_reset_identifier', $identifier, 3);
 
             $pdo->exec(
                 "CREATE TABLE IF NOT EXISTS password_reset_tokens (

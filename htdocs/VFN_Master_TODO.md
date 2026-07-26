@@ -1,6 +1,6 @@
 # Virtual Flight Network (VFN) – Master-TODO
 
-Letzte Prüfung: 25.07.2026
+Letzte Prüfung: 26.07.2026
 
 ## Status
 
@@ -29,14 +29,19 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Einmalige, gehashte und zeitlich begrenzte Reset-Tokens
 - [x] Aktiver/inaktiver Benutzerstatus
 - [x] Bann-Felder in der Datenbank
-- [-] Vollständige Benutzer-Selbstverwaltung
-  - [ ] Benutzername ändern
-  - [ ] Realname ändern
-  - [ ] Land ändern
-  - [ ] Divisionstransfer beantragen
-  - [ ] Passwort im eingeloggten Profil ändern
-- [ ] Schutz gegen wiederholte Login- und Reset-Anfragen (Rate Limiting)
-- [ ] Optional: Zwei-Faktor-Authentifizierung für Staff-Konten
+- [x] Benutzer-Selbstverwaltung im eigenen Profil
+  - [x] Benutzername ändern
+  - [x] Realname ändern
+  - [x] Land ändern
+  - [x] Divisionstransfer beantragen
+  - [x] Passwort im eingeloggten Profil ändern
+- [x] Schutz gegen wiederholte Login- und Reset-Anfragen (Rate Limiting)
+- [-] Zwei-Faktor-Authentifizierung für Staff-Konten
+  - [x] Authenticator-App (TOTP)
+  - [x] Einmalcode per E-Mail
+  - [x] Absicherung des Web-Logins
+  - [ ] 2FA-Ablauf für den Plugin-Login
+  - [ ] Wiederherstellungscodes
 
 # 2. Profile
 
@@ -56,7 +61,7 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Flugzeugstatistiken
 - [ ] Eigene Pilot-Unterseite mit Flugbuch und Flughistorie
 - [ ] Eigene ATC-Unterseite
-- [ ] Profil-Einstellungen
+- [x] Profil-Einstellungen für das eigene Profil
 - [ ] Private „Administrative History“ für den Profilbesitzer
 - [ ] Staff-Ansicht für Warnungen, Banns, Trainings- und Prüfungsverlauf
 
@@ -72,15 +77,17 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Warnungs-Aktivität technisch darstellbar
 - [x] Rating-Änderung technisch darstellbar
 - [-] Staff-Aktivitäten im Admin Panel
-- [ ] Passwortänderung protokollieren
-- [ ] Benutzername, Realname, Land und Division ändern/protokollieren
+- [x] Passwortänderung protokollieren
+- [x] Benutzername, Realname und Land ändern/protokollieren
+- [x] Divisionstransfer beantragen, genehmigen/ablehnen und protokollieren
 - [ ] Ersten Flug und abgeschlossenen Flug vollständig protokollieren
 - [ ] Erste, 10. und 100. Landung protokollieren
 - [ ] Prüfung bestanden/nicht bestanden protokollieren
 - [ ] Training begonnen/abgeschlossen protokollieren
 - [ ] Rating vergeben/entziehen mit Staff-Aktion
 - [ ] Verwarnungen vergeben/entfernen
-- [ ] Banns vergeben/aufheben
+- [x] Kick, zeitlich begrenzte/permanente Banns und Entbannung protokollieren
+- [x] Entbannungsanträge stellen, genehmigen/ablehnen und protokollieren
 - [ ] Staff-Rolle vergeben/entziehen
 - [ ] Interne Staff-, Trainings- und Prüfungsnotizen
 - [ ] Sichtbarkeit der Activities zentral nach öffentlich/privat/Staff regeln
@@ -150,13 +157,24 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Spielerliste (`/list`)
 - [x] Spielerprofil öffnen (`/playerinfo`)
 - [x] Staff-Chat (`/staff`)
+- [x] Staff-Frequenzchat über das Web-Admin-Panel
+- [x] Positionslose Web-Staff-Nachrichten auf der gewählten Frequenz global zustellen
+- [ ] Im Web-Staff-Chat zwischen globaler Frequenz und regionalem Bezugspiloten wählen
+- [x] Frequenzunabhängige globale Announcements über das Web-Admin-Panel (OP-Level 5)
 - [x] Netzwerk-Announcements (`/announcement`)
 - [x] Kick-Kommando und Plugin-Kick-Hinweis
 - [x] Chat-Polling und Nachrichtenpersistenz
+- [x] Chat-Polling für normale Spieler unabhängig von der Unsichtbar-Berechtigung
+- [x] Sendefrequenz im Plugin-Chat und MSG-Fenster anzeigen
+- [x] Zentraler Schimpfwortfilter mit Sternmaskierung im Plugin
+- [x] Rote Originalwort-Hervorhebung nur im geschützten Admin-Monitor
+- [x] Filterwort-Verwaltung im Admin Panel ab OP-Level 4
+- [x] Serverseitiger Plugin-Chat-Spamschutz mit automatischem Kick
+- [x] Spam-Kick als Benutzer-Activity
 - [ ] SELCAL
 - [ ] CPDLC
 - [ ] Vollständiges Bann- und Verwarnungs-Kommando
-- [ ] Chat-Spam-Schutz und serverseitiges Rate Limiting
+- [x] Chat-Spam-Schutz mit hohen Burst-, Minuten- und Wiederholungsschwellen
 - [ ] Nachrichtenaufbewahrung und automatische Archivierung definieren
 
 # 8. Voice-System
@@ -229,12 +247,24 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Divisionen direkt aus MySQL
 - [x] Verlinkung zum Spielerprofil
 - [x] Letzten Admin-Reiter nach F5 wiederherstellen
+- [x] OP-Level-5-Datenbank-Reset mit Passwort- und Textbestätigung
+  - [x] `airports` und `divisions` erhalten
+  - [x] Bootstrap-Account `admin` mit OP-Level 5 für den Wiederzugang neu anlegen
+  - [x] Alle Web- und Plugin-Sitzungen zuverlässig ungültig machen
+  - [x] Sessions, Chat-Cursor und AUTO_INCREMENT-Werte kontrolliert zurücksetzen
+- [x] Typisierte OP-Level-5-Konfigurationsverwaltung ohne SQL-Zugangsdaten
+  - [x] Separate, DB-Reset-feste Runtime-Override-Datei
+  - [x] Allowlist und Validierung für URLs, Zahlen, Boolean, E-Mail und Dateiname
 - [-] OP-Level-basiertes Berechtigungssystem
 - [ ] Benutzer im Admin Panel bearbeiten
 - [ ] Ratings vergeben und entziehen
-- [ ] Division ändern/Transfer genehmigen
+- [x] Divisionstransfers genehmigen oder ablehnen
 - [ ] Benutzer aktivieren/deaktivieren
-- [ ] Bann und Entbannung
+- [x] Profil-Moderation mit Online-Kick und Pflichtgrund
+- [x] Zeitlich begrenzte und permanente Banns
+- [x] Entbannung ab OP-Level 4 mit Pflichtgrund
+- [x] Entbannungsanträge im Admin Panel mit rotem Benachrichtigungspunkt
+- [ ] Spieler über die Entscheidung eines Entbannungsantrags per E-Mail informieren
 - [ ] Verwarnungssystem
 - [ ] Rollen und Rechte feiner als nur OP-Level modellieren
 - [ ] Vollständiger Audit-Log aller Admin-Aktionen
@@ -279,11 +309,15 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] `user_night_flights`
 - [x] `user_visited_countries`
 - [x] `password_reset_tokens`
+- [x] `ban_appeal_requests`
+- [x] `division_transfer_requests`
+- [x] `chat_filter_words`
+- [x] `chat_spam_events`
 
 ## Offene SQL-Arbeiten
 
 - [ ] Dringend: vollständiges versioniertes Basisschema ins Repository aufnehmen
-- [ ] Dringend: Migrationsordner mit fortlaufenden SQL-Migrationen einführen
+- [x] Migrationsordner mit fortlaufenden SQL-Migrationen eingeführt
 - [ ] Laufzeit-`CREATE TABLE` aus PHP in Migrationen überführen
 - [ ] Fremdschlüssel und Löschregeln aller Tabellen prüfen/ergänzen
 - [ ] Indizes für Chatfilter, Sessions, Positionen, Activities und Spielerfilter prüfen
@@ -305,7 +339,11 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [ ] Voice-Service-Secrets ausschließlich über geschützte Umgebungsvariablen
 - [ ] CSRF-Schutz für alle Webformulare und Admin-Aktionen prüfen
 - [ ] Einheitliche Eingabevalidierung und API-Fehlerformate
-- [ ] Rate Limiting für Login, Registrierung, Chat und API
+- [-] Rate Limiting
+  - [x] Web-Login
+  - [x] Passwort-Recovery
+  - [ ] Registrierung
+  - [ ] Chat und weitere API-Endpunkte
 - [ ] Security Header in IIS/web.config vervollständigen
 - [ ] Produktionsfehler protokollieren, ohne interne Details auszugeben
 - [ ] Zentrales Monitoring für IIS, PHP, MySQL und Voice-Service

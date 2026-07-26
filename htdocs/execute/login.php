@@ -7,6 +7,7 @@ header("Content-Type: application/json; charset=utf-8");
 
 require_once 'config.php';
 require_once '../includes/ratings.php';
+require_once '../includes/ban_status.php';
 
 $username = $_POST["username"] ?? "";
 $password = $_POST["password"] ?? "";
@@ -42,6 +43,9 @@ try {
             password_hash,
             is_active,
             email_verified,
+            is_banned,
+            ban_reason,
+            ban_expires_at,
             rating_pilot,
             rating_atc,
             op_permission
@@ -78,6 +82,16 @@ try {
             "success" => false,
             "message" => "Benutzer ist deaktiviert."
         ]);
+        exit;
+    }
+
+    $banStatus = getActiveBanStatus($pdo, (int)$user["id"]);
+    if ($banStatus['active']) {
+        $banMessage = "Account gebannt: " . $banStatus['reason'];
+        if ($banStatus['expires_at']) {
+            $banMessage .= " (bis " . date('d.m.Y H:i', strtotime($banStatus['expires_at'])) . ")";
+        }
+        echo json_encode(["success" => false, "message" => $banMessage]);
         exit;
     }
 

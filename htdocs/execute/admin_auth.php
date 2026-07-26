@@ -5,10 +5,14 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/../includes/web_session.php';
 
 function requireAdminUser(PDO $pdo, int $minimumOpPermission = 2): array
 {
-    if (empty($_SESSION['web_user_id'])) {
+    if (
+        empty($_SESSION['web_user_id'])
+        || !validateVfnWebSession($pdo)
+    ) {
         http_response_code(401);
         echo json_encode([
             'success' => false,

@@ -17,6 +17,18 @@ if (!isset($_SESSION['web_user_id'])) {
 require_once 'execute/config.php';
 require_once 'includes/language.php';
 require_once 'includes/ratings.php';
+require_once 'includes/two_factor.php';
+require_once 'includes/web_session.php';
+
+if (!validateVfnWebSession(new PDO(
+    "mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4",
+    $dbUser,
+    $dbPass,
+    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+))) {
+    header('Location: index.php?type=error&message=login_required');
+    exit;
+}
 
 if (!isset($projectName) || trim($projectName) === '') {
     $projectName = 'Flight Radar Sim Project';
@@ -26,6 +38,9 @@ if (!isset($showRatings)) {
     $showRatings = true;
 }
 
+/**
+ * @param mixed $value
+ */
 function h($value): string
 {
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
@@ -51,8 +66,11 @@ $profileUserId =
 
 if ($profileUserId <= 0) {
     $profileUserId =
-        (int)$_SESSION['web_user_id'];
+    (int)$_SESSION['web_user_id'];
 }
+
+$isOwnProfile =
+    $profileUserId === (int)$_SESSION['web_user_id'];
 
 try {
     $pdo = new PDO(
@@ -77,6 +95,7 @@ try {
             rating_pilot,
             rating_atc,
             rating_special,
+            op_permission,
             total_flight_seconds,
             total_flight_miles,
             total_landings
@@ -96,6 +115,20 @@ try {
         header('Location: index.php?type=error&message=user_not_found');
         exit;
     }
+
+    $viewerStmt = $pdo->prepare(
+        "SELECT id, op_permission
+         FROM users
+         WHERE id = :id
+         LIMIT 1"
+    );
+    $viewerStmt->execute(['id' => (int)$_SESSION['web_user_id']]);
+    $viewerUser = $viewerStmt->fetch(PDO::FETCH_ASSOC);
+    $canModerateProfile =
+        $viewerUser
+        && (int)$viewerUser['op_permission'] >= 2
+        && (int)$viewerUser['id'] !== (int)$profileUser['id']
+        && (int)$viewerUser['op_permission'] > (int)$profileUser['op_permission'];
 } catch (Exception $e) {
     die('Serverfehler: ' . h($e->getMessage()));
 }
@@ -192,11 +225,14 @@ if ($favouriteAircraftData) {
 }
 
 $onlineStmt = $pdo->prepare(
-    "SELECT id
-     FROM user_sessions
-     WHERE user_id = :user_id
-        AND is_active = 1
-        AND last_seen >= DATE_SUB(NOW(), INTERVAL 15 SECOND)
+    "SELECT p.user_id
+     FROM pilot_positions p
+     INNER JOIN user_sessions s
+        ON s.user_id = p.user_id
+       AND s.is_active = 1
+     WHERE p.user_id = :user_id
+        AND p.last_update >= DATE_SUB(NOW(), INTERVAL 15 SECOND)
+        AND s.last_seen >= DATE_SUB(NOW(), INTERVAL 15 SECOND)
      LIMIT 1"
 );
 
@@ -251,11 +287,33 @@ $activeTab =
 $allowedTabs = [
     'overview',
     'activity',
-    'awards'
+    'awards',
+    'settings',
+    'moderation'
 ];
 
-if (!in_array($activeTab, $allowedTabs, true)) {
+if (
+    !in_array($activeTab, $allowedTabs, true)
+    || ($activeTab === 'settings' && !$isOwnProfile)
+    || ($activeTab === 'moderation' && !$canModerateProfile)
+) {
     $activeTab = 'overview';
+}
+
+if (empty($_SESSION['profile_settings_csrf'])) {
+    $_SESSION['profile_settings_csrf'] = bin2hex(random_bytes(32));
+}
+
+if (empty($_SESSION['profile_moderation_csrf'])) {
+    $_SESSION['profile_moderation_csrf'] = bin2hex(random_bytes(32));
+}
+
+if (
+    $isOwnProfile
+    && $activeTab === 'settings'
+    && empty($_SESSION['profile_totp_setup_secret'])
+) {
+    $_SESSION['profile_totp_setup_secret'] = twoFactorGenerateSecret();
 }
 
 $profileBaseUrl =
@@ -850,6 +908,22 @@ $awardImages = [
                 🏆 <?php echo htmlspecialchars(t('profile_awards')); ?>
             </a>
 
+            <?php if ($isOwnProfile): ?>
+                <a
+                    class="side-link <?php echo $activeTab === 'settings' ? 'active' : ''; ?>"
+                    href="<?php echo $profileBaseUrl; ?>&a=settings">
+                    ⚙ <?php echo htmlspecialchars(t('profile_settings')); ?>
+                </a>
+            <?php endif; ?>
+
+            <?php if ($canModerateProfile): ?>
+                <a
+                    class="side-link <?php echo $activeTab === 'moderation' ? 'active' : ''; ?>"
+                    href="<?php echo $profileBaseUrl; ?>&a=moderation">
+                    🛡 <?php echo htmlspecialchars(t('profile_moderation')); ?>
+                </a>
+            <?php endif; ?>
+
             <!--
             <a class="side-link" href="#">✈ <?php echo htmlspecialchars(t('profile_pilot')); ?></a>
             <a class="side-link" href="#">🗼 <?php echo htmlspecialchars(t('profile_atc')); ?></a>
@@ -899,6 +973,14 @@ $awardImages = [
 
                     case 'awards':
                         require_once 'includes/profile_awards.php';
+                        break;
+
+                    case 'settings':
+                        require_once 'includes/profile_settings.php';
+                        break;
+
+                    case 'moderation':
+                        require_once 'includes/profile_moderation.php';
                         break;
                 }
             ?>

@@ -4,6 +4,7 @@ header("Content-Type: application/json; charset=utf-8");
 require_once 'config.php';
 require_once '../includes/chat_system.php';
 require_once '../includes/activity_log.php';
+require_once '../includes/chat_spam_protection.php';
 
 $token =
     trim($_POST['token'] ?? '');
@@ -91,6 +92,45 @@ try {
 
     $senderCallsign =
         strtoupper(trim((string)($session['callsign'] ?? $callsign)));
+
+    $spamReason = registerChatSpamEvent(
+        $pdo,
+        $senderUserId,
+        $token,
+        $message
+    );
+
+    if ($spamReason !== null) {
+        $pdo->beginTransaction();
+        logActivity(
+            $pdo,
+            $senderUserId,
+            'kick',
+            'activity_kicked_spam',
+            'Automatischer Spam-Kick (' . $spamReason . ')',
+            0
+        );
+        $pdo->prepare(
+            "UPDATE user_sessions
+             SET is_active = 0, last_seen = NOW()
+             WHERE token = :token"
+        )->execute(['token' => $token]);
+        $pdo->prepare(
+            "DELETE FROM pilot_positions WHERE session_token = :token"
+        )->execute(['token' => $token]);
+        $pdo->prepare(
+            "DELETE FROM pilot_tracks WHERE session_token = :token"
+        )->execute(['token' => $token]);
+        $pdo->commit();
+
+        echo json_encode([
+            'success' => false,
+            'message' => 'Automatic spam protection triggered.',
+            'kicked' => true,
+            'spam_kick' => true
+        ]);
+        exit;
+    }
 
     if (preg_match('/^\/list\s*$/i', $message)) {
         if ((int)$session['op_permission'] < 1) {
@@ -745,7 +785,7 @@ try {
     $senderLongitude =
         $position ? (float)$position['longitude'] : null;
 
-    insertChatMessage(
+    $sentMessageText = insertChatMessage(
         $pdo,
         $frequency,
         null,
@@ -759,10 +799,14 @@ try {
 
     echo json_encode([
         'success' => true,
-        'message' => 'Nachricht gesendet.'
-    ]);
+        'message' => 'Nachricht gesendet.',
+        'filtered_message' => $sentMessageText
+    ], JSON_UNESCAPED_UNICODE);
 
 } catch (Exception $e) {
+    if (isset($pdo) && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     echo json_encode([
         'success' => false,
         'message' => 'Serverfehler.',

@@ -66,13 +66,14 @@ try {
 
     $announcementStmt = $pdo->prepare(
         "SELECT
-            id,
+            MIN(id) AS id,
             sender_callsign,
             message_text,
             created_at
          FROM chat_messages
          WHERE message_text LIKE '[ANNOUNCEMENT]%'
             OR sender_callsign = 'ANNOUNCEMENT'
+         GROUP BY sender_callsign, message_text, created_at
          ORDER BY created_at DESC
          LIMIT 80"
     );

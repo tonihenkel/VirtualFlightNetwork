@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/execute/config.php';
 require_once __DIR__ . '/includes/language.php';
+require_once __DIR__ . '/includes/web_session.php';
 
 $pdo = null;
 $adminUser = null;
@@ -17,7 +18,10 @@ try {
         ]
     );
 
-    if (empty($_SESSION['web_user_id'])) {
+    if (
+        empty($_SESSION['web_user_id'])
+        || !validateVfnWebSession($pdo)
+    ) {
         $loginRequired = true;
     } else {
         $adminStmt = $pdo->prepare(
@@ -50,6 +54,10 @@ $adminOpPermission =
 
 $canViewAllFrequencies =
     $adminOpPermission > 3;
+
+if (empty($_SESSION['admin_csrf'])) {
+    $_SESSION['admin_csrf'] = bin2hex(random_bytes(32));
+}
 
 $voiceSessionToken =
     '';
@@ -326,6 +334,14 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         .player-profile-link:focus {
             color: #00f5c4;
             text-decoration: underline;
+        }
+
+        .filtered-chat-word {
+            color: #ff515f;
+            font-weight: 800;
+            background: rgba(255, 40, 58, 0.12);
+            border-radius: 3px;
+            padding: 0 2px;
         }
 
         select.admin-input option {
@@ -615,6 +631,31 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 <button class="admin-tab" type="button" data-tab="players">
                     <?php echo htmlspecialchars(t('admin_tab_players')); ?>
                 </button>
+                <button class="admin-tab" type="button" data-tab="transfers">
+                    <?php echo htmlspecialchars(t('admin_tab_transfers')); ?>
+                    <?php if (($pendingDivisionTransferCount ?? 0) > 0): ?>
+                        <span class="header-notification-dot" id="transferTabDot"></span>
+                    <?php endif; ?>
+                </button>
+                <?php if ($adminOpPermission >= 4): ?>
+                    <button class="admin-tab" type="button" data-tab="moderation">
+                        <?php echo htmlspecialchars(t('admin_tab_moderation')); ?>
+                        <?php if (($pendingBanAppealCount ?? 0) > 0): ?>
+                            <span class="header-notification-dot" id="moderationTabDot"></span>
+                        <?php endif; ?>
+                    </button>
+                    <button class="admin-tab" type="button" data-tab="chat-filter">
+                        <?php echo htmlspecialchars(t('admin_tab_chat_filter')); ?>
+                    </button>
+                <?php endif; ?>
+                <?php if ($adminOpPermission >= 5): ?>
+                    <button class="admin-tab" type="button" data-tab="configuration">
+                        <?php echo htmlspecialchars(t('admin_tab_configuration')); ?>
+                    </button>
+                    <button class="admin-tab" type="button" data-tab="database-reset">
+                        <?php echo htmlspecialchars(t('admin_tab_database_reset')); ?>
+                    </button>
+                <?php endif; ?>
             </div>
 
             <div class="admin-panel is-active" id="admin-panel-chat">
@@ -653,6 +694,34 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
 
                         <h3><?php echo htmlspecialchars(t('admin_monitored_frequencies')); ?></h3>
                         <div class="frequency-list" id="frequencyList"></div>
+
+                        <h3><?php echo htmlspecialchars(t('admin_staff_chat_title')); ?></h3>
+                        <label for="staffChatFrequency"><?php echo htmlspecialchars(t('admin_frequency')); ?></label>
+                        <input id="staffChatFrequency" class="admin-input" type="text" inputmode="decimal" value="122.800">
+                        <label for="staffChatMessage"><?php echo htmlspecialchars(t('admin_message')); ?></label>
+                        <textarea id="staffChatMessage" class="admin-input" maxlength="255" rows="4"></textarea>
+                        <button class="admin-button primary" type="button" id="staffChatSendButton">
+                            <?php echo htmlspecialchars(t('admin_staff_chat_send')); ?>
+                        </button>
+                        <p id="staffChatStatus"></p>
+
+                        <?php if ($adminOpPermission >= 5): ?>
+                            <h3><?php echo htmlspecialchars(t('admin_announcement_title')); ?></h3>
+                            <p><?php echo htmlspecialchars(t('admin_announcement_text')); ?></p>
+                            <label for="adminAnnouncementMessage">
+                                <?php echo htmlspecialchars(t('admin_message')); ?>
+                            </label>
+                            <textarea id="adminAnnouncementMessage"
+                                      class="admin-input"
+                                      maxlength="220"
+                                      rows="4"></textarea>
+                            <button class="admin-button primary"
+                                    type="button"
+                                    id="adminAnnouncementSendButton">
+                                <?php echo htmlspecialchars(t('admin_announcement_send')); ?>
+                            </button>
+                            <p id="adminAnnouncementStatus"></p>
+                        <?php endif; ?>
                     </aside>
 
                     <section class="admin-box">
@@ -862,6 +931,126 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                     </div>
                 </div>
             </div>
+
+            <div class="admin-panel" id="admin-panel-transfers">
+                <div class="admin-box">
+                    <h2><?php echo htmlspecialchars(t('admin_transfers_title')); ?></h2>
+                    <p><?php echo htmlspecialchars(t('admin_transfers_text')); ?></p>
+                    <div id="transferEmpty" class="empty-state"><?php echo htmlspecialchars(t('admin_loading')); ?></div>
+                    <div class="table-scroll">
+                        <table class="monitor-table" id="transferTable" hidden>
+                            <thead><tr>
+                                <th><?php echo htmlspecialchars(t('admin_players_name')); ?></th>
+                                <th><?php echo htmlspecialchars(t('admin_players_email')); ?></th>
+                                <th><?php echo htmlspecialchars(t('admin_transfer_current')); ?></th>
+                                <th><?php echo htmlspecialchars(t('admin_transfer_requested')); ?></th>
+                                <th><?php echo htmlspecialchars(t('admin_transfer_reason')); ?></th>
+                                <th><?php echo htmlspecialchars(t('admin_time')); ?></th>
+                                <th><?php echo htmlspecialchars(t('admin_transfer_action')); ?></th>
+                            </tr></thead>
+                            <tbody id="transferRows"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <?php if ($adminOpPermission >= 4): ?>
+                <div class="admin-panel" id="admin-panel-moderation">
+                    <div class="admin-box">
+                        <h2><?php echo htmlspecialchars(t('admin_moderation_title')); ?></h2>
+                        <p><?php echo htmlspecialchars(t('admin_moderation_text')); ?></p>
+                        <div id="moderationEmpty" class="empty-state"><?php echo htmlspecialchars(t('admin_loading')); ?></div>
+                        <div class="table-scroll">
+                            <table class="monitor-table" id="moderationTable" hidden>
+                                <thead><tr>
+                                    <th><?php echo htmlspecialchars(t('admin_players_name')); ?></th>
+                                    <th><?php echo htmlspecialchars(t('admin_players_email')); ?></th>
+                                    <th><?php echo htmlspecialchars(t('admin_moderation_ban_reason')); ?></th>
+                                    <th><?php echo htmlspecialchars(t('admin_moderation_appeal_reason')); ?></th>
+                                    <th><?php echo htmlspecialchars(t('admin_time')); ?></th>
+                                    <th><?php echo htmlspecialchars(t('admin_transfer_action')); ?></th>
+                                </tr></thead>
+                                <tbody id="moderationRows"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="admin-panel" id="admin-panel-chat-filter">
+                    <div class="admin-box">
+                        <h2><?php echo htmlspecialchars(t('admin_chat_filter_title')); ?></h2>
+                        <p><?php echo htmlspecialchars(t('admin_chat_filter_text')); ?></p>
+                        <div class="admin-form-row">
+                            <input id="chatFilterWordInput" class="admin-input" type="text" maxlength="60"
+                                   placeholder="<?php echo htmlspecialchars(t('admin_chat_filter_word')); ?>">
+                            <button class="admin-button primary" type="button" id="chatFilterAddButton">
+                                <?php echo htmlspecialchars(t('admin_chat_filter_add')); ?>
+                            </button>
+                        </div>
+                        <label class="filter-field">
+                            <?php echo htmlspecialchars(t('admin_chat_filter_search')); ?>
+                            <input id="chatFilterSearchInput" class="admin-input" type="search">
+                        </label>
+                        <p id="chatFilterStatus"></p>
+                        <div id="chatFilterEmpty" class="empty-state"><?php echo htmlspecialchars(t('admin_loading')); ?></div>
+                        <div class="table-scroll">
+                            <table class="monitor-table" id="chatFilterTable" hidden>
+                                <thead><tr>
+                                    <th><?php echo htmlspecialchars(t('admin_chat_filter_word')); ?></th>
+                                    <th><?php echo htmlspecialchars(t('admin_chat_filter_created_by')); ?></th>
+                                    <th><?php echo htmlspecialchars(t('admin_time')); ?></th>
+                                    <th><?php echo htmlspecialchars(t('admin_transfer_action')); ?></th>
+                                </tr></thead>
+                                <tbody id="chatFilterRows"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($adminOpPermission >= 5): ?>
+                <div class="admin-panel" id="admin-panel-configuration">
+                    <div class="admin-box">
+                        <h2><?php echo htmlspecialchars(t('admin_configuration_title')); ?></h2>
+                        <p><?php echo htmlspecialchars(t('admin_configuration_text')); ?></p>
+                        <div class="notice">
+                            <?php echo htmlspecialchars(t('admin_configuration_excluded')); ?>
+                        </div>
+                        <div class="filter-grid players" id="configurationFields"></div>
+                        <button class="admin-button primary"
+                                type="button"
+                                id="configurationSaveButton">
+                            <?php echo htmlspecialchars(t('admin_configuration_save')); ?>
+                        </button>
+                        <p id="configurationStatus"></p>
+                    </div>
+                </div>
+
+                <div class="admin-panel" id="admin-panel-database-reset">
+                    <div class="admin-box">
+                        <h2><?php echo htmlspecialchars(t('admin_database_reset_title')); ?></h2>
+                        <p><?php echo htmlspecialchars(t('admin_database_reset_text')); ?></p>
+                        <div class="notice">
+                            <?php echo htmlspecialchars(t('admin_database_reset_warning')); ?>
+                        </div>
+                        <p><strong><?php echo htmlspecialchars(t('admin_database_reset_preserved')); ?></strong></p>
+                        <label class="filter-field">
+                            <?php echo htmlspecialchars(t('admin_database_reset_password')); ?>
+                            <input class="admin-input" id="databaseResetPassword"
+                                   type="password" autocomplete="current-password">
+                        </label>
+                        <label class="filter-field">
+                            <?php echo htmlspecialchars(t('admin_database_reset_confirmation')); ?>
+                            <input class="admin-input" id="databaseResetConfirmation"
+                                   type="text" autocomplete="off" placeholder="RESET VFN">
+                        </label>
+                        <button class="admin-button" type="button" id="databaseResetButton">
+                            <?php echo htmlspecialchars(t('admin_database_reset_button')); ?>
+                        </button>
+                        <p id="databaseResetStatus"></p>
+                    </div>
+                </div>
+            <?php endif; ?>
         </section>
     <?php endif; ?>
 </main>
@@ -883,6 +1072,18 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         'playerInactive' => t('admin_players_inactive'),
         'playerOnline' => t('admin_players_online'),
         'playerOffline' => t('admin_players_offline'),
+        'transferNone' => t('admin_transfer_none'),
+        'transferApprove' => t('admin_transfer_approve'),
+        'transferReject' => t('admin_transfer_reject'),
+        'moderationNone' => t('admin_moderation_none'),
+        'moderationApprove' => t('admin_moderation_approve'),
+        'moderationReject' => t('admin_moderation_reject'),
+        'moderationReviewReason' => t('admin_moderation_review_reason'),
+        'staffChatSent' => t('admin_staff_chat_sent'),
+        'chatFilterRemove' => t('admin_chat_filter_remove'),
+        'chatFilterEmpty' => t('admin_chat_filter_empty'),
+        'chatFilterSaved' => t('admin_chat_filter_saved'),
+        'chatFilterInvalid' => t('admin_chat_filter_invalid'),
         'allFrequenciesActive' => t('admin_all_frequencies_active'),
         'deviceDefault' => t('admin_voice_device_default'),
         'deviceInputPrefix' => t('admin_voice_device_input_prefix'),
@@ -898,8 +1099,56 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         'voiceAuthMissing' => t('admin_voice_auth_missing'),
         'voicePushToTalk' => t('admin_voice_push_to_talk'),
         'voiceContinuousStart' => t('admin_voice_continuous_start'),
-        'voiceContinuousStop' => t('admin_voice_continuous_stop')
+        'voiceContinuousStop' => t('admin_voice_continuous_stop'),
+        'databaseResetConfirmDialog' => t('admin_database_reset_confirm_dialog'),
+        'databaseResetRunning' => t('admin_database_reset_running'),
+        'databaseResetComplete' => t('admin_database_reset_complete'),
+        'databaseResetInvalid' => t('admin_database_reset_invalid'),
+        'announcementSent' => t('admin_announcement_sent'),
+        'announcementInvalid' => t('admin_announcement_invalid'),
+        'announcementConfirm' => t('admin_announcement_confirm'),
+        'configurationSaved' => t('admin_configuration_saved'),
+        'configurationInvalid' => t('admin_configuration_invalid'),
+        'configurationLoading' => t('admin_configuration_loading'),
+        'configurationTrue' => t('admin_configuration_true'),
+        'configurationFalse' => t('admin_configuration_false')
     ], JSON_UNESCAPED_UNICODE); ?>;
+    const CONFIGURATION_LABELS = <?php echo json_encode([
+        'categories' => [
+            'general' => t('admin_configuration_category_general'),
+            'permissions' => t('admin_configuration_category_permissions'),
+            'chat' => t('admin_configuration_category_chat'),
+            'weather' => t('admin_configuration_category_weather'),
+            'voice' => t('admin_configuration_category_voice'),
+            'download' => t('admin_configuration_category_download'),
+            'legal' => t('admin_configuration_category_legal')
+        ],
+        'settings' => [
+            'defaultTimezone' => t('admin_configuration_default_timezone'),
+            'minimumInvisibleOpPermission' => t('admin_configuration_minimum_invisible_op'),
+            'showRatings' => t('admin_configuration_show_ratings'),
+            'chatFrequencyRangeNm' => t('admin_configuration_chat_range'),
+            'aviationWeatherMetarCacheUrl' => t('admin_configuration_metar_cache_url'),
+            'noaaMetarStationBaseUrl' => t('admin_configuration_metar_station_url'),
+            'metarCacheSeconds' => t('admin_configuration_metar_cache_seconds'),
+            'voiceServiceWebSocketUrl' => t('admin_configuration_voice_url'),
+            'projectName' => t('admin_configuration_project_name'),
+            'pluginDownloadEnabled' => t('admin_configuration_download_enabled'),
+            'pluginDownloadUrl' => t('admin_configuration_download_url'),
+            'pluginDownloadName' => t('admin_configuration_download_name'),
+            'companyName' => t('admin_configuration_company_name'),
+            'companyOwner' => t('admin_configuration_company_owner'),
+            'companyAddress' => t('admin_configuration_company_address'),
+            'companyZipCity' => t('admin_configuration_company_zip_city'),
+            'companyCountry' => t('admin_configuration_company_country'),
+            'companyEmail' => t('admin_configuration_company_email')
+        ]
+    ], JSON_UNESCAPED_UNICODE); ?>;
+    const ADMIN_CSRF = <?php echo json_encode((string)$_SESSION['admin_csrf']); ?>;
+    const CAN_MANAGE_CHAT_FILTER = <?php echo $adminOpPermission >= 4 ? 'true' : 'false'; ?>;
+    const CAN_MANAGE_MODERATION = <?php echo $adminOpPermission >= 4 ? 'true' : 'false'; ?>;
+    const CAN_RESET_DATABASE = <?php echo $adminOpPermission >= 5 ? 'true' : 'false'; ?>;
+    const CAN_SEND_ANNOUNCEMENT = <?php echo $adminOpPermission >= 5 ? 'true' : 'false'; ?>;
 
     const CAN_VIEW_ALL_FREQUENCIES =
         <?php echo $canViewAllFrequencies ? 'true' : 'false'; ?>;
@@ -923,6 +1172,12 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
     let lastMessageId = 0;
     let activityLoaded = false;
     let playersLoaded = false;
+    let transfersLoaded = false;
+    let moderationLoaded = false;
+    let chatFilterLoaded = false;
+    let configurationLoaded = false;
+    let configurationDefinitions = {};
+    let chatFilterWords = [];
     let playerOptionsLoaded = false;
     let chatFilterTimer = null;
     let playerFilterTimer = null;
@@ -1037,13 +1292,25 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 String(message.text || '').indexOf('[ANNOUNCEMENT]') === 0
                     ? 'announcement'
                     : '';
+            const sender =
+                Number(message.sender_user_id) > 0
+                    ? '<a class="player-profile-link" href="profile.php?id=' +
+                      encodeURIComponent(message.sender_user_id) + '">' +
+                      escapeHtml(message.sender) + '</a>'
+                    : escapeHtml(message.sender);
 
             row.innerHTML =
                 '<td>' + escapeHtml(message.date_time || message.time) + '</td>' +
                 '<td class="frequency">' + escapeHtml(message.frequency) + '</td>' +
-                '<td class="sender">' + escapeHtml(message.sender) + '</td>' +
+                '<td class="sender">' + sender + '</td>' +
                 '<td>' + escapeHtml(message.type) + '</td>' +
-                '<td class="' + typeClass + '">' + escapeHtml(message.text) + '</td>';
+                '<td class="' + typeClass + '">' +
+                (
+                    message.was_filtered
+                        ? highlightFilteredChatText(message.original_text, message.text)
+                        : escapeHtml(message.text)
+                ) +
+                '</td>';
 
             rows.insertBefore(row, rows.firstChild);
         });
@@ -1268,6 +1535,292 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         pollMessages();
     }
 
+    async function loadTransfers()
+    {
+        const rows = document.getElementById('transferRows');
+        const table = document.getElementById('transferTable');
+        const empty = document.getElementById('transferEmpty');
+        try {
+            const response = await fetch('execute/admin_division_transfers.php');
+            const data = await response.json();
+            if (!data.success || !Array.isArray(data.items)) {
+                throw new Error('transfer_load_failed');
+            }
+            rows.innerHTML = '';
+            data.items.forEach(function(item) {
+                const row = document.createElement('tr');
+                const name = item.real_name
+                    ? item.real_name + ' (' + item.username + ')'
+                    : item.username;
+                row.innerHTML =
+                    '<td><a class="player-profile-link" href="profile.php?id=' +
+                    encodeURIComponent(item.user_id) + '">' + escapeHtml(name) + '</a></td>' +
+                    '<td>' + escapeHtml(item.email) + '</td>' +
+                    '<td>' + escapeHtml(item.current_division) + '</td>' +
+                    '<td class="frequency">' + escapeHtml(item.requested_division) + '</td>' +
+                    '<td>' + escapeHtml(item.reason) + '</td>' +
+                    '<td>' + escapeHtml(item.created_at) + '</td>' +
+                    '<td><button class="admin-button primary" data-transfer-action="approve" data-transfer-id="' +
+                    item.id + '">' + escapeHtml(ADMIN_I18N.transferApprove) + '</button> ' +
+                    '<button class="admin-button" data-transfer-action="reject" data-transfer-id="' +
+                    item.id + '">' + escapeHtml(ADMIN_I18N.transferReject) + '</button></td>';
+                rows.appendChild(row);
+            });
+            table.hidden = data.items.length === 0;
+            empty.hidden = data.items.length !== 0;
+            empty.textContent = ADMIN_I18N.transferNone;
+            const dot = document.getElementById('transferTabDot');
+            if (dot && data.items.length === 0) {
+                dot.remove();
+            }
+        } catch (error) {
+            table.hidden = true;
+            empty.hidden = false;
+            empty.textContent = ADMIN_I18N.serverError;
+        }
+    }
+
+    async function updateTransfer(requestId, action)
+    {
+        const body = new URLSearchParams();
+        body.set('request_id', String(requestId));
+        body.set('action', action);
+        body.set('csrf', ADMIN_CSRF);
+        const response = await fetch('execute/admin_division_transfers.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: body.toString()
+        });
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error('transfer_update_failed');
+        }
+        loadTransfers();
+    }
+
+    async function loadBanAppeals()
+    {
+        if (!CAN_MANAGE_MODERATION) return;
+        const rows = document.getElementById('moderationRows');
+        const table = document.getElementById('moderationTable');
+        const empty = document.getElementById('moderationEmpty');
+        try {
+            const response = await fetch('execute/admin_ban_appeals.php');
+            const data = await response.json();
+            if (!data.success || !Array.isArray(data.items)) throw new Error('load_failed');
+            rows.innerHTML = '';
+            data.items.forEach(function(item) {
+                const row = document.createElement('tr');
+                const name = item.real_name ? item.real_name + ' (' + item.username + ')' : item.username;
+                const banInfo = item.ban_reason +
+                    (item.ban_expires_at ? ' (' + item.ban_expires_at + ')' : '');
+                row.innerHTML =
+                    '<td><a class="player-profile-link" href="profile.php?id=' +
+                    encodeURIComponent(item.user_id) + '">' + escapeHtml(name) + '</a></td>' +
+                    '<td>' + escapeHtml(item.email) + '</td>' +
+                    '<td>' + escapeHtml(banInfo) + '</td>' +
+                    '<td>' + escapeHtml(item.appeal_reason) + '</td>' +
+                    '<td>' + escapeHtml(item.created_at) + '</td>' +
+                    '<td><button class="admin-button primary" data-appeal-action="approve" data-appeal-id="' +
+                    item.id + '">' + escapeHtml(ADMIN_I18N.moderationApprove) + '</button> ' +
+                    '<button class="admin-button" data-appeal-action="reject" data-appeal-id="' +
+                    item.id + '">' + escapeHtml(ADMIN_I18N.moderationReject) + '</button></td>';
+                rows.appendChild(row);
+            });
+            table.hidden = data.items.length === 0;
+            empty.hidden = data.items.length !== 0;
+            empty.textContent = ADMIN_I18N.moderationNone;
+            const dot = document.getElementById('moderationTabDot');
+            if (dot && data.items.length === 0) dot.remove();
+        } catch (error) {
+            table.hidden = true;
+            empty.hidden = false;
+            empty.textContent = ADMIN_I18N.serverError;
+        }
+    }
+
+    async function updateBanAppeal(requestId, action, reviewReason)
+    {
+        const body = new URLSearchParams();
+        body.set('request_id', String(requestId));
+        body.set('action', action);
+        body.set('review_reason', reviewReason);
+        body.set('csrf', ADMIN_CSRF);
+        const response = await fetch('execute/admin_ban_appeals.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: body.toString()
+        });
+        const data = await response.json();
+        if (!data.success) throw new Error(data.message || 'update_failed');
+        loadBanAppeals();
+    }
+
+    function renderChatFilterWords()
+    {
+        if (!CAN_MANAGE_CHAT_FILTER) {
+            return;
+        }
+        const query = document.getElementById('chatFilterSearchInput').value
+            .trim().toLocaleLowerCase();
+        const items = chatFilterWords.filter(function(item) {
+            return item.word.toLocaleLowerCase().includes(query);
+        });
+        const rows = document.getElementById('chatFilterRows');
+        const table = document.getElementById('chatFilterTable');
+        const empty = document.getElementById('chatFilterEmpty');
+        rows.innerHTML = '';
+        items.forEach(function(item) {
+            const row = document.createElement('tr');
+            row.innerHTML =
+                '<td class="filtered-chat-word">' + escapeHtml(item.word) + '</td>' +
+                '<td>' + escapeHtml(item.created_by || '-') + '</td>' +
+                '<td>' + escapeHtml(item.created_at) + '</td>' +
+                '<td><button class="admin-button" data-filter-word-remove="' +
+                item.id + '">' + escapeHtml(ADMIN_I18N.chatFilterRemove) + '</button></td>';
+            rows.appendChild(row);
+        });
+        table.hidden = items.length === 0;
+        empty.hidden = items.length !== 0;
+        empty.textContent = ADMIN_I18N.chatFilterEmpty;
+    }
+
+    async function loadChatFilterWords()
+    {
+        if (!CAN_MANAGE_CHAT_FILTER) {
+            return;
+        }
+        try {
+            const response = await fetch('execute/admin_chat_filter_words.php');
+            const data = await response.json();
+            if (!data.success || !Array.isArray(data.items)) {
+                throw new Error('filter_load_failed');
+            }
+            chatFilterWords = data.items;
+            renderChatFilterWords();
+        } catch (error) {
+            document.getElementById('chatFilterStatus').textContent =
+                ADMIN_I18N.serverError;
+        }
+    }
+
+    function renderConfigurationFields(data)
+    {
+        const container = document.getElementById('configurationFields');
+        container.innerHTML = '';
+        configurationDefinitions = data.definitions || {};
+
+        let currentCategory = '';
+        Object.entries(configurationDefinitions).forEach(function(entry) {
+            const key = entry[0];
+            const definition = entry[1];
+
+            if (definition.category !== currentCategory) {
+                currentCategory = definition.category;
+                const heading = document.createElement('h3');
+                heading.style.gridColumn = '1 / -1';
+                heading.textContent =
+                    CONFIGURATION_LABELS.categories[currentCategory] || currentCategory;
+                container.appendChild(heading);
+            }
+
+            const label = document.createElement('label');
+            label.className = 'filter-field';
+            label.textContent = CONFIGURATION_LABELS.settings[key] || key;
+
+            let input;
+            if (definition.type === 'boolean') {
+                input = document.createElement('select');
+                [
+                    ['true', ADMIN_I18N.configurationTrue],
+                    ['false', ADMIN_I18N.configurationFalse]
+                ].forEach(function(optionData) {
+                    const option = document.createElement('option');
+                    option.value = optionData[0];
+                    option.textContent = optionData[1];
+                    input.appendChild(option);
+                });
+                input.value = data.values[key] ? 'true' : 'false';
+            } else if (definition.type === 'timezone') {
+                input = document.createElement('select');
+                (data.timezones || []).forEach(function(timezone) {
+                    const option = document.createElement('option');
+                    option.value = timezone;
+                    option.textContent = timezone;
+                    input.appendChild(option);
+                });
+                input.value = String(data.values[key] || 'UTC');
+            } else {
+                input = document.createElement('input');
+                input.type =
+                    definition.type === 'integer' || definition.type === 'number'
+                        ? 'number'
+                        : definition.type === 'email'
+                            ? 'email'
+                            : 'text';
+                if (definition.min !== undefined) {
+                    input.min = String(definition.min);
+                }
+                if (definition.max !== undefined) {
+                    input.max = String(definition.max);
+                }
+                if (definition.type === 'number') {
+                    input.step = '0.1';
+                }
+                input.value =
+                    data.values[key] === null || data.values[key] === undefined
+                        ? ''
+                        : String(data.values[key]);
+            }
+
+            input.className = 'admin-input';
+            input.dataset.configurationKey = key;
+            label.appendChild(input);
+            container.appendChild(label);
+        });
+    }
+
+    async function loadConfigurationSettings()
+    {
+        const status = document.getElementById('configurationStatus');
+        status.textContent = ADMIN_I18N.configurationLoading;
+
+        try {
+            const response = await fetch('execute/admin_config_settings.php');
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.message || 'configuration_load_failed');
+            }
+            renderConfigurationFields(data);
+            status.textContent = '';
+        } catch (error) {
+            status.textContent = ADMIN_I18N.configurationInvalid;
+        }
+    }
+
+    async function changeChatFilterWord(action, values)
+    {
+        const body = new URLSearchParams();
+        body.set('csrf', ADMIN_CSRF);
+        body.set('action', action);
+        Object.entries(values).forEach(function(entry) {
+            body.set(entry[0], String(entry[1]));
+        });
+        const response = await fetch('execute/admin_chat_filter_words.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: body.toString()
+        });
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.message || 'filter_change_failed');
+        }
+        chatFilterWords = data.items || [];
+        renderChatFilterWords();
+        document.getElementById('chatFilterStatus').textContent =
+            ADMIN_I18N.chatFilterSaved;
+    }
+
     function escapeHtml(value)
     {
         return String(value ?? '')
@@ -1276,6 +1829,36 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
+    }
+
+    function highlightFilteredChatText(original, filtered)
+    {
+        const originalChars = Array.from(String(original || ''));
+        const filteredChars = Array.from(String(filtered || ''));
+        let html = '';
+        let index = 0;
+
+        while (index < originalChars.length) {
+            const isFiltered =
+                filteredChars[index] === '*'
+                && originalChars[index] !== '*';
+            let end = index + 1;
+            while (
+                end < originalChars.length
+                && (
+                    filteredChars[end] === '*'
+                    && originalChars[end] !== '*'
+                ) === isFiltered
+            ) {
+                end += 1;
+            }
+            const text = originalChars.slice(index, end).join('');
+            html += isFiltered
+                ? '<span class="filtered-chat-word">' + escapeHtml(text) + '</span>'
+                : escapeHtml(text);
+            index = end;
+        }
+        return html;
     }
 
     document.querySelectorAll('.admin-tab').forEach(function(tab) {
@@ -1303,8 +1886,271 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 playersLoaded = true;
                 loadPlayers();
             }
+
+            if (tabName === 'transfers' && !transfersLoaded) {
+                transfersLoaded = true;
+                loadTransfers();
+            }
+
+            if (tabName === 'moderation' && !moderationLoaded) {
+                moderationLoaded = true;
+                loadBanAppeals();
+            }
+
+            if (tabName === 'chat-filter' && !chatFilterLoaded) {
+                chatFilterLoaded = true;
+                loadChatFilterWords();
+            }
+
+            if (tabName === 'configuration' && !configurationLoaded) {
+                configurationLoaded = true;
+                loadConfigurationSettings();
+            }
         });
     });
+
+    if (CAN_MANAGE_CHAT_FILTER) {
+        document.getElementById('chatFilterAddButton').addEventListener('click', function() {
+            const input = document.getElementById('chatFilterWordInput');
+            const word = input.value.trim();
+            if (word === '') {
+                document.getElementById('chatFilterStatus').textContent =
+                    ADMIN_I18N.chatFilterInvalid;
+                return;
+            }
+            changeChatFilterWord('add', {word: word})
+                .then(function() { input.value = ''; })
+                .catch(function() {
+                    document.getElementById('chatFilterStatus').textContent =
+                        ADMIN_I18N.chatFilterInvalid;
+                });
+        });
+        document.getElementById('chatFilterSearchInput').addEventListener(
+            'input',
+            renderChatFilterWords
+        );
+        document.getElementById('chatFilterRows').addEventListener('click', function(event) {
+            const button = event.target.closest('[data-filter-word-remove]');
+            if (!button) {
+                return;
+            }
+            button.disabled = true;
+            changeChatFilterWord('remove', {id: button.dataset.filterWordRemove})
+                .catch(function() {
+                    button.disabled = false;
+                    document.getElementById('chatFilterStatus').textContent =
+                        ADMIN_I18N.serverError;
+                });
+        });
+    }
+
+    if (CAN_RESET_DATABASE) {
+        document.getElementById('databaseResetButton').addEventListener('click', async function() {
+            const button = this;
+            const password = document.getElementById('databaseResetPassword').value;
+            const confirmation = document.getElementById('databaseResetConfirmation').value;
+            const status = document.getElementById('databaseResetStatus');
+
+            if (password === '' || confirmation !== 'RESET VFN') {
+                status.textContent = ADMIN_I18N.databaseResetInvalid;
+                return;
+            }
+
+            if (!window.confirm(ADMIN_I18N.databaseResetConfirmDialog)) {
+                return;
+            }
+
+            button.disabled = true;
+            status.textContent = ADMIN_I18N.databaseResetRunning;
+
+            const body = new URLSearchParams();
+            body.set('csrf', ADMIN_CSRF);
+            body.set('password', password);
+            body.set('confirmation', confirmation);
+
+            try {
+                const response = await fetch('execute/admin_database_reset.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: body.toString()
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    throw new Error(data.message || 'database_reset_failed');
+                }
+                status.textContent = ADMIN_I18N.databaseResetComplete;
+                window.setTimeout(function() {
+                    localStorage.removeItem('vfn_admin_monitor_frequencies');
+                    localStorage.removeItem('vfn_admin_monitor_all');
+                    location.href = 'index.php?type=success&message=database_reset_complete';
+                }, 1200);
+            } catch (error) {
+                status.textContent = ADMIN_I18N.databaseResetInvalid;
+                button.disabled = false;
+            }
+        });
+    }
+
+    if (CAN_RESET_DATABASE) {
+        document.getElementById('configurationSaveButton').addEventListener('click', async function() {
+            const button = this;
+            const status = document.getElementById('configurationStatus');
+            const settings = {};
+
+            document.querySelectorAll('[data-configuration-key]').forEach(function(input) {
+                const key = input.dataset.configurationKey;
+                const definition = configurationDefinitions[key] || {};
+
+                if (definition.type === 'boolean') {
+                    settings[key] = input.value === 'true';
+                } else if (definition.type === 'integer') {
+                    settings[key] = Number.parseInt(input.value, 10);
+                } else if (definition.type === 'number') {
+                    settings[key] = Number.parseFloat(input.value);
+                } else {
+                    settings[key] = input.value;
+                }
+            });
+
+            button.disabled = true;
+            const body = new URLSearchParams();
+            body.set('csrf', ADMIN_CSRF);
+            body.set('settings', JSON.stringify(settings));
+
+            try {
+                const response = await fetch('execute/admin_config_settings.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: body.toString()
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    throw new Error(data.message || 'configuration_save_failed');
+                }
+                renderConfigurationFields(data);
+                status.textContent = ADMIN_I18N.configurationSaved;
+            } catch (error) {
+                status.textContent = ADMIN_I18N.configurationInvalid;
+            } finally {
+                button.disabled = false;
+            }
+        });
+    }
+
+    document.getElementById('transferRows').addEventListener('click', function(event) {
+        const button = event.target.closest('[data-transfer-action]');
+        if (!button) {
+            return;
+        }
+        button.disabled = true;
+        updateTransfer(button.dataset.transferId, button.dataset.transferAction)
+            .catch(function() {
+                button.disabled = false;
+                alert(ADMIN_I18N.serverError);
+            });
+    });
+
+    if (CAN_MANAGE_MODERATION) {
+        document.getElementById('moderationRows').addEventListener('click', function(event) {
+            const button = event.target.closest('[data-appeal-action]');
+            if (!button) return;
+            const reason = window.prompt(ADMIN_I18N.moderationReviewReason);
+            if (reason === null || reason.trim() === '') return;
+            button.disabled = true;
+            updateBanAppeal(button.dataset.appealId, button.dataset.appealAction, reason.trim())
+                .catch(function() {
+                    button.disabled = false;
+                    alert(ADMIN_I18N.serverError);
+                });
+        });
+    }
+
+    document.getElementById('staffChatSendButton').addEventListener('click', async function() {
+        const frequencyInput = document.getElementById('staffChatFrequency');
+        const messageInput = document.getElementById('staffChatMessage');
+        const status = document.getElementById('staffChatStatus');
+        const frequency = normalizeFrequency(frequencyInput.value);
+        if (!frequency || messageInput.value.trim() === '') {
+            status.textContent = ADMIN_I18N.invalidFrequency;
+            return;
+        }
+        const body = new URLSearchParams();
+        body.set('frequency', frequency);
+        body.set('message', messageInput.value.trim());
+        body.set('csrf', ADMIN_CSRF);
+        try {
+            const response = await fetch('execute/admin_chat_send.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: body.toString()
+            });
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error('send_failed');
+            }
+            messageInput.value = '';
+            status.textContent = ADMIN_I18N.staffChatSent;
+            if (!monitorAllFrequencies && !monitoredFrequencies.includes(frequency)) {
+                monitoredFrequencies.push(frequency);
+                saveMonitorState();
+                renderFrequencies();
+            }
+            if (data.message) {
+                appendMessages([data.message]);
+            } else {
+                refreshChatFilters();
+            }
+        } catch (error) {
+            status.textContent = ADMIN_I18N.serverError;
+        }
+    });
+
+    if (CAN_SEND_ANNOUNCEMENT) {
+        document.getElementById('adminAnnouncementSendButton').addEventListener('click', async function() {
+            const button = this;
+            const messageInput = document.getElementById('adminAnnouncementMessage');
+            const status = document.getElementById('adminAnnouncementStatus');
+            const message = messageInput.value.trim();
+
+            if (message === '') {
+                status.textContent = ADMIN_I18N.announcementInvalid;
+                return;
+            }
+
+            if (!window.confirm(ADMIN_I18N.announcementConfirm)) {
+                return;
+            }
+
+            button.disabled = true;
+            const body = new URLSearchParams();
+            body.set('csrf', ADMIN_CSRF);
+            body.set('message', message);
+
+            try {
+                const response = await fetch('execute/admin_announcement_send.php', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: body.toString()
+                });
+                const data = await response.json();
+                if (!data.success) {
+                    throw new Error(data.message || 'announcement_failed');
+                }
+                messageInput.value = '';
+                status.textContent =
+                    ADMIN_I18N.announcementSent.replace(
+                        '{count}',
+                        String(data.recipient_count || 0)
+                    );
+                activityLoaded = true;
+                loadActivities();
+            } catch (error) {
+                status.textContent = ADMIN_I18N.announcementInvalid;
+            } finally {
+                button.disabled = false;
+            }
+        });
+    }
 
     [
         'chatSearchInput',
@@ -2373,6 +3219,26 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             if (savedAdminTab === 'players' && !playersLoaded) {
                 playersLoaded = true;
                 loadPlayers();
+            }
+
+            if (savedAdminTab === 'transfers' && !transfersLoaded) {
+                transfersLoaded = true;
+                loadTransfers();
+            }
+
+            if (savedAdminTab === 'moderation' && !moderationLoaded) {
+                moderationLoaded = true;
+                loadBanAppeals();
+            }
+
+            if (savedAdminTab === 'chat-filter' && !chatFilterLoaded) {
+                chatFilterLoaded = true;
+                loadChatFilterWords();
+            }
+
+            if (savedAdminTab === 'configuration' && !configurationLoaded) {
+                configurationLoaded = true;
+                loadConfigurationSettings();
             }
         }
     }

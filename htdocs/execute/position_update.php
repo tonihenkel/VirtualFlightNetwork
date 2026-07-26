@@ -280,7 +280,8 @@ try {
     if (!$session) {
         $inactiveStmt = $pdo->prepare(
             "SELECT
-                s.user_id
+                s.user_id,
+                s.last_seen
              FROM user_sessions s
              WHERE s.token = :token
              LIMIT 1"
@@ -294,6 +295,39 @@ try {
             $inactiveStmt->fetch(PDO::FETCH_ASSOC);
 
         if ($inactiveSession) {
+            $kickActivityStmt = $pdo->prepare(
+                "SELECT activity_key, activity_value
+                 FROM user_activity_log
+                 WHERE user_id = :user_id
+                   AND activity_key IN ('activity_kicked', 'activity_kicked_spam', 'activity_banned')
+                   AND created_at >= DATE_SUB(:session_ended_at, INTERVAL 5 SECOND)
+                 ORDER BY id DESC
+                 LIMIT 1"
+            );
+            $kickActivityStmt->execute([
+                "user_id" => (int)$inactiveSession["user_id"],
+                "session_ended_at" => (string)$inactiveSession["last_seen"]
+            ]);
+            $kickActivity = $kickActivityStmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($kickActivity) {
+                $isSpamKick =
+                    (string)$kickActivity["activity_key"] === "activity_kicked_spam";
+                $isBan =
+                    (string)$kickActivity["activity_key"] === "activity_banned";
+                echo json_encode([
+                    "success" => false,
+                    "kicked" => true,
+                    "spam_kick" => $isSpamKick,
+                    "message" => $isSpamKick
+                        ? "Automatic chat spam protection triggered."
+                        : ($isBan
+                            ? "Account banned: " . (string)$kickActivity["activity_value"]
+                            : (string)$kickActivity["activity_value"])
+                ]);
+                exit;
+            }
+
             $kickMessageStmt = $pdo->prepare(
                 "SELECT
                     message_text

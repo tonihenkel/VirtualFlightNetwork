@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/chat_filter.php';
+
 function normalizeChatFrequency(?string $frequency): ?string
 {
     $frequency =
@@ -36,13 +38,13 @@ function insertChatMessage(
     string $messageText,
     ?float $senderLatitude = null,
     ?float $senderLongitude = null
-): void {
+): string {
 
     $messageText =
         trim($messageText);
 
     if ($messageText === '') {
-        return;
+        return '';
     }
 
     $messageText =
@@ -55,8 +57,19 @@ function insertChatMessage(
         $senderCallsign = 'SYSTEM';
     }
 
-    if (!in_array($messageType, ['pilot', 'system', 'award', 'landing'], true)) {
+    if (!in_array($messageType, ['pilot', 'staff', 'system', 'award', 'landing'], true)) {
         $messageType = 'system';
+    }
+
+    $originalMessageText = null;
+    $wasFiltered = false;
+    if ($messageType === 'pilot' || $messageType === 'staff') {
+        $filterResult = filterChatMessage($messageText, $pdo);
+        $messageText = $filterResult['filtered'];
+        $wasFiltered = (bool)$filterResult['was_filtered'];
+        if ($wasFiltered) {
+            $originalMessageText = $filterResult['original'];
+        }
     }
 
     $stmt = $pdo->prepare(
@@ -69,7 +82,9 @@ function insertChatMessage(
             sender_latitude,
             sender_longitude,
             message_type,
-            message_text
+            message_text,
+            original_message_text,
+            was_filtered
         )
         VALUES
         (
@@ -80,7 +95,9 @@ function insertChatMessage(
             :sender_latitude,
             :sender_longitude,
             :message_type,
-            :message_text
+            :message_text,
+            :original_message_text,
+            :was_filtered
         )"
     );
 
@@ -107,8 +124,16 @@ function insertChatMessage(
             $messageType,
 
         'message_text' =>
-            $messageText
+            $messageText,
+
+        'original_message_text' =>
+            $originalMessageText,
+
+        'was_filtered' =>
+            $wasFiltered ? 1 : 0
     ]);
+
+    return $messageText;
 }
 
 function insertUserChatSystemMessage(

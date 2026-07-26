@@ -65,7 +65,9 @@ try {
 
     if ($search !== '') {
         $where[] =
-            '(message_text LIKE :search OR sender_callsign LIKE :search)';
+            '(message_text LIKE :search
+              OR original_message_text LIKE :search
+              OR sender_callsign LIKE :search)';
         $params['search'] =
             '%' . mb_substr($search, 0, 120) . '%';
     }
@@ -139,9 +141,12 @@ try {
         "SELECT
             id,
             frequency,
+            sender_user_id,
             sender_callsign,
             message_type,
             message_text,
+            original_message_text,
+            was_filtered,
             created_at
          FROM chat_messages
          WHERE " . implode(' AND ', $where) . "
@@ -168,9 +173,12 @@ try {
                     'time' => date('H:i:s', strtotime((string)$message['created_at'])),
                     'date_time' => date('d.m.Y H:i:s', strtotime((string)$message['created_at'])),
                     'frequency' => (string)$message['frequency'],
+                    'sender_user_id' => (int)($message['sender_user_id'] ?? 0),
                     'sender' => (string)$message['sender_callsign'],
                     'type' => (string)$message['message_type'],
-                    'text' => (string)$message['message_text']
+                    'text' => (string)$message['message_text'],
+                    'original_text' => (string)($message['original_message_text'] ?? ''),
+                    'was_filtered' => (int)($message['was_filtered'] ?? 0) === 1
                 ];
             },
             $messages

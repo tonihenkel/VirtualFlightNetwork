@@ -505,6 +505,48 @@
         'profile_settings' =>
             'Settings',
 
+        'settings_personal_title' => 'Personal data',
+        'settings_username' => 'Username',
+        'settings_real_name' => 'Full name',
+        'settings_country' => 'Country',
+        'settings_current_password' => 'Current password',
+        'settings_save' => 'Save changes',
+        'settings_division_title' => 'Division transfer',
+        'settings_requested_division' => 'Requested division',
+        'settings_division_reason' => 'Reason',
+        'settings_submit_request' => 'Request transfer',
+        'settings_division_pending' => 'Pending transfer request',
+        'settings_password_title' => 'Change password',
+        'settings_new_password' => 'New password',
+        'settings_repeat_password' => 'Repeat new password',
+        'settings_change_password' => 'Change password',
+        'settings_2fa_title' => 'Two-factor authentication',
+        'settings_2fa_current' => 'Current method',
+        'settings_2fa_method' => 'Method',
+        'settings_2fa_off' => 'Disabled',
+        'settings_2fa_totp' => 'Authenticator app (TOTP)',
+        'settings_2fa_email' => 'Code by email',
+        'settings_2fa_secret' => 'Setup key',
+        'settings_2fa_code' => 'Enter the 6-digit confirmation code',
+        'settings_save_2fa' => 'Save 2FA setting',
+        'two_factor_title' => 'Confirm login',
+        'two_factor_email_hint' => 'We sent a six-digit code to your email address.',
+        'two_factor_totp_hint' => 'Enter the current code from your authenticator app.',
+        'two_factor_verify' => 'Confirm login',
+        'two_factor_invalid' => 'The code you entered is invalid.',
+        'settings_saved' => 'Your personal data has been saved.',
+        'settings_invalid_request' => 'The request is invalid or has expired.',
+        'settings_invalid_data' => 'Please check your entries and current password.',
+        'settings_username_taken' => 'This username is already in use.',
+        'settings_division_already_pending' => 'A transfer request is already pending.',
+        'settings_division_submitted' => 'The division transfer has been requested.',
+        'settings_password_invalid' => 'The current password is wrong or the new passwords do not match.',
+        'settings_password_changed' => 'Your password has been changed.',
+        'settings_2fa_code_invalid' => 'The authenticator code is invalid.',
+        'settings_2fa_saved' => 'Your two-factor setting has been saved.',
+        'login_rate_limited' => 'Too many login attempts. Please try again later.',
+        'two_factor_expired' => 'The two-factor login has expired.',
+
         'profile_controller_hours' =>
             'Controller hours',
 
@@ -590,6 +632,13 @@
         'activity_country_changed' =>
             'Country Changed',
 
+        'activity_username_changed' => 'Username changed',
+        'activity_real_name_changed' => 'Real name changed',
+        'activity_password_changed' => 'Password changed',
+        'activity_division_change_requested' => 'Division transfer requested',
+        'activity_division_change_approved' => 'Division transfer approved',
+        'activity_division_change_rejected' => 'Division transfer rejected',
+
         'activity_exam_passed' =>
             'Exam Passed',
 
@@ -607,6 +656,9 @@
 
         'activity_kicked' =>
             'Kicked from network',
+
+        'activity_kicked_spam' =>
+            'Automatically kicked from the network for chat spam',
 
         'activity_award_unlocked' =>
             'Award Unlocked',
@@ -761,6 +813,37 @@
         'admin_tab_players' =>
             'Player List',
 
+        'admin_tab_transfers' => 'Division Transfers',
+        'admin_tab_chat_filter' => 'Chat Filter',
+        'admin_chat_filter_title' => 'Filtered words',
+        'admin_chat_filter_text' => 'These words are replaced by stars in the plugin and highlighted in red in the admin monitor.',
+        'admin_chat_filter_word' => 'Word',
+        'admin_chat_filter_add' => 'Add word',
+        'admin_chat_filter_search' => 'Search word list',
+        'admin_chat_filter_created_by' => 'Added by',
+        'admin_chat_filter_remove' => 'Remove',
+        'admin_chat_filter_empty' => 'No filter words are configured.',
+        'admin_chat_filter_saved' => 'The filter list has been updated.',
+        'admin_chat_filter_invalid' => 'The word is invalid or already exists.',
+        'admin_staff_chat_title' => 'Send as staff',
+        'admin_staff_chat_send' => 'Send message',
+        'admin_staff_chat_sent' => 'Staff message has been sent.',
+        'admin_announcement_title' => 'Global Announcement',
+        'admin_announcement_text' => 'Frequency-independent system message to every currently signed-in plugin user. OP-Level 5 only.',
+        'admin_announcement_send' => 'Send announcement',
+        'admin_announcement_sent' => 'Announcement was sent to {count} users.',
+        'admin_announcement_invalid' => 'Announcement could not be sent.',
+        'admin_announcement_confirm' => 'Really send this announcement to every signed-in plugin user?',
+        'admin_transfers_title' => 'Pending division transfers',
+        'admin_transfers_text' => 'Review, approve, or reject transfer requests.',
+        'admin_transfer_current' => 'Current division',
+        'admin_transfer_requested' => 'Requested division',
+        'admin_transfer_reason' => 'Reason',
+        'admin_transfer_action' => 'Action',
+        'admin_transfer_approve' => 'Approve',
+        'admin_transfer_reject' => 'Reject',
+        'admin_transfer_none' => 'No pending transfer requests.',
+
         'admin_search_messages' =>
             'Search messages',
 
@@ -810,7 +893,7 @@
             'Inactive',
 
         'admin_players_network_status' =>
-            'Network status',
+            'Simulator status',
 
         'admin_players_online' =>
             'Online',
@@ -998,4 +1081,121 @@
         'admin_system' =>
             'System',
 
-    ];
+        'admin_tab_database_reset' =>
+            'Database Reset',
+
+        'admin_database_reset_title' =>
+            'Reset test database',
+
+        'admin_database_reset_text' =>
+            'Resets all test and operational data. This function is available to OP-Level 5 only.',
+
+        'admin_database_reset_warning' =>
+            'Warning: All other users, chats, sessions, positions, flight plans, statistics, activities, filters, and settings will be permanently deleted.',
+
+        'admin_database_reset_preserved' =>
+            'Preserved: airports and divisions. Afterwards, admin is recreated with OP-Level 5 and password saturn.',
+
+        'admin_database_reset_password' =>
+            'Current password',
+
+        'admin_database_reset_confirmation' =>
+            'Enter RESET VFN exactly to confirm',
+
+        'admin_database_reset_button' =>
+            'Reset database completely',
+
+        'admin_database_reset_confirm_dialog' =>
+            'Really reset the database? This action cannot be undone.',
+
+        'admin_database_reset_running' =>
+            'Resetting database...',
+
+        'admin_database_reset_complete' =>
+            'Reset complete. All web and plugin sessions were terminated. You will be redirected to sign in.',
+
+        'admin_database_reset_invalid' =>
+            'Reset cancelled: password or confirmation is incorrect, or the server rejected the operation.',
+
+        'activity_database_reset' =>
+            'Database reset performed',
+
+        'admin_tab_configuration' => 'Configuration',
+        'admin_configuration_title' => 'Server Configuration',
+        'admin_configuration_text' => 'Edit safely exposed settings. Changes apply to subsequent web and API requests and survive database resets.',
+        'admin_configuration_excluded' => 'SQL credentials and real server file paths cannot be edited here.',
+        'admin_configuration_save' => 'Save configuration',
+        'admin_configuration_saved' => 'Configuration was saved.',
+        'admin_configuration_invalid' => 'Configuration could not be loaded or saved. Please check the values.',
+        'admin_configuration_loading' => 'Loading configuration...',
+        'admin_configuration_true' => 'Enabled',
+        'admin_configuration_false' => 'Disabled',
+        'admin_configuration_category_general' => 'General',
+        'admin_configuration_category_permissions' => 'Permissions',
+        'admin_configuration_category_chat' => 'Chat',
+        'admin_configuration_category_weather' => 'Weather and D-ATIS',
+        'admin_configuration_category_voice' => 'Voice',
+        'admin_configuration_category_download' => 'Plugin Download',
+        'admin_configuration_category_legal' => 'Legal Notice',
+        'admin_configuration_default_timezone' => 'Default time zone',
+        'admin_configuration_minimum_invisible_op' => 'Minimum OP level for invisible mode',
+        'admin_configuration_show_ratings' => 'Show ratings',
+        'admin_configuration_chat_range' => 'Chat range outside UNICOM (NM)',
+        'admin_configuration_metar_cache_url' => 'METAR cache URL',
+        'admin_configuration_metar_station_url' => 'METAR station base URL',
+        'admin_configuration_metar_cache_seconds' => 'METAR cache time (seconds)',
+        'admin_configuration_voice_url' => 'Voice WebSocket URL',
+        'admin_configuration_project_name' => 'Project name',
+        'admin_configuration_download_enabled' => 'Plugin download enabled',
+        'admin_configuration_download_url' => 'Plugin download URL',
+        'admin_configuration_download_name' => 'Plugin download filename',
+        'admin_configuration_company_name' => 'Company/project name',
+        'admin_configuration_company_owner' => 'Owner',
+        'admin_configuration_company_address' => 'Address',
+        'admin_configuration_company_zip_city' => 'Postal code and city',
+        'admin_configuration_company_country' => 'Country',
+        'admin_configuration_company_email' => 'Email',
+
+    'profile_moderation' => 'Moderation',
+    'moderation_description' => 'Moderate this player. Every action is recorded in the activity log.',
+    'moderation_kick' => 'Kick player',
+    'moderation_kick_online_only' => 'A kick is only available while the player is online in the simulator.',
+    'moderation_ban' => 'Ban player',
+    'moderation_reason' => 'Reason',
+    'moderation_duration' => 'Duration',
+    'moderation_minutes' => 'Minutes',
+    'moderation_hours' => 'Hours',
+    'moderation_days' => 'Days',
+    'moderation_weeks' => 'Weeks',
+    'moderation_months' => 'Months',
+    'moderation_years' => 'Years',
+    'moderation_permanent' => 'Permanent',
+    'moderation_currently_banned' => 'Currently banned',
+    'moderation_reason_required' => 'Please enter a valid reason.',
+    'moderation_invalid_duration' => 'Please enter a valid ban duration.',
+    'moderation_kick_offline' => 'The player is currently not online in the simulator.',
+    'moderation_not_allowed' => 'You are not allowed to moderate this player.',
+    'moderation_invalid_request' => 'Invalid moderation request.',
+    'moderation_failed' => 'The moderation action failed.',
+    'moderation_kick_success' => 'The player was kicked.',
+    'moderation_ban_success' => 'The player was banned.',
+    'activity_banned' => 'The user was banned.',
+    'moderation_unban' => 'Unban player',
+    'moderation_unban_reason' => 'Reason for unbanning',
+    'moderation_unban_requires_op4' => 'OP-Level 4 or higher is required to unban players.',
+    'moderation_not_banned' => 'This player is not banned.',
+    'moderation_unban_success' => 'The player was unbanned.',
+    'activity_unbanned' => 'The user was unbanned.',
+    'admin_tab_moderation' => 'Moderation',
+    'admin_moderation_title' => 'Ban appeals',
+    'admin_moderation_text' => 'Review, approve, or reject pending ban appeals.',
+    'admin_moderation_ban_reason' => 'Ban reason / expiry',
+    'admin_moderation_appeal_reason' => 'Player appeal',
+    'admin_moderation_none' => 'No pending ban appeals.',
+    'admin_moderation_approve' => 'Unban',
+    'admin_moderation_reject' => 'Reject',
+    'admin_moderation_review_reason' => 'Reason for this decision:',
+    'activity_ban_appeal_requested' => 'A ban appeal was submitted.',
+    'activity_ban_appeal_approved' => 'The ban appeal was approved.',
+    'activity_ban_appeal_rejected' => 'The ban appeal was rejected.',
+];

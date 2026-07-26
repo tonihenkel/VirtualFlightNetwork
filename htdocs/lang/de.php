@@ -504,6 +504,48 @@ return [
     'profile_settings' =>
         'Einstellungen',
 
+    'settings_personal_title' => 'Persönliche Daten',
+    'settings_username' => 'Benutzername',
+    'settings_real_name' => 'Vollständiger Name',
+    'settings_country' => 'Land',
+    'settings_current_password' => 'Aktuelles Passwort',
+    'settings_save' => 'Änderungen speichern',
+    'settings_division_title' => 'Divisionstransfer',
+    'settings_requested_division' => 'Gewünschte Division',
+    'settings_division_reason' => 'Begründung',
+    'settings_submit_request' => 'Transfer beantragen',
+    'settings_division_pending' => 'Offener Transferantrag',
+    'settings_password_title' => 'Passwort ändern',
+    'settings_new_password' => 'Neues Passwort',
+    'settings_repeat_password' => 'Neues Passwort wiederholen',
+    'settings_change_password' => 'Passwort ändern',
+    'settings_2fa_title' => 'Zwei-Faktor-Authentifizierung',
+    'settings_2fa_current' => 'Aktuelle Methode',
+    'settings_2fa_method' => 'Methode',
+    'settings_2fa_off' => 'Deaktiviert',
+    'settings_2fa_totp' => 'Authenticator-App (TOTP)',
+    'settings_2fa_email' => 'Code per E-Mail',
+    'settings_2fa_secret' => 'Einrichtungsschlüssel',
+    'settings_2fa_code' => '6-stelligen Code zur Bestätigung eingeben',
+    'settings_save_2fa' => '2FA-Einstellung speichern',
+    'two_factor_title' => 'Anmeldung bestätigen',
+    'two_factor_email_hint' => 'Wir haben einen sechsstelligen Code an deine E-Mail-Adresse gesendet.',
+    'two_factor_totp_hint' => 'Gib den aktuellen Code aus deiner Authenticator-App ein.',
+    'two_factor_verify' => 'Anmeldung bestätigen',
+    'two_factor_invalid' => 'Der eingegebene Code ist ungültig.',
+    'settings_saved' => 'Die persönlichen Daten wurden gespeichert.',
+    'settings_invalid_request' => 'Die Anfrage ist ungültig oder abgelaufen.',
+    'settings_invalid_data' => 'Bitte prüfe die Eingaben und das aktuelle Passwort.',
+    'settings_username_taken' => 'Dieser Benutzername ist bereits vergeben.',
+    'settings_division_already_pending' => 'Es besteht bereits ein offener Transferantrag.',
+    'settings_division_submitted' => 'Der Divisionstransfer wurde beantragt.',
+    'settings_password_invalid' => 'Das aktuelle Passwort ist falsch oder die neuen Passwörter stimmen nicht überein.',
+    'settings_password_changed' => 'Das Passwort wurde geändert.',
+    'settings_2fa_code_invalid' => 'Der Authenticator-Code ist ungültig.',
+    'settings_2fa_saved' => 'Die Zwei-Faktor-Einstellung wurde gespeichert.',
+    'login_rate_limited' => 'Zu viele Anmeldeversuche. Bitte versuche es später erneut.',
+    'two_factor_expired' => 'Die Zwei-Faktor-Anmeldung ist abgelaufen.',
+
     'profile_controller_hours' =>
         'Controllerstunden',
 
@@ -589,6 +631,13 @@ return [
     'activity_country_changed' =>
         'Herkunftsland geändert',
 
+    'activity_username_changed' => 'Benutzername geändert',
+    'activity_real_name_changed' => 'Realname geändert',
+    'activity_password_changed' => 'Passwort geändert',
+    'activity_division_change_requested' => 'Divisionstransfer beantragt',
+    'activity_division_change_approved' => 'Divisionstransfer genehmigt',
+    'activity_division_change_rejected' => 'Divisionstransfer abgelehnt',
+
     'activity_exam_passed' =>
         'Prüfung bestanden',
 
@@ -603,6 +652,9 @@ return [
 
     'activity_kicked' =>
         'Aus dem Netzwerk gekickt',
+
+    'activity_kicked_spam' =>
+        'Automatisch wegen Chat-Spam aus dem Netzwerk gekickt',
 
     'activity_award_unlocked' =>
         'Award freigeschaltet',
@@ -776,6 +828,37 @@ return [
     'admin_tab_players' =>
         'Spielerliste',
 
+    'admin_tab_transfers' => 'Divisionstransfers',
+    'admin_tab_chat_filter' => 'Chatfilter',
+    'admin_chat_filter_title' => 'Gefilterte Wörter',
+    'admin_chat_filter_text' => 'Diese Wörter werden im Plugin durch Sterne ersetzt und im Admin-Monitor rot hervorgehoben.',
+    'admin_chat_filter_word' => 'Wort',
+    'admin_chat_filter_add' => 'Wort hinzufügen',
+    'admin_chat_filter_search' => 'Wortliste durchsuchen',
+    'admin_chat_filter_created_by' => 'Hinzugefügt von',
+    'admin_chat_filter_remove' => 'Entfernen',
+    'admin_chat_filter_empty' => 'Keine Filterwörter vorhanden.',
+    'admin_chat_filter_saved' => 'Die Filterliste wurde aktualisiert.',
+    'admin_chat_filter_invalid' => 'Das Wort ist ungültig oder bereits vorhanden.',
+    'admin_staff_chat_title' => 'Als Staff senden',
+    'admin_staff_chat_send' => 'Nachricht senden',
+    'admin_staff_chat_sent' => 'Staff-Nachricht wurde gesendet.',
+    'admin_announcement_title' => 'Globales Announcement',
+    'admin_announcement_text' => 'Frequenzunabhängige Systemnachricht an alle aktuell eingeloggten Plugin-Benutzer. Nur OP-Level 5.',
+    'admin_announcement_send' => 'Announcement senden',
+    'admin_announcement_sent' => 'Announcement wurde an {count} Benutzer gesendet.',
+    'admin_announcement_invalid' => 'Announcement konnte nicht gesendet werden.',
+    'admin_announcement_confirm' => 'Dieses Announcement wirklich an alle eingeloggten Plugin-Benutzer senden?',
+    'admin_transfers_title' => 'Offene Divisionstransfers',
+    'admin_transfers_text' => 'Transferanträge prüfen, genehmigen oder ablehnen.',
+    'admin_transfer_current' => 'Aktuelle Division',
+    'admin_transfer_requested' => 'Gewünschte Division',
+    'admin_transfer_reason' => 'Begründung',
+    'admin_transfer_action' => 'Aktion',
+    'admin_transfer_approve' => 'Genehmigen',
+    'admin_transfer_reject' => 'Ablehnen',
+    'admin_transfer_none' => 'Keine offenen Transferanträge.',
+
     'admin_search_messages' =>
         'Nachrichten durchsuchen',
 
@@ -825,7 +908,7 @@ return [
         'Inaktiv',
 
     'admin_players_network_status' =>
-        'Netzwerkstatus',
+        'Simulatorstatus',
 
     'admin_players_online' =>
         'Online',
@@ -1013,4 +1096,121 @@ return [
     'admin_system' =>
         'System',
 
+    'admin_tab_database_reset' =>
+        'Datenbank-Reset',
+
+    'admin_database_reset_title' =>
+        'Testdatenbank zurücksetzen',
+
+    'admin_database_reset_text' =>
+        'Setzt sämtliche Test- und Betriebsdaten zurück. Diese Funktion ist ausschließlich für OP-Level 5 verfügbar.',
+
+    'admin_database_reset_warning' =>
+        'Achtung: Alle anderen Benutzer, Chats, Sessions, Positionen, Flugpläne, Statistiken, Aktivitäten, Filter und Einstellungen werden unwiderruflich gelöscht.',
+
+    'admin_database_reset_preserved' =>
+        'Erhalten bleiben: airports und divisions. Danach wird admin mit OP-Level 5 und dem Passwort saturn neu angelegt.',
+
+    'admin_database_reset_password' =>
+        'Aktuelles Passwort',
+
+    'admin_database_reset_confirmation' =>
+        'Zur Bestätigung exakt RESET VFN eingeben',
+
+    'admin_database_reset_button' =>
+        'Datenbank vollständig zurücksetzen',
+
+    'admin_database_reset_confirm_dialog' =>
+        'Datenbank wirklich zurücksetzen? Dieser Vorgang kann nicht rückgängig gemacht werden.',
+
+    'admin_database_reset_running' =>
+        'Datenbank wird zurückgesetzt...',
+
+    'admin_database_reset_complete' =>
+        'Reset abgeschlossen. Alle Web- und Plugin-Sitzungen wurden beendet. Du wirst zur Anmeldung weitergeleitet.',
+
+    'admin_database_reset_invalid' =>
+        'Reset abgebrochen: Passwort oder Bestätigung ist falsch, oder der Server hat den Vorgang abgelehnt.',
+
+    'activity_database_reset' =>
+        'Datenbank-Reset durchgeführt',
+
+    'admin_tab_configuration' => 'Konfiguration',
+    'admin_configuration_title' => 'Server-Konfiguration',
+    'admin_configuration_text' => 'Sicher freigegebene Einstellungen bearbeiten. Änderungen gelten für nachfolgende Web- und API-Anfragen und bleiben bei Datenbank-Resets erhalten.',
+    'admin_configuration_excluded' => 'Nicht bearbeitbar sind SQL-Zugangsdaten und echte Server-Dateipfade.',
+    'admin_configuration_save' => 'Konfiguration speichern',
+    'admin_configuration_saved' => 'Konfiguration wurde gespeichert.',
+    'admin_configuration_invalid' => 'Konfiguration konnte nicht geladen oder gespeichert werden. Bitte Eingaben prüfen.',
+    'admin_configuration_loading' => 'Konfiguration wird geladen...',
+    'admin_configuration_true' => 'Aktiviert',
+    'admin_configuration_false' => 'Deaktiviert',
+    'admin_configuration_category_general' => 'Allgemein',
+    'admin_configuration_category_permissions' => 'Berechtigungen',
+    'admin_configuration_category_chat' => 'Chat',
+    'admin_configuration_category_weather' => 'Wetter und D-ATIS',
+    'admin_configuration_category_voice' => 'Voice',
+    'admin_configuration_category_download' => 'Plugin-Download',
+    'admin_configuration_category_legal' => 'Impressum',
+    'admin_configuration_default_timezone' => 'Standard-Zeitzone',
+    'admin_configuration_minimum_invisible_op' => 'Mindest-OP-Level für Unsichtbar-Modus',
+    'admin_configuration_show_ratings' => 'Ratings anzeigen',
+    'admin_configuration_chat_range' => 'Chat-Reichweite außerhalb UNICOM (NM)',
+    'admin_configuration_metar_cache_url' => 'METAR-Cache-URL',
+    'admin_configuration_metar_station_url' => 'METAR-Stations-Basis-URL',
+    'admin_configuration_metar_cache_seconds' => 'METAR-Cachezeit (Sekunden)',
+    'admin_configuration_voice_url' => 'Voice-WebSocket-URL',
+    'admin_configuration_project_name' => 'Projektname',
+    'admin_configuration_download_enabled' => 'Plugin-Download aktiviert',
+    'admin_configuration_download_url' => 'Plugin-Download-URL',
+    'admin_configuration_download_name' => 'Plugin-Download-Dateiname',
+    'admin_configuration_company_name' => 'Firmen-/Projektname',
+    'admin_configuration_company_owner' => 'Inhaber',
+    'admin_configuration_company_address' => 'Anschrift',
+    'admin_configuration_company_zip_city' => 'PLZ und Ort',
+    'admin_configuration_company_country' => 'Land',
+    'admin_configuration_company_email' => 'E-Mail',
+
+    'profile_moderation' => 'Moderation',
+    'moderation_description' => 'Spieler moderieren. Alle Aktionen werden in der Activity protokolliert.',
+    'moderation_kick' => 'Spieler kicken',
+    'moderation_kick_online_only' => 'Ein Kick ist nur möglich, wenn der Spieler im Simulator online ist.',
+    'moderation_ban' => 'Spieler bannen',
+    'moderation_reason' => 'Grund',
+    'moderation_duration' => 'Dauer',
+    'moderation_minutes' => 'Minuten',
+    'moderation_hours' => 'Stunden',
+    'moderation_days' => 'Tage',
+    'moderation_weeks' => 'Wochen',
+    'moderation_months' => 'Monate',
+    'moderation_years' => 'Jahre',
+    'moderation_permanent' => 'Permanent',
+    'moderation_currently_banned' => 'Aktuell gebannt',
+    'moderation_reason_required' => 'Bitte einen gültigen Grund angeben.',
+    'moderation_invalid_duration' => 'Bitte eine gültige Banndauer angeben.',
+    'moderation_kick_offline' => 'Der Spieler ist derzeit nicht im Simulator online.',
+    'moderation_not_allowed' => 'Dieser Spieler darf von dir nicht moderiert werden.',
+    'moderation_invalid_request' => 'Ungültige Moderationsanfrage.',
+    'moderation_failed' => 'Die Moderationsaktion ist fehlgeschlagen.',
+    'moderation_kick_success' => 'Der Spieler wurde gekickt.',
+    'moderation_ban_success' => 'Der Spieler wurde gebannt.',
+    'activity_banned' => 'Der Benutzer wurde gebannt.',
+    'moderation_unban' => 'Spieler entsperren',
+    'moderation_unban_reason' => 'Grund für die Entsperrung',
+    'moderation_unban_requires_op4' => 'Zum Entsperren wird mindestens OP-Level 4 benötigt.',
+    'moderation_not_banned' => 'Dieser Spieler ist nicht gebannt.',
+    'moderation_unban_success' => 'Der Spieler wurde entsperrt.',
+    'activity_unbanned' => 'Der Benutzer wurde entsperrt.',
+    'admin_tab_moderation' => 'Moderation',
+    'admin_moderation_title' => 'Entbannungsanträge',
+    'admin_moderation_text' => 'Offene Entbannungsanträge prüfen, genehmigen oder ablehnen.',
+    'admin_moderation_ban_reason' => 'Banngrund / Ablauf',
+    'admin_moderation_appeal_reason' => 'Begründung des Spielers',
+    'admin_moderation_none' => 'Keine offenen Entbannungsanträge.',
+    'admin_moderation_approve' => 'Entbannen',
+    'admin_moderation_reject' => 'Ablehnen',
+    'admin_moderation_review_reason' => 'Begründung für diese Entscheidung:',
+    'activity_ban_appeal_requested' => 'Ein Entbannungsantrag wurde gestellt.',
+    'activity_ban_appeal_approved' => 'Der Entbannungsantrag wurde genehmigt.',
+    'activity_ban_appeal_rejected' => 'Der Entbannungsantrag wurde abgelehnt.',
 ];
