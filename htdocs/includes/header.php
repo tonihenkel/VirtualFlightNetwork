@@ -436,11 +436,19 @@ if (isset($_SESSION['web_user_id'])) {
             <?php echo htmlspecialchars(t('nav_live_map')); ?>
         </a>
 
+        <a href="statistics.php">
+            <?php echo htmlspecialchars(t('nav_statistics')); ?>
+        </a>
+
         <a href="index.php#download">
             <?php echo htmlspecialchars(t('nav_download')); ?>
         </a>
 
         <?php if (isset($_SESSION['web_user_id'])): ?>
+
+            <a href="flightplans.php">
+                <?php echo htmlspecialchars(t('nav_flightplans')); ?>
+            </a>
 
             <?php if ($headerOpPermission > 1): ?>
                 <a href="admin.php">
@@ -478,9 +486,11 @@ if (isset($_SESSION['web_user_id'])) {
                 <?php echo htmlspecialchars(t('nav_login')); ?>
             </button>
 
-            <button type="button" onclick="openModal('registerModal')">
-                <?php echo htmlspecialchars(t('nav_register')); ?>
-            </button>
+            <?php if (empty($maintenanceMode) && !empty($registrationEnabled)): ?>
+                <button type="button" onclick="openModal('registerModal')">
+                    <?php echo htmlspecialchars(t('nav_register')); ?>
+                </button>
+            <?php endif; ?>
 
         <?php endif; ?>
 

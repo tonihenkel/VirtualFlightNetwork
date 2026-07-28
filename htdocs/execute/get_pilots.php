@@ -68,13 +68,6 @@ try {
     );
 
     $stmt = $pdo->prepare(
-        "DELETE FROM pilot_tracks
-         WHERE created_at < DATE_SUB(NOW(), INTERVAL 2 HOUR)"
-    );
-
-    $stmt->execute();
-
-    $stmt = $pdo->prepare(
         "SELECT
             p.user_id,
             p.session_token,
@@ -169,6 +162,13 @@ try {
             $viewerOpPermission =
                 (int)$viewer["op_permission"];
         }
+    }
+
+    // The map refreshes independently from the rest of the website. Release
+    // the PHP session lock as soon as the viewer permission has been read so
+    // map polling can never block page loads, login, or the admin panel.
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
     }
 
     $pilots = $stmt->fetchAll(PDO::FETCH_ASSOC);

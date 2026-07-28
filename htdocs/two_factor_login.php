@@ -3,6 +3,8 @@ session_start();
 require_once 'execute/config.php';
 require_once 'includes/two_factor.php';
 require_once 'includes/language.php';
+require_once 'includes/csrf.php';
+$twoFactorCsrf = csrfToken('two_factor');
 
 $token = (string)($_SESSION['two_factor_challenge_token'] ?? '');
 if ($token === '') {
@@ -39,6 +41,9 @@ try {
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        if (!csrfIsValid($_POST['csrf'] ?? null, 'two_factor')) {
+            $message = t('csrf_invalid');
+        } else {
         $code = preg_replace('/\D/', '', (string)($_POST['code'] ?? ''));
         $valid = $challenge['method'] === 'totp'
             ? twoFactorVerifyTotp((string)$challenge['totp_secret'], $code)
@@ -78,6 +83,7 @@ try {
             header('Location: ' . $returnTo);
             exit;
         }
+        }
     }
 } catch (Throwable $e) {
     $message = t('login_server_error');
@@ -102,6 +108,6 @@ button{background:#176dcc;color:#fff;border:0;cursor:pointer}.error{color:#ff989
         : t('two_factor_totp_hint')
 ); ?></p>
 <?php if ($message !== ''): ?><p class="error"><?php echo htmlspecialchars($message); ?></p><?php endif; ?>
-<form method="post"><input name="code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required autofocus>
+<form method="post"><input type="hidden" name="csrf" value="<?php echo htmlspecialchars($twoFactorCsrf); ?>"><input name="code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required autofocus>
 <button><?php echo htmlspecialchars(t('two_factor_verify')); ?></button></form>
 </main></body></html>

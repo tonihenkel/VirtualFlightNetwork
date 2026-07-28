@@ -3,6 +3,8 @@ session_start();
 
 require_once 'execute/config.php';
 require_once 'includes/activity_log.php';
+require_once 'includes/auth_security.php';
+require_once 'includes/csrf.php';
 require_once 'execute/send_mail.php';
 
 $registerLanguage =
@@ -88,6 +90,17 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirectBack('error', 'request_invalid');
 }
 
+if (!csrfIsValid($_POST['csrf'] ?? null, 'register')) {
+    redirectBack('error', 'csrf_invalid');
+}
+
+if (
+    !empty($maintenanceMode)
+    || empty($registrationEnabled)
+) {
+    redirectBack('error', 'registration_disabled');
+}
+
 $username = trim($_POST['username'] ?? '');
 $email = trim($_POST['email'] ?? '');
 $realName = trim($_POST['real_name'] ?? '');
@@ -145,6 +158,17 @@ try {
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
         ]
     );
+
+    $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    $registerIdentifier = strtolower($email . '|' . $username);
+    if (
+        authRateIsBlocked($pdo, 'register_ip', $clientIp)
+        || authRateIsBlocked($pdo, 'register_identifier', $registerIdentifier)
+    ) {
+        redirectBack('error', 'register_rate_limited');
+    }
+    authRateFail($pdo, 'register_ip', $clientIp, 8, 60, 60);
+    authRateFail($pdo, 'register_identifier', $registerIdentifier, 4, 60, 60);
 
     $stmt = $pdo->prepare(
         "SELECT id
@@ -227,6 +251,8 @@ try {
 
     $userId =
         (int)$pdo->lastInsertId();
+
+    authRateClear($pdo, 'register_identifier', $registerIdentifier);
 
     logActivity(
         $pdo,

@@ -154,6 +154,15 @@ try {
         'user_id' => $userId
     ];
 
+    // One global cursor represents the moment of this poll. A cursor scoped
+    // only to the currently tuned frequencies would replay old messages when
+    // the pilot later tunes another frequency.
+    $pollMaxStmt =
+        $pdo->query("SELECT COALESCE(MAX(id), 0) FROM chat_messages");
+
+    $pollMaxId =
+        (int)$pollMaxStmt->fetchColumn();
+
     $frequencyWhere = '';
 
     if (!empty($frequencies)) {
@@ -178,32 +187,13 @@ try {
         false;
 
     if ($sinceId > 0) {
-        $currentMaxStmt = $pdo->prepare(
-            "SELECT COALESCE(MAX(id), 0)
-             FROM chat_messages
-             WHERE recipient_user_id = :user_id
-                $frequencyWhere"
-        );
-
-        $currentMaxParams =
-            $params;
-
-        unset($currentMaxParams['since_id']);
-
-        $currentMaxStmt->execute(
-            $currentMaxParams
-        );
-
-        $currentMaxId =
-            (int)$currentMaxStmt->fetchColumn();
-
-        if ($sinceId > $currentMaxId) {
+        if ($sinceId > $pollMaxId) {
             // A restored/imported database can restart AUTO_INCREMENT at a
             // lower value while a running plugin still holds the old cursor.
             // Replay a small recent window instead of waiting forever for the
             // old ID to be reached again.
             $sinceId =
-                max(0, $currentMaxId - 30);
+                max(0, $pollMaxId - 30);
 
             $params['since_id'] =
                 $sinceId;
@@ -214,27 +204,13 @@ try {
     }
 
     if ($sinceId <= 0 && !$cursorWasReset) {
-        $maxStmt = $pdo->prepare(
-            "SELECT COALESCE(MAX(id), 0)
-             FROM chat_messages
-             WHERE recipient_user_id = :user_id
-                $frequencyWhere"
-        );
-
-        $maxParams =
-            $params;
-
-        unset($maxParams['since_id']);
-
-        $maxStmt->execute($maxParams);
-
-        $initialMaxSeenId =
-            (int)$maxStmt->fetchColumn();
-
         echo "OK\n";
-        echo "LAST|" . $initialMaxSeenId . "\n";
+        echo "LAST|" . $pollMaxId . "\n";
         exit;
     }
+
+    $params['poll_max_id'] =
+        $pollMaxId;
 
     $messageStmt = $pdo->prepare(
         "SELECT
@@ -250,12 +226,13 @@ try {
             DATE_FORMAT(created_at, '%H:%i') AS message_time
          FROM chat_messages
          WHERE id > :since_id
+           AND id <= :poll_max_id
            AND (
                 recipient_user_id = :user_id
                 $frequencyWhere
            )
          ORDER BY id ASC
-         LIMIT 30"
+         LIMIT 200"
     );
 
     $messageStmt->execute($params);
@@ -358,8 +335,9 @@ try {
          FROM chat_messages
          WHERE recipient_user_id = :user_id
            AND id > :since_id
+           AND id <= :poll_max_id
          ORDER BY id ASC
-         LIMIT 10"
+         LIMIT 50"
     );
 
     $personalStmt->execute([
@@ -367,7 +345,10 @@ try {
             $userId,
 
         'since_id' =>
-            $sinceId
+            $sinceId,
+
+        'poll_max_id' =>
+            $pollMaxId
     ]);
 
     foreach ($personalStmt->fetchAll(PDO::FETCH_ASSOC) as $message) {
@@ -399,8 +380,8 @@ try {
             $messageText . "\n";
     }
 
-    if ($maxSeenId > $sinceId) {
-        echo "LAST|" . $maxSeenId . "\n";
+    if ($pollMaxId > $sinceId) {
+        echo "LAST|" . $pollMaxId . "\n";
     }
 
 } catch (Exception $e) {

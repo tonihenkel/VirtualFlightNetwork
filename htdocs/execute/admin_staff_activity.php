@@ -9,6 +9,24 @@ try {
         createAdminPdo();
 
     requireAdminUser($pdo, 2);
+    $page = max(1, (int)($_GET['page'] ?? 1));
+    $perPage = min(100, max(10, (int)($_GET['per_page'] ?? 25)));
+    $candidateLimit = $page * $perPage;
+    $activityTotal = (int)$pdo->query(
+        "SELECT COUNT(*) FROM user_activity_log
+         WHERE activity_key LIKE '%kick%'
+            OR activity_key LIKE '%ban%'
+            OR activity_key LIKE '%announcement%'
+            OR activity_type IN ('staff', 'admin', 'moderation')"
+    )->fetchColumn();
+    $announcementTotal = (int)$pdo->query(
+        "SELECT COUNT(*) FROM (
+            SELECT 1 FROM chat_messages
+            WHERE message_text LIKE '[ANNOUNCEMENT]%'
+               OR sender_callsign = 'ANNOUNCEMENT'
+            GROUP BY sender_callsign, message_text, created_at
+         ) announcement_groups"
+    )->fetchColumn();
 
     $activityStmt = $pdo->prepare(
         "SELECT
@@ -29,7 +47,7 @@ try {
             OR l.activity_key LIKE '%announcement%'
             OR l.activity_type IN ('staff', 'admin', 'moderation')
          ORDER BY l.created_at DESC
-         LIMIT 80"
+         LIMIT $candidateLimit"
     );
 
     $activityStmt->execute();
@@ -75,7 +93,7 @@ try {
             OR sender_callsign = 'ANNOUNCEMENT'
          GROUP BY sender_callsign, message_text, created_at
          ORDER BY created_at DESC
-         LIMIT 80"
+         LIMIT $candidateLimit"
     );
 
     $announcementStmt->execute();
@@ -104,9 +122,16 @@ try {
     }
     unset($item);
 
+    $total = $activityTotal + $announcementTotal;
     echo json_encode([
         'success' => true,
-        'items' => array_slice($items, 0, 120)
+        'items' => array_slice($items, ($page - 1) * $perPage, $perPage),
+        'pagination' => [
+            'page' => $page,
+            'per_page' => $perPage,
+            'total' => $total,
+            'pages' => max(1, (int)ceil($total / $perPage))
+        ]
     ]);
 } catch (Throwable $e) {
     http_response_code(500);

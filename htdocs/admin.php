@@ -616,6 +616,12 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 OP-Level <?php echo (int)$adminOpPermission; ?>
             </div>
         </section>
+        <p>
+            <?php if ($adminOpPermission >= 4): ?>
+                <a class="admin-button" href="admin_history.php"><?php echo htmlspecialchars(t('admin_private_history')); ?></a>
+            <?php endif; ?>
+            <a class="admin-button" href="flightplans.php"><?php echo htmlspecialchars(t('nav_flightplans')); ?></a>
+        </p>
 
         <section class="admin-card">
             <div class="admin-tabs" role="tablist">
@@ -778,6 +784,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                             </thead>
                             <tbody id="messageRows"></tbody>
                         </table>
+                        <div class="admin-form-row" id="chatPager"></div>
                     </section>
                 </div>
             </div>
@@ -789,6 +796,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                     <div id="activityList" class="activity-list">
                         <div class="empty-state"><?php echo htmlspecialchars(t('admin_loading')); ?></div>
                     </div>
+                    <div class="admin-form-row" id="activityPager"></div>
                 </div>
             </div>
 
@@ -922,6 +930,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                     </div>
 
                     <div class="result-count" id="playerResultCount"></div>
+                    <div class="admin-form-row" id="playerPager"></div>
                     <div id="playerEmpty" class="empty-state"><?php echo htmlspecialchars(t('admin_loading')); ?></div>
                     <div class="table-scroll">
                         <table class="monitor-table" id="playerTable" hidden>
@@ -936,6 +945,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                                 <th><?php echo htmlspecialchars(t('admin_players_network_status')); ?></th>
                                 <th><?php echo htmlspecialchars(t('admin_players_registered')); ?></th>
                                 <th><?php echo htmlspecialchars(t('admin_players_last_login')); ?></th>
+                                <?php if ($adminOpPermission >= 4): ?><th><?php echo htmlspecialchars(t('admin_manage')); ?></th><?php endif; ?>
                             </tr></thead>
                             <tbody id="playerRows"></tbody>
                         </table>
@@ -1079,6 +1089,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         'noActivity' => t('admin_no_activity'),
         'noPlayers' => t('admin_players_no_results'),
         'playersFound' => t('admin_players_result_count'),
+        'manage' => t('admin_manage'),
         'playerActive' => t('admin_players_active'),
         'playerInactive' => t('admin_players_inactive'),
         'playerOnline' => t('admin_players_online'),
@@ -1139,6 +1150,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             'minimumInvisibleOpPermission' => t('admin_configuration_minimum_invisible_op'),
             'showRatings' => t('admin_configuration_show_ratings'),
             'maintenanceMode' => t('admin_configuration_maintenance_mode'),
+            'registrationEnabled' => t('admin_configuration_registration_enabled'),
             'chatFrequencyRangeNm' => t('admin_configuration_chat_range'),
             'aviationWeatherMetarCacheUrl' => t('admin_configuration_metar_cache_url'),
             'noaaMetarStationBaseUrl' => t('admin_configuration_metar_station_url'),
@@ -1183,7 +1195,10 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         localStorage.getItem('vfn_admin_monitor_all') === '1' && CAN_VIEW_ALL_FREQUENCIES;
 
     let lastMessageId = 0;
+    let chatPage = 1;
     let activityLoaded = false;
+    let activityPage = 1;
+    let playerPage = 1;
     let playersLoaded = false;
     let transfersLoaded = false;
     let moderationLoaded = false;
@@ -1339,14 +1354,19 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             rows.children.length !== 0;
     }
 
-    async function pollMessages()
+    async function pollMessages(forceHistory)
     {
+        if (chatPage > 1 && !forceHistory) {
+            return;
+        }
         if (!monitorAllFrequencies && monitoredFrequencies.length === 0) {
             return;
         }
 
         const params = new URLSearchParams();
-        params.set('since_id', String(lastMessageId));
+        params.set('since_id', String(chatPage === 1 ? lastMessageId : 0));
+        params.set('page', String(chatPage));
+        params.set('per_page', '50');
         params.set('frequencies', monitoredFrequencies.join(','));
 
         const chatFilters = {
@@ -1369,6 +1389,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         }
 
         try {
+            const requestedHistory = lastMessageId === 0;
             const response =
                 await fetch('execute/admin_chat_monitor.php?' + params.toString());
 
@@ -1377,6 +1398,14 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
 
             if (data.success) {
                 appendMessages(data.messages || [], lastMessageId === 0);
+                if (requestedHistory || chatPage > 1 || forceHistory) {
+                    renderPager('chatPager', data.pagination, function(page) {
+                        chatPage = page;
+                        lastMessageId = 0;
+                        document.getElementById('messageRows').innerHTML = '';
+                        pollMessages(true);
+                    });
+                }
             }
         } catch (error) {
             console.warn(ADMIN_I18N.serverError, error);
@@ -1389,7 +1418,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
 
         try {
             const response =
-                await fetch('execute/admin_staff_activity.php');
+                await fetch('execute/admin_staff_activity.php?page=' + activityPage + '&per_page=25');
 
             const data =
                 await response.json();
@@ -1414,6 +1443,10 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                     (item.detail ? '<br>' + escapeHtml(item.detail) : '') +
                     '</div>';
                 list.appendChild(node);
+            });
+            renderPager('activityPager', data.pagination, function(page) {
+                activityPage = page;
+                loadActivities();
             });
         } catch (error) {
             list.innerHTML = '<div class="empty-state">' + escapeHtml(ADMIN_I18N.serverError) + '</div>';
@@ -1456,6 +1489,8 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         const empty = document.getElementById('playerEmpty');
         const count = document.getElementById('playerResultCount');
         const params = new URLSearchParams();
+        params.set('page', String(playerPage));
+        params.set('per_page', '25');
         const filters = {
             search: document.getElementById('playerSearchInput').value.trim(),
             country: document.getElementById('playerCountryFilter').value,
@@ -1522,14 +1557,23 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                     '<td><span class="player-status ' + (player.online ? 'active' : '') + '">' +
                     escapeHtml(onlineLabel) + '</span></td>' +
                     '<td>' + escapeHtml(player.registered) + '</td>' +
-                    '<td>' + escapeHtml(player.last_login) + '</td>';
+                    '<td>' + escapeHtml(player.last_login) + '</td>' +
+                    (CAN_MANAGE_MODERATION
+                        ? '<td><a class="admin-button" href="admin_user.php?id=' +
+                          encodeURIComponent(player.id) + '">' +
+                          escapeHtml(ADMIN_I18N.manage) + '</a></td>'
+                        : '');
                 rows.appendChild(row);
             });
 
             table.hidden = data.players.length === 0;
             empty.hidden = data.players.length !== 0;
             count.textContent =
-                String(data.players.length) + ' ' + ADMIN_I18N.playersFound;
+                String((data.pagination || {}).total || data.players.length) + ' ' + ADMIN_I18N.playersFound;
+            renderPager('playerPager', data.pagination, function(page) {
+                playerPage = page;
+                loadPlayers();
+            });
         } catch (error) {
             rows.innerHTML = '';
             table.hidden = true;
@@ -1539,8 +1583,29 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         }
     }
 
+    function renderPager(containerId, pagination, onPage)
+    {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+        container.innerHTML = '';
+        const pages = Number((pagination || {}).pages || 1);
+        const current = Number((pagination || {}).page || 1);
+        if (pages <= 1) return;
+        const first = Math.max(1, current - 3);
+        const last = Math.min(pages, current + 3);
+        for (let page = first; page <= last; page++) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'admin-button' + (page === current ? ' primary' : '');
+            button.textContent = String(page);
+            button.addEventListener('click', function() { onPage(page); });
+            container.appendChild(button);
+        }
+    }
+
     function refreshChatFilters()
     {
+        chatPage = 1;
         lastMessageId = 0;
         document.getElementById('messageRows').innerHTML = '';
         document.getElementById('messageTable').hidden = true;
@@ -2221,6 +2286,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         element.addEventListener(
             element.tagName === 'SELECT' ? 'change' : 'input',
             function() {
+                playerPage = 1;
                 window.clearTimeout(playerFilterTimer);
                 playerFilterTimer = window.setTimeout(loadPlayers, 300);
             }

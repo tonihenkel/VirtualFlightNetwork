@@ -26,6 +26,10 @@ function vfnConfigDefinitions(): array
             'type' => 'boolean',
             'category' => 'general'
         ],
+        'registrationEnabled' => [
+            'type' => 'boolean',
+            'category' => 'general'
+        ],
         'chatFrequencyRangeNm' => [
             'type' => 'number',
             'min' => 1,

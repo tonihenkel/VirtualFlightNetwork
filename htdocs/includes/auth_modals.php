@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/csrf.php';
 
 if (!isset($currentLanguage)) {
     $currentLanguage = 'en';
@@ -57,6 +58,9 @@ catch (Exception $e)
         <form method="POST"
               action="web_login.php">
 
+            <input type="hidden" name="csrf"
+                   value="<?php echo htmlspecialchars(csrfToken('login')); ?>">
+
             <input type="text"
                    name="username"
                    placeholder="<?php echo htmlspecialchars(t('login_username')); ?>"
@@ -101,6 +105,7 @@ catch (Exception $e)
 
 </div>
 
+<?php if (empty($maintenanceMode) && !empty($registrationEnabled)): ?>
 <!-- REGISTER MODAL -->
 
 <div class="modal-overlay"
@@ -119,6 +124,9 @@ catch (Exception $e)
 
         <form method="POST"
               action="web_register.php">
+
+            <input type="hidden" name="csrf"
+                   value="<?php echo htmlspecialchars(csrfToken('register')); ?>">
 
             <input type="text"
                    name="username"
@@ -245,6 +253,7 @@ catch (Exception $e)
     </div>
 
 </div>
+<?php endif; ?>
 
 <style>
 

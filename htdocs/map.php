@@ -71,6 +71,111 @@ if (!isset($showRatings)) {
             min-width: 220px;
         }
 
+        #mapDirectory {
+            position: absolute;
+            top: 92px;
+            right: 18px;
+            z-index: 1800;
+            width: 310px;
+            max-height: calc(100vh - 160px);
+            overflow: hidden;
+            border-radius: 8px;
+            background: rgba(7, 21, 33, 0.94);
+            color: #d7e8ff;
+            box-shadow: 0 8px 28px rgba(0,0,0,.42);
+            border: 1px solid rgba(68,139,198,.55);
+        }
+
+        .map-directory-header {
+            padding: 13px 14px;
+            background: #1737a6;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+        }
+
+        .map-directory-toggle {
+            border: 0;
+            color: white;
+            background: transparent;
+            cursor: pointer;
+            font-size: 18px;
+        }
+
+        .map-directory-body { padding: 12px; }
+        #mapDirectory.collapsed .map-directory-body { display: none; }
+        #pilotSearch {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #285475;
+            border-radius: 4px;
+            color: white;
+            background: #071521;
+            box-sizing: border-box;
+        }
+        .map-layer-tools {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 10px;
+            color: #bcd2e8;
+            font-size: 13px;
+        }
+        .map-layer-tools select {
+            padding: 7px;
+            color: white;
+            background: #071521;
+            border: 1px solid #285475;
+            border-radius: 4px;
+        }
+        .map-statistics-link {color:#66bdff;text-decoration:none;font-size:12px;margin-bottom:10px;display:inline-block}
+        #pilotDirectoryList {
+            display: grid;
+            gap: 7px;
+            max-height: calc(100vh - 260px);
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+        .pilot-directory-item {
+            border: 1px solid #244c69;
+            border-radius: 5px;
+            padding: 9px 10px;
+            color: #d7e8ff;
+            background: #0b1c29;
+            cursor: pointer;
+            text-align: left;
+        }
+        .pilot-directory-item:hover,
+        .pilot-directory-item.active { border-color: #55aaff; background: #12304a; }
+        .pilot-directory-callsign { color: #55b4ff; font-weight: bold; }
+        .pilot-directory-meta { color: #95adc4; font-size: 12px; margin-top: 3px; }
+        .panel-action {
+            display: block;
+            width: 100%;
+            border: 0;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 10px;
+            color: white;
+            background: #176dcc;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .panel-action.following { background: #159447; }
+        .airport-panel-link {
+            color: inherit;
+            background: transparent;
+            border: 0;
+            padding: 0;
+            cursor: pointer;
+            font: inherit;
+            font-weight: bold;
+        }
+        .airport-panel-link:hover { text-decoration: underline; }
+
         .pilot-label {
             background: rgba(0, 0, 0, 0.75);
 
@@ -501,11 +606,25 @@ if (!isset($showRatings)) {
         visibility: hidden;
     }
 }
+
+@media (max-width: 760px) {
+    #mapDirectory { top: 135px; right: 8px; width: min(300px, calc(100% - 16px)); }
+    #mapDirectory:not(.collapsed) { max-height: 48vh; }
+    #pilotInfoPanel, #airportTrafficPanel { top: 122px; width: min(360px, 100%); height: calc(100vh - 122px); }
+    #statusBox { top: 135px; left: 8px; min-width: 0; }
+}
 </style>
 </head>
 <body>
 
 <?php require_once 'includes/header.php'; ?>
+<?php
+// The page is read-only after the header has resolved the authenticated user.
+// Do not keep its PHP session locked while the browser loads the map.
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_write_close();
+}
+?>
 <?php
 $statusType =
     $_GET['type'] ?? '';
@@ -531,6 +650,28 @@ if ($statusMessage !== '') {
     <?php echo htmlspecialchars(t("map_loading_pilots")); ?>
 </div>
 
+<aside id="mapDirectory">
+    <div class="map-directory-header">
+        <span><?php echo htmlspecialchars(t('map_pilot_directory')); ?></span>
+        <button class="map-directory-toggle" type="button" id="mapDirectoryToggle" aria-label="<?php echo htmlspecialchars(t('map_toggle_list')); ?>">−</button>
+    </div>
+    <div class="map-directory-body">
+        <div class="map-layer-tools">
+            <label><input id="heatmapToggle" type="checkbox"> <?php echo htmlspecialchars(t('map_show_heatmap')); ?></label>
+            <select id="heatmapPeriod">
+                <?php foreach ([1, 7, 30, 90] as $mapDays): ?>
+                    <option value="<?php echo $mapDays; ?>" <?php echo (int)($_GET['days'] ?? 30)===$mapDays?'selected':''; ?>>
+                        <?php echo htmlspecialchars(t('statistics_period_' . $mapDays)); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <a class="map-statistics-link" href="statistics.php"><?php echo htmlspecialchars(t('map_open_statistics')); ?></a>
+        <input id="pilotSearch" type="search" placeholder="<?php echo htmlspecialchars(t('map_search_pilot')); ?>">
+        <div id="pilotDirectoryList"></div>
+    </div>
+</aside>
+
 <div id="pilotInfoPanel">
     <div class="panel-header">
         <span id="panelCallsign">----</span>
@@ -539,14 +680,14 @@ if ($statusMessage !== '') {
 
     <div class="panel-route">
         <div>
-            <div id="panelDeparture">ZZZZ</div>
+            <button type="button" class="airport-panel-link" id="panelDeparture">ZZZZ</button>
             <div class="panel-airport-name" id="panelDepartureName"><?php echo htmlspecialchars(t("map_no_airport")); ?></div>
         </div>
 
         <div class="panel-route-plane">✈</div>
 
         <div>
-            <div id="panelArrival">ZZZZ</div>
+            <button type="button" class="airport-panel-link" id="panelArrival">ZZZZ</button>
             <div class="panel-airport-name" id="panelArrivalName"><?php echo htmlspecialchars(t("map_no_airport")); ?></div>
         </div>
     </div>
@@ -757,6 +898,10 @@ if ($statusMessage !== '') {
     </div>
 
     <div class="panel-content">
+
+        <button type="button" class="panel-action" id="followPilotButton" onclick="toggleFollowSelectedPilot()">
+            <?php echo htmlspecialchars(t('map_follow_pilot')); ?>
+        </button>
         <div class="panel-grid airport-summary">
             <div class="panel-stat">
                 <div class="panel-stat-value" id="airportPanelInboundCount">0</div>
@@ -796,6 +941,7 @@ if ($statusMessage !== '') {
 <?php require_once 'includes/auth_modals.php'; ?>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 
 <script>
     const IS_WEB_LOGGED_IN =
@@ -858,11 +1004,20 @@ if ($statusMessage !== '') {
                 "airport_no_inbound" => t("map_airport_no_inbound"),
                 "airport_no_outbound" => t("map_airport_no_outbound"),
                 "airport_aircraft" => t("map_airport_aircraft"),
-                "airport_departure_time" => t("map_airport_departure_time")
+                "airport_departure_time" => t("map_airport_departure_time"),
+                "follow_pilot" => t("map_follow_pilot"),
+                "stop_following" => t("map_stop_following"),
+                "no_pilots_found" => t("map_no_pilots_found")
             ],
             JSON_UNESCAPED_UNICODE
         );
         ?>;
+    const TARGET_PILOT_ID =
+        <?php echo max(0, (int)($_GET['pilot_id'] ?? 0)); ?>;
+    const TARGET_FOLLOW =
+        <?php echo !empty($_GET['follow']) ? 'true' : 'false'; ?>;
+    const INITIAL_HEATMAP =
+        <?php echo !empty($_GET['heatmap']) ? 'true' : 'false'; ?>;
     const map = L.map(
         'map',
         {
@@ -906,6 +1061,11 @@ if ($statusMessage !== '') {
     let airportTrafficData = {};
 
     let selectedCallsign = null;
+    let selectedPilotData = null;
+    let followedUserId = TARGET_FOLLOW ? TARGET_PILOT_ID : 0;
+    let latestPilots = [];
+    let initialTargetHandled = false;
+    let heatmapLayer = null;
 
     let selectedAirportCode = null;
 
@@ -1265,6 +1425,148 @@ if ($statusMessage !== '') {
             lon
         ];
     }
+
+    function updateMapUrl(pilot)
+    {
+        const url = new URL(window.location.href);
+        if (pilot && Number(pilot.user_id) > 0) {
+            url.searchParams.set('pilot_id', String(pilot.user_id));
+            if (followedUserId === Number(pilot.user_id)) {
+                url.searchParams.set('follow', '1');
+            } else {
+                url.searchParams.delete('follow');
+            }
+        } else {
+            url.searchParams.delete('pilot_id');
+            url.searchParams.delete('follow');
+        }
+        window.history.replaceState({}, '', url);
+    }
+
+    function updateFollowButton()
+    {
+        const button = document.getElementById('followPilotButton');
+        if (!button) return;
+        const following = selectedPilotData
+            && followedUserId === Number(selectedPilotData.user_id);
+        button.classList.toggle('following', Boolean(following));
+        button.textContent = following
+            ? MAP_TEXT.stop_following
+            : MAP_TEXT.follow_pilot;
+    }
+
+    function centerOnPilot(pilot, animated)
+    {
+        const lat = Number(pilot.latitude);
+        const lon = Number(pilot.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+        if (map.getZoom() < 8) {
+            map.setView([lat, lon], 8, {animate: Boolean(animated)});
+        } else {
+            map.panTo([lat, lon], {animate: Boolean(animated)});
+        }
+    }
+
+    function toggleFollowSelectedPilot()
+    {
+        if (!selectedPilotData) return;
+        const userId = Number(selectedPilotData.user_id);
+        followedUserId = followedUserId === userId ? 0 : userId;
+        if (followedUserId) centerOnPilot(selectedPilotData, true);
+        updateFollowButton();
+        updateMapUrl(selectedPilotData);
+        renderPilotDirectory();
+    }
+
+    function renderPilotDirectory()
+    {
+        const list = document.getElementById('pilotDirectoryList');
+        const query = document.getElementById('pilotSearch').value
+            .trim().toLocaleLowerCase();
+        const pilots = latestPilots.filter(function(pilot) {
+            const flightplan = getFlightplan(pilot);
+            return [
+                pilot.callsign, pilot.username, pilot.aircraft_icao,
+                flightplan.departure_airport, flightplan.arrival_airport
+            ].join(' ').toLocaleLowerCase().includes(query);
+        });
+        if (pilots.length === 0) {
+            list.innerHTML = '<div class="pilot-directory-meta">'
+                + escapeHtml(MAP_TEXT.no_pilots_found) + '</div>';
+            return;
+        }
+        list.innerHTML = pilots.map(function(pilot) {
+            const flightplan = getFlightplan(pilot);
+            const active = selectedCallsign === pilot.callsign ? ' active' : '';
+            const following = followedUserId === Number(pilot.user_id) ? ' · ◉' : '';
+            return '<button type="button" class="pilot-directory-item' + active
+                + '" data-pilot-user-id="' + Number(pilot.user_id) + '">'
+                + '<div class="pilot-directory-callsign">' + escapeHtml(pilot.callsign)
+                + escapeHtml(following) + '</div>'
+                + '<div class="pilot-directory-meta">' + escapeHtml(pilot.aircraft_icao || '----')
+                + ' · ' + escapeHtml(getAirportCode(flightplan.departure_airport))
+                + ' → ' + escapeHtml(getAirportCode(flightplan.arrival_airport)) + '</div>'
+                + '</button>';
+        }).join('');
+    }
+
+    document.getElementById('pilotSearch').addEventListener('input', renderPilotDirectory);
+    document.getElementById('pilotDirectoryList').addEventListener('click', function(event) {
+        const item = event.target.closest('[data-pilot-user-id]');
+        if (!item) return;
+        const pilot = latestPilots.find(entry =>
+            Number(entry.user_id) === Number(item.dataset.pilotUserId));
+        if (pilot) {
+            openPilotPanel(pilot);
+            centerOnPilot(pilot, true);
+        }
+    });
+    document.getElementById('mapDirectoryToggle').addEventListener('click', function() {
+        const directory = document.getElementById('mapDirectory');
+        directory.classList.toggle('collapsed');
+        this.textContent = directory.classList.contains('collapsed') ? '+' : '−';
+    });
+
+    async function loadHeatmap()
+    {
+        const enabled = document.getElementById('heatmapToggle').checked;
+        if (heatmapLayer) {
+            map.removeLayer(heatmapLayer);
+            heatmapLayer = null;
+        }
+        if (!enabled) return;
+        const days = Number(document.getElementById('heatmapPeriod').value) || 30;
+        try {
+            const response = await fetch(
+                'execute/network_statistics.php?include_heatmap=1&days='
+                + encodeURIComponent(days)
+            );
+            const data = await response.json();
+            if (!data.success || !Array.isArray(data.heatmap)) return;
+            const maximum = data.heatmap.reduce(
+                (max, point) => Math.max(max, Number(point.count) || 0), 1
+            );
+            const points = data.heatmap.map(point => [
+                Number(point.latitude),
+                Number(point.longitude),
+                Math.max(0.08, Math.log((Number(point.count) || 0) + 1) / Math.log(maximum + 1))
+            ]);
+            heatmapLayer = L.heatLayer(points, {
+                radius: 22,
+                blur: 18,
+                maxZoom: 9,
+                minOpacity: 0.25,
+                gradient: {0.2:'#2468ff',0.45:'#25e6c8',0.7:'#ffe55c',1:'#ff3131'}
+            }).addTo(map);
+        } catch (error) {
+            console.warn('Heatmap could not be loaded.', error);
+        }
+    }
+
+    document.getElementById('heatmapToggle').checked = INITIAL_HEATMAP;
+    document.getElementById('heatmapToggle').addEventListener('change', loadHeatmap);
+    document.getElementById('heatmapPeriod').addEventListener('change', loadHeatmap);
+    if (INITIAL_HEATMAP) loadHeatmap();
 
     function createAirportTrafficMarker()
     {
@@ -1747,6 +2049,11 @@ if ($statusMessage !== '') {
                     direction: 'top'
                 }
             );
+            airportMarkers.departure.on('click', function() {
+                if (airportTrafficData[departureCode]) {
+                    openAirportTrafficPanel(departureCode);
+                }
+            });
 
             airportRouteLines.departure =
                 L.polyline(
@@ -1787,6 +2094,11 @@ if ($statusMessage !== '') {
                     direction: 'top'
                 }
             );
+            airportMarkers.arrival.on('click', function() {
+                if (airportTrafficData[arrivalCode]) {
+                    openAirportTrafficPanel(arrivalCode);
+                }
+            });
 
             airportRouteLines.arrival =
                 L.polyline(
@@ -1967,6 +2279,11 @@ if ($statusMessage !== '') {
 
         selectedCallsign =
             null;
+        selectedPilotData = null;
+        followedUserId = 0;
+        updateFollowButton();
+        updateMapUrl(null);
+        renderPilotDirectory();
 
         pilotInfoPanel.classList.remove('open');
 
@@ -2037,6 +2354,7 @@ if ($statusMessage !== '') {
     {
         selectedCallsign =
             pilot.callsign;
+        selectedPilotData = pilot;
 
         closeAirportTrafficPanel();
 
@@ -2060,11 +2378,16 @@ if ($statusMessage !== '') {
         {
             pilotMarkers[selectedCallsign].setZIndexOffset(1000);
         }
+        updateFollowButton();
+        updateMapUrl(pilot);
+        renderPilotDirectory();
     }
 
     function closePilotPanel()
     {
         selectedCallsign = null;
+        selectedPilotData = null;
+        followedUserId = 0;
 
         pilotInfoPanel.classList.remove('open');
 
@@ -2073,6 +2396,9 @@ if ($statusMessage !== '') {
         removeAllTracks();
 
         removeAirportRouteOverlays();
+        updateFollowButton();
+        updateMapUrl(null);
+        renderPilotDirectory();
     }
 
     function updatePilotPanel(pilot)
@@ -2112,9 +2438,19 @@ if ($statusMessage !== '') {
 
         document.getElementById('panelDeparture').innerText =
             departureCode;
+        document.getElementById('panelDeparture').onclick = function() {
+            if (airportTrafficData[departureCode]) {
+                openAirportTrafficPanel(departureCode);
+            }
+        };
 
         document.getElementById('panelArrival').innerText =
             arrivalCode;
+        document.getElementById('panelArrival').onclick = function() {
+            if (airportTrafficData[arrivalCode]) {
+                openAirportTrafficPanel(arrivalCode);
+            }
+        };
 
         document.getElementById('panelDepartureName').innerText =
             departureName;
@@ -2261,8 +2597,16 @@ if ($statusMessage !== '') {
             pilot.last_update || '----';
     }
 
+    let pilotLoadInProgress = false;
+
     async function loadPilots()
     {
+        if (pilotLoadInProgress) {
+            return;
+        }
+
+        pilotLoadInProgress = true;
+
         try
         {
             const response =
@@ -2285,13 +2629,14 @@ if ($statusMessage !== '') {
             }
 
             const activeCallsigns = [];
+            latestPilots = data.pilots || [];
 
             airportTrafficData =
                 buildAirportTrafficData(
-                    data.pilots || []
+                    latestPilots
                 );
 
-            data.pilots.forEach(pilot =>
+            latestPilots.forEach(pilot =>
             {
                 const callsign =
                     pilot.callsign;
@@ -2375,6 +2720,7 @@ if ($statusMessage !== '') {
 
                 if (selectedCallsign === callsign)
                 {
+                    selectedPilotData = pilot;
                     updatePilotPanel(pilot);
 
                     loadTrackUpdates(callsign);
@@ -2388,7 +2734,31 @@ if ($statusMessage !== '') {
                         pilotMarkers[callsign].setZIndexOffset(1000);
                     }
                 }
+
+                if (followedUserId === Number(pilot.user_id))
+                {
+                    if (selectedCallsign !== callsign) {
+                        openPilotPanel(pilot);
+                    }
+                    centerOnPilot(pilot, false);
+                }
             });
+
+            if (!initialTargetHandled && TARGET_PILOT_ID > 0)
+            {
+                initialTargetHandled = true;
+                const targetPilot = latestPilots.find(pilot =>
+                    Number(pilot.user_id) === TARGET_PILOT_ID);
+                if (targetPilot) {
+                    openPilotPanel(targetPilot);
+                    centerOnPilot(targetPilot, true);
+                    if (TARGET_FOLLOW) {
+                        followedUserId = TARGET_PILOT_ID;
+                        updateFollowButton();
+                        updateMapUrl(targetPilot);
+                    }
+                }
+            }
 
             Object.keys(pilotMarkers).forEach(callsign =>
             {
@@ -2415,6 +2785,7 @@ if ($statusMessage !== '') {
             });
 
             updateAirportTrafficMarkers();
+            renderPilotDirectory();
 
             const totalCount =
                 Number(data.total_count ?? data.count ?? 0);
@@ -2450,13 +2821,17 @@ if ($statusMessage !== '') {
             statusBox.innerHTML =
                 MAP_TEXT.connection_error;
         }
+        finally
+        {
+            pilotLoadInProgress = false;
+        }
     }
 
     loadPilots();
 
     setInterval(
         loadPilots,
-        1000
+        2000
     );
 </script>
 

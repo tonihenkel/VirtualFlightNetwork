@@ -61,7 +61,7 @@ try {
         $tableStmt->fetchAll(PDO::FETCH_ASSOC)
     );
 
-    $preservedTables = ['airports', 'divisions', 'users'];
+    $preservedTables = ['airports', 'divisions', 'chat_filter_words', 'users'];
     $resetTables = array_values(array_filter(
         $allTables,
         static function (string $table) use ($preservedTables): bool {
@@ -143,7 +143,7 @@ try {
     $activityStmt->execute([
         'user_id' => 1,
         'actor_user_id' => 1,
-        'value' => 'airports and divisions preserved; admin bootstrap account recreated'
+        'value' => 'airports, divisions and chat_filter_words preserved; admin bootstrap account recreated'
     ]);
 
     clearVfnWebSession();

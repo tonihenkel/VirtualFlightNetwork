@@ -3,6 +3,7 @@ session_start();
 
 require_once 'execute/config.php';
 require_once 'includes/auth_security.php';
+require_once 'includes/csrf.php';
 require_once 'includes/ban_status.php';
 require_once 'execute/send_mail.php';
 
@@ -229,4 +230,8 @@ try {
         'error',
         'login_server_error'
     );
+}
+
+if (!csrfIsValid($_POST['csrf'] ?? null, 'login')) {
+    redirectBack('error', 'csrf_invalid');
 }

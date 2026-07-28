@@ -413,6 +413,7 @@ static XPLMCommandRef gTransponderStandbyCommand = nullptr;
 static XPLMCommandRef gTransponderOnCommand = nullptr;
 static XPLMCommandRef gTransponderIdentCommand = nullptr;
 static XPLMCommandRef gVoicePttCommand = nullptr;
+static XPLMCommandRef gVoiceToggleTransmitComCommand = nullptr;
 static XPLMCommandRef gG1000XpdrStbyCommands[3] = {};
 static XPLMCommandRef gG1000XpdrOnCommands[3] = {};
 static XPLMCommandRef gG1000XpdrIdentCommands[3] = {};
@@ -545,6 +546,7 @@ void SendVoiceState()
         "{\"type\":\"state\",\"com1\":\"" + GetVoiceFrequency(1) +
         "\",\"com2\":\"" + GetVoiceFrequency(2) +
         "\",\"txCom\":" + std::to_string(gVoiceTransmitCom) +
+        ",\"ptt\":" + std::string(gVoicePttActive ? "true" : "false") +
         ",\"latitude\":" + std::to_string(gVoiceLatitude.load()) +
         ",\"longitude\":" + std::to_string(gVoiceLongitude.load()) + "}"
     );
@@ -592,6 +594,8 @@ void CALLBACK VoiceWaveInCallback(
             SendVoiceMessage(
                 "{\"type\":\"audio\",\"codec\":\"pcm16\",\"sampleRate\":" +
                 std::to_string(captureSampleRate) + ","
+                "\"ptt\":true,\"txCom\":" +
+                std::to_string(gVoiceTransmitCom) + ","
                 "\"frequency\":\"" + GetVoiceFrequency(gVoiceTransmitCom) +
                 "\",\"payload\":\"" + encoded + "\"}"
             );
@@ -5233,7 +5237,8 @@ void ProcessChatPollResult()
 
         bool isOwnPilotMessage =
             chatLine.type == "pilot" &&
-            chatLine.sender == gCurrentCallsign;
+            ToUpperString(chatLine.sender) ==
+                ToUpperString(gCurrentCallsign);
 
         if (!isOwnPilotMessage)
         {
@@ -7419,7 +7424,8 @@ void DrawCompactRadioPanel(
     const std::string& value,
     const std::string& subLabel,
     bool rxActive = false,
-    bool txActive = false
+    bool txActive = false,
+    bool txSelected = false
 )
 {
     DrawFilledRect(
@@ -7516,6 +7522,17 @@ void DrawCompactRadioPanel(
         "TX",
         txActive
     );
+
+    if (txSelected && !txActive)
+    {
+        DrawRectOutline(
+            { rect.right - 47, rect.top - 54, rect.right - 14, rect.top - 79 },
+            0.08f,
+            0.48f,
+            0.95f,
+            1.00f
+        );
+    }
 }
 
 
@@ -7534,6 +7551,19 @@ CustomRect GetCompactRadioKnobRect(
         knobY + 28,
         knobX + 28,
         knobY - 28
+    };
+}
+
+
+CustomRect GetCompactRadioTxRect(
+    const CustomRect& rect
+)
+{
+    return {
+        rect.right - 47,
+        rect.top - 54,
+        rect.right - 14,
+        rect.top - 79
     };
 }
 
@@ -8837,6 +8867,30 @@ void SetVoiceTransmissionActive(bool active)
 }
 
 
+void SetVoiceTransmitCom(int com)
+{
+    gVoiceTransmitCom =
+        com == 2 ? 2 : 1;
+
+    if (!gVoiceAuthenticated.load())
+    {
+        return;
+    }
+
+    SendVoiceState();
+
+    if (gVoicePttActive)
+    {
+        SendVoiceMessage(
+            "{\"type\":\"ptt\",\"active\":true,\"txCom\":" +
+            std::to_string(gVoiceTransmitCom) +
+            ",\"frequency\":\"" +
+            GetVoiceFrequency(gVoiceTransmitCom) + "\"}"
+        );
+    }
+}
+
+
 CustomRect GetSettingsCloseRect(int left, int top, int right)
 {
     return { right - 36, top - 32, right - 6, top - 4 };
@@ -9805,16 +9859,18 @@ void DrawSettingsWindow(
         : 0.0f;
     float capturedPeakAge =
         now - gVoiceCapturedPeakLastUpdate.load();
-    float inputLevel =
+    bool txActive =
+        gVoicePttActive &&
+        gVoiceAuthenticated.load();
+    float inputLevel = txActive
+        ?
         (
-            gVoicePttActive &&
             capturedPeakAge >= 0.0f &&
             capturedPeakAge < 0.5f
         )
             ? gVoiceCapturedPeakLevel.load()
-            : ReadWindowsInputPeakLevel();
-    bool inputActive =
-        gVoicePttActive || inputLevel > 0.02f;
+            : ReadWindowsInputPeakLevel()
+        : 0.0f;
 
     DrawSettingsVoiceLevelMeter(
         {
@@ -9837,7 +9893,7 @@ void DrawSettingsWindow(
         },
         "TX",
         inputLevel,
-        inputActive
+        txActive
     );
 
     CustomRect continuousRect =
@@ -12337,8 +12393,8 @@ void DrawCompactTransponderPanel(
     );
 
     DrawText(
-        rect.left + 14,
-        rect.top - 48,
+        rect.left + 58,
+        rect.top - 18,
         FormatTransponderCode(code),
         0.06f,
         0.55f,
@@ -12449,8 +12505,8 @@ void DrawCompactWindow(
     bool com2TxActive =
         gVoicePttActive && gVoiceTransmitCom == 2;
 
-    DrawCompactRadioPanel({ left + 12, top - 50, left + 255, top - 132 }, "COM 1", com1Frequency, GetCompactComSubLabel(com1Frequency), com1RxActive, com1TxActive);
-    DrawCompactRadioPanel({ left + 12, top - 140, left + 255, top - 222 }, "COM 2", com2Frequency, GetCompactComSubLabel(com2Frequency), com2RxActive, com2TxActive);
+    DrawCompactRadioPanel({ left + 12, top - 50, left + 255, top - 132 }, "COM 1", com1Frequency, GetCompactComSubLabel(com1Frequency), com1RxActive, com1TxActive, gVoiceTransmitCom == 1);
+    DrawCompactRadioPanel({ left + 12, top - 140, left + 255, top - 222 }, "COM 2", com2Frequency, GetCompactComSubLabel(com2Frequency), com2RxActive, com2TxActive, gVoiceTransmitCom == 2);
     DrawCompactTransponderPanel({ left + 12, top - 230, left + 255, top - 300 }, transponder, transponderMode);
 
     CustomRect chatRect = { left + 270, top - 50, right - 12, top - 300 };
@@ -13088,6 +13144,23 @@ int VoicePttCommandHandler(
         if (!gVoiceContinuousTransmit)
             SetVoiceTransmissionActive(false);
         return 1;
+    }
+
+    return 1;
+}
+
+
+int VoiceToggleTransmitComCommandHandler(
+    XPLMCommandRef inCommand,
+    XPLMCommandPhase inPhase,
+    void* inRefcon
+)
+{
+    if (inPhase == xplm_CommandBegin)
+    {
+        SetVoiceTransmitCom(
+            gVoiceTransmitCom == 1 ? 2 : 1
+        );
     }
 
     return 1;
@@ -13968,6 +14041,42 @@ int CompactHandleMouse(
             { left + 12, top - 50, left + 255, top - 132 };
         CustomRect com2Rect =
             { left + 12, top - 140, left + 255, top - 222 };
+
+        if (
+            PointInWindowRect(
+                x,
+                y,
+                GetCompactRadioTxRect(com1Rect),
+                left,
+                top,
+                bottom
+            )
+        )
+        {
+            gChatInputFocused = false;
+            gChatSendButtonPressed = false;
+            XPLMTakeKeyboardFocus(nullptr);
+            SetVoiceTransmitCom(1);
+            return 1;
+        }
+
+        if (
+            PointInWindowRect(
+                x,
+                y,
+                GetCompactRadioTxRect(com2Rect),
+                left,
+                top,
+                bottom
+            )
+        )
+        {
+            gChatInputFocused = false;
+            gChatSendButtonPressed = false;
+            XPLMTakeKeyboardFocus(nullptr);
+            SetVoiceTransmitCom(2);
+            return 1;
+        }
 
         if (
             PointInWindowRect(
@@ -17351,6 +17460,22 @@ PLUGIN_API int XPluginStart(
         );
     }
 
+    gVoiceToggleTransmitComCommand =
+        XPLMCreateCommand(
+            "vfn/voice/toggle_transmit_com",
+            "VFN Voice Toggle Transmit COM1/COM2"
+        );
+
+    if (gVoiceToggleTransmitComCommand != nullptr)
+    {
+        XPLMRegisterCommandHandler(
+            gVoiceToggleTransmitComCommand,
+            VoiceToggleTransmitComCommandHandler,
+            1,
+            nullptr
+        );
+    }
+
     SetTransponderMode(1);
 
     XPLMRegisterFlightLoopCallback(
@@ -17393,6 +17518,18 @@ PLUGIN_API void XPluginStop(void)
         );
 
         gVoicePttCommand = nullptr;
+    }
+
+    if (gVoiceToggleTransmitComCommand != nullptr)
+    {
+        XPLMUnregisterCommandHandler(
+            gVoiceToggleTransmitComCommand,
+            VoiceToggleTransmitComCommandHandler,
+            1,
+            nullptr
+        );
+
+        gVoiceToggleTransmitComCommand = nullptr;
     }
 
     XPLMUnregisterFlightLoopCallback(

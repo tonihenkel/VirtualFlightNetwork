@@ -48,6 +48,13 @@
                                 alt="">
 
                             <?php echo h($divisionName); ?>
+                            <?php if ($isNetworkOnline): ?>
+                                <br>
+                                <a class="profile-map-link"
+                                   href="map.php?pilot_id=<?php echo (int)$profileUserId; ?>&follow=1">
+                                    <?php echo h(t('profile_show_live_map')); ?>
+                                </a>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>

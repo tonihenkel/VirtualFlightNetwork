@@ -125,6 +125,9 @@ function updateClientState(client, payload) {
   client.com1 = normalizeFrequency(payload.com1) || client.com1;
   client.com2 = normalizeFrequency(payload.com2) || client.com2;
   client.txCom = Number(payload.txCom || client.txCom) === 2 ? 2 : 1;
+  if (typeof payload.ptt === 'boolean') {
+    client.ptt = payload.ptt;
+  }
 
   const lat = Number(payload.latitude);
   const lon = Number(payload.longitude);
@@ -171,8 +174,10 @@ function forwardAudio(sender, payload) {
     (sender.txCom === 2 ? sender.com2 : sender.com1);
 
   if (!frequency || typeof payload.payload !== 'string' || payload.payload === '') {
-    return;
+    return 0;
   }
+
+  let forwarded = 0;
 
   for (const receiver of clients.values()) {
     if (!canReceive(sender, receiver, frequency)) {
@@ -195,7 +200,12 @@ function forwardAudio(sender, payload) {
       frequency,
       from: sender.callsign
     });
+
+    forwarded += 1;
   }
+
+  sender.audioPacketsForwarded += forwarded;
+  return forwarded;
 }
 
 function handleMonitor(client, payload) {
@@ -235,7 +245,22 @@ const server = createHttpServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       success: true,
-      clients: clients.size
+      clients: clients.size,
+      connections: Array.from(clients.values()).map((client) => ({
+        callsign: client.callsign,
+        authenticated: client.authenticated,
+        com1: client.com1,
+        com2: client.com2,
+        txCom: client.txCom,
+        ptt: client.ptt === true,
+        monitor: client.monitor,
+        monitorFrequency: client.monitorFrequency,
+        monitorGlobal: client.monitorGlobal,
+        audioPacketsReceived: client.audioPacketsReceived,
+        audioPacketsForwarded: client.audioPacketsForwarded,
+        lastAudioAt: client.lastAudioAt,
+        lastPttAt: client.lastPttAt
+      }))
     }));
     return;
   }
@@ -269,7 +294,11 @@ wss.on('connection', (ws) => {
     monitor: false,
     monitorFrequency: null,
     monitorGlobal: false,
-    messageQueue: Promise.resolve()
+    messageQueue: Promise.resolve(),
+    audioPacketsReceived: 0,
+    audioPacketsForwarded: 0,
+    lastAudioAt: null,
+    lastPttAt: null
   };
 
   clients.set(id, client);
@@ -331,6 +360,7 @@ wss.on('connection', (ws) => {
 
       if (payload.type === 'ptt') {
         client.ptt = payload.active === true;
+        client.lastPttAt = new Date().toISOString();
         client.txCom = Number(payload.txCom || client.txCom) === 2 ? 2 : 1;
         send(ws, {
           type: 'tx',
@@ -341,6 +371,18 @@ wss.on('connection', (ws) => {
       }
 
       if (payload.type === 'audio') {
+        client.audioPacketsReceived += 1;
+        client.lastAudioAt = new Date().toISOString();
+
+        // Every plugin audio frame carries its current PTT state as well.
+        // This makes transmission recover automatically if a standalone PTT
+        // control packet was lost during connect/reconnect.
+        if (payload.ptt === true) {
+          client.ptt = true;
+          client.txCom =
+            Number(payload.txCom || client.txCom) === 2 ? 2 : 1;
+        }
+
         if (client.ptt) {
           forwardAudio(client, payload);
         }

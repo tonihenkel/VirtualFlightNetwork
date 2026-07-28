@@ -520,6 +520,20 @@ $awardImages = [
             font-size: 15px;
         }
 
+        .profile-map-link {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 8px 12px;
+            border-radius: 5px;
+            color: white;
+            background: #176dcc;
+            text-decoration: none;
+            font-weight: bold;
+            line-height: 1.2;
+        }
+
+        .profile-map-link:hover { background: #2485ec; }
+
         .profile-country-flag {
             width: 22px;
             height: 15px;

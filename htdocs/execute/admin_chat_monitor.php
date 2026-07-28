@@ -13,6 +13,8 @@ try {
 
     $sinceId =
         max(0, (int)($_GET['since_id'] ?? 0));
+    $page = max(1, (int)($_GET['page'] ?? 1));
+    $perPage = min(100, max(10, (int)($_GET['per_page'] ?? 50)));
 
     $allRequested =
         !empty($_GET['all']);
@@ -137,6 +139,16 @@ try {
             ? 'ASC'
             : 'DESC';
 
+    $total = 0;
+    if ($sinceId <= 0) {
+        $countStmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM chat_messages WHERE " . implode(' AND ', $where)
+        );
+        $countStmt->execute($params);
+        $total = (int)$countStmt->fetchColumn();
+    }
+    $limit = $sinceId > 0 ? 250 : $perPage;
+    $offset = $sinceId > 0 ? 0 : (($page - 1) * $perPage);
     $stmt = $pdo->prepare(
         "SELECT
             id,
@@ -151,7 +163,7 @@ try {
          FROM chat_messages
          WHERE " . implode(' AND ', $where) . "
          ORDER BY id $order
-         LIMIT 250"
+         LIMIT $limit OFFSET $offset"
     );
 
     $stmt->execute($params);
@@ -166,6 +178,12 @@ try {
 
     echo json_encode([
         'success' => true,
+        'pagination' => [
+            'page' => $page,
+            'per_page' => $perPage,
+            'total' => $total,
+            'pages' => max(1, (int)ceil($total / $perPage))
+        ],
         'messages' => array_map(
             static function (array $message): array {
                 return [

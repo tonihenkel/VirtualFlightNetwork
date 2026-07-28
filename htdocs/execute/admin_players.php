@@ -15,6 +15,8 @@ try {
     $rank = strtoupper(trim((string)($_GET['rank'] ?? '')));
     $status = trim((string)($_GET['status'] ?? ''));
     $online = trim((string)($_GET['online'] ?? ''));
+    $page = max(1, (int)($_GET['page'] ?? 1));
+    $perPage = min(100, max(10, (int)($_GET['per_page'] ?? 25)));
 
     $where = ['1 = 1'];
     $params = [];
@@ -90,8 +92,7 @@ try {
          FROM users u
          LEFT JOIN divisions d ON d.code = u.division_code
          WHERE " . implode(' AND ', $where) . "
-         ORDER BY u.username ASC
-         LIMIT 500"
+         ORDER BY u.username ASC"
     );
     $stmt->execute($params);
 
@@ -165,10 +166,18 @@ try {
     }
 
     ksort($countries);
+    $total = count($players);
+    $players = array_slice($players, ($page - 1) * $perPage, $perPage);
 
     echo json_encode([
         'success' => true,
         'players' => $players,
+        'pagination' => [
+            'page' => $page,
+            'per_page' => $perPage,
+            'total' => $total,
+            'pages' => max(1, (int)ceil($total / $perPage))
+        ],
         'countries' => array_keys($countries),
         'divisions' => array_map(
             static function (array $division): array {

@@ -1,6 +1,6 @@
 # Virtual Flight Network (VFN) – Master-TODO
 
-Letzte Prüfung: 26.07.2026
+Letzte Prüfung: 27.07.2026
 
 ## Status
 
@@ -62,8 +62,8 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Öffentliche Pilot-Unterseite mit paginiertem Flugbuch und Flughistorie
 - [ ] Eigene ATC-Unterseite
 - [x] Profil-Einstellungen für das eigene Profil
-- [ ] Private „Administrative History“ für den Profilbesitzer
-- [ ] Staff-Ansicht für Warnungen, Banns, Trainings- und Prüfungsverlauf
+- [x] Private „Administrative History“ für Staff ab OP-Level 4
+- [x] Staff-Ansicht für Warnungen, Banns, Trainings- und Prüfungsverlauf
 
 # 3. Activity-System
 
@@ -76,20 +76,22 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Award-Freischaltung protokollieren
 - [x] Warnungs-Aktivität technisch darstellbar
 - [x] Rating-Änderung technisch darstellbar
-- [-] Staff-Aktivitäten im Admin Panel
+- [x] Staff-Aktivitäten und paginierte administrative Gesamthistorie im Admin Panel
 - [x] Passwortänderung protokollieren
 - [x] Benutzername, Realname und Land ändern/protokollieren
 - [x] Divisionstransfer beantragen, genehmigen/ablehnen und protokollieren
-- [ ] Ersten Flug und abgeschlossenen Flug vollständig protokollieren
+- [-] Flugbeginn und Flugabschluss vollständig protokollieren
+  - [x] Einzelne aktive, abgeschlossene und abgebrochene Flüge in `pilot_flights` speichern
+  - [ ] Flugbeginn und Flugabschluss zusätzlich als Activity-Einträge erfassen
 - [ ] Erste, 10. und 100. Landung protokollieren
 - [ ] Prüfung bestanden/nicht bestanden protokollieren
 - [ ] Training begonnen/abgeschlossen protokollieren
-- [ ] Rating vergeben/entziehen mit Staff-Aktion
+- [x] Rating vergeben/entziehen mit Staff-Aktion und Activity-Eintrag
 - [x] Verwarnungen mit Laufzeit vergeben und ab OP-Level 4 begründet aufheben
 - [x] Kick, zeitlich begrenzte/permanente Banns und Entbannung protokollieren
 - [x] Entbannungsanträge stellen, genehmigen/ablehnen und protokollieren
-- [ ] Staff-Rolle vergeben/entziehen
-- [ ] Interne Staff-, Trainings- und Prüfungsnotizen
+- [x] Staff-Rolle vergeben/entziehen
+- [x] Interne Staff-, Trainings- und Prüfungsnotizen
 - [ ] Sichtbarkeit der Activities zentral nach öffentlich/privat/Staff regeln
 
 # 4. Awards
@@ -130,12 +132,17 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Flugzeugstatistiken
 - [x] Landungserkennung und Aufsetzrate
 - [x] Airport-Traffic-Gruppierung auf der Karte
+- [x] Durchsuchbare Online-Pilotenliste auf der Karte
+- [x] Live-Follow-Modus für ein ausgewähltes Flugzeug
+- [x] Direkter Sprung vom Spielerprofil zur aktuellen Kartenposition
+- [x] Klickbare Abflug- und Zielflughäfen mit linkem Trafficpanel
+- [x] Direkt verlinkbare Kartenansicht über stabile Benutzer-ID
 - [-] Automatische Bereinigung veralteter Positionen und Tracks
 - [ ] Eigene Airport-Traffic-Seiten
-- [ ] Flughafenstatistiken
+- [x] Netzwerkstatistikseite mit Top Airports, Piloten-Herkunftsländern und Movement-Ländern
 - [ ] Erweiterte Flugverlaufsanalyse
-- [ ] Heatmaps
-- [ ] Langfristiges Flugbuch statt nur aggregierter Statistiken
+- [x] Zeitraumabhängige Traffic-Heatmap direkt in `map.php`
+- [x] Langfristiges Flugbuch mit einzelnen aktiven, abgeschlossenen und abgebrochenen Flügen
 
 # 6. Flugpläne und D-ATIS
 
@@ -145,7 +152,7 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] D-ATIS-Fenster im Plugin
 - [x] Automatisches METAR-D-ATIS
 - [x] Controller-D-ATIS über `controller_atis`
-- [ ] Flugplanbearbeitung und Historie auf der Webseite
+- [x] Flugplanbearbeitung und paginierte Historie auf der Webseite
 - [ ] ATC-seitige Flugplanannahme/-änderung
 - [ ] Voice Flightplans
 
@@ -251,7 +258,7 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Verlinkung zum Spielerprofil
 - [x] Letzten Admin-Reiter nach F5 wiederherstellen
 - [x] OP-Level-5-Datenbank-Reset mit Passwort- und Textbestätigung
-  - [x] `airports` und `divisions` erhalten
+  - [x] `airports`, `divisions` und `chat_filter_words` erhalten
   - [x] Bootstrap-Account `admin` mit OP-Level 5 für den Wiederzugang neu anlegen
   - [x] Alle Web- und Plugin-Sitzungen zuverlässig ungültig machen
   - [x] Sessions, Chat-Cursor und AUTO_INCREMENT-Werte kontrolliert zurücksetzen
@@ -259,10 +266,10 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
   - [x] Separate, DB-Reset-feste Runtime-Override-Datei
   - [x] Allowlist und Validierung für URLs, Zahlen, Boolean, E-Mail und Dateiname
 - [-] OP-Level-basiertes Berechtigungssystem
-- [ ] Benutzer im Admin Panel bearbeiten
-- [ ] Ratings vergeben und entziehen
+- [x] Benutzer im Admin Panel bearbeiten
+- [x] Ratings vergeben und entziehen
 - [x] Divisionstransfers genehmigen oder ablehnen
-- [ ] Benutzer aktivieren/deaktivieren
+- [x] Benutzer aktivieren/deaktivieren und aktive Plugin-Sitzungen beim Deaktivieren beenden
 - [x] Profil-Moderation mit Online-Kick und Pflichtgrund
 - [x] Zeitlich begrenzte und permanente Banns
 - [x] Entbannung ab OP-Level 4 mit Pflichtgrund
@@ -271,7 +278,7 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Verwarnungssystem mit Ablauf, OP-Hierarchie und Activity
 - [ ] Rollen und Rechte feiner als nur OP-Level modellieren
 - [ ] Vollständiger Audit-Log aller Admin-Aktionen
-- [ ] Pagination für Chat und Spielerliste statt fester Limits
+- [x] Serverseitige Pagination für Chat, Spielerliste und Staff-Activities
 - [ ] Exportfunktionen für Staff
 
 # 11. Multiplayer
@@ -287,10 +294,15 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [-] Benutzer- und Pilotenstatistiken im Profil
 - [-] Flugzeugstatistiken
 - [ ] Controllerstatistiken und Controllerstunden
-- [ ] Flughafenstatistiken
+- [x] Flughafenstatistiken mit Bewegungs-Rangliste
 - [ ] Divisionsstatistiken
-- [ ] Netzwerkstatistiken
-- [ ] Leaderboards
+- [x] Netzwerkstatistiken nach Zeitraum, Flügen, Piloten, Distanz und Flugstunden
+- [-] Leaderboards
+  - [x] Top Airports
+  - [x] Top Herkunftsländer nach registrierten Piloten
+  - [x] Top Länder nach Bewegungen an Abflug- und Zielflughäfen
+  - [x] Top Piloten nach abgeschlossenen Flügen, NM, Flugstunden und Landungen
+  - [ ] Top Controller
 
 # 13. Datenbank und SQL
 
@@ -337,6 +349,8 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] HTTPS für die Webseite
 - [x] WSS für Voice
 - [x] OP-Level-5-Wartungsmodus für Website und Plugin
+- [x] Registrierungen im Wartungsmodus automatisch sperren
+- [x] Registrierung unabhängig über die OP-Level-5-Konfiguration aktivieren/deaktivieren
 - [x] Bestehende Web- und Plugin-Sitzungen während der Wartung für niedrigere OP-Level beenden
 - [x] Passwort-Hashes
 - [x] Gehashte Passwort-Reset-Tokens
@@ -344,14 +358,16 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [-] API-Authentifizierung über Sessions/Tokens
 - [ ] Datenbank-Zugangsdaten aus PHP-Dateien in sichere Umgebungsvariablen verschieben
 - [ ] Voice-Service-Secrets ausschließlich über geschützte Umgebungsvariablen
-- [ ] CSRF-Schutz für alle Webformulare und Admin-Aktionen prüfen
+- [-] CSRF-Schutz für Webformulare und Admin-Aktionen
+  - [x] Login, Registrierung, 2FA, Profil, Moderation, Flugpläne und Admin-Aktionen geschützt
+  - [ ] Zustandsändernde Logout-Anfrage von GET auf POST umstellen
 - [ ] Einheitliche Eingabevalidierung und API-Fehlerformate
 - [-] Rate Limiting
   - [x] Web-Login
   - [x] Passwort-Recovery
-  - [ ] Registrierung
+  - [x] Registrierung nach IP und Benutzerkennung
   - [ ] Chat und weitere API-Endpunkte
-- [ ] Security Header in IIS/web.config vervollständigen
+- [x] Security Header und deaktiviertes Directory Browsing in IIS/web.config
 - [ ] Produktionsfehler protokollieren, ohne interne Details auszugeben
 - [ ] Zentrales Monitoring für IIS, PHP, MySQL und Voice-Service
 - [ ] Alarmierung bei Ausfall von Webseite, Datenbank oder Voice
