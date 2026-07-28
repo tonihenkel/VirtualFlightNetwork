@@ -48,7 +48,7 @@
                                 alt="">
 
                             <?php echo h($divisionName); ?>
-                            <?php if ($isNetworkOnline): ?>
+                            <?php if ($canShowLiveMapLink): ?>
                                 <br>
                                 <a class="profile-map-link"
                                    href="map.php?pilot_id=<?php echo (int)$profileUserId; ?>&follow=1">

@@ -142,7 +142,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $target = $loadUser();
             }
         } catch (Throwable $e) {
-            $error = t('admin_user_save_failed') . ' (' . $e->getMessage() . ')';
+            $errorKeyByReason = [
+                'rank_denied' => 'admin_user_rank_denied',
+                'invalid_fields' => 'admin_user_invalid_fields',
+                'invalid_division' => 'admin_user_invalid_division',
+                'note_required' => 'admin_user_note_required',
+            ];
+            $reason = $e->getMessage();
+            $error = isset($errorKeyByReason[$reason])
+                ? t($errorKeyByReason[$reason])
+                : t('admin_user_save_failed');
         }
     }
 }

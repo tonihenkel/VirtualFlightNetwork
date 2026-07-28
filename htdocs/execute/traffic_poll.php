@@ -31,6 +31,8 @@ function trafficField(string $value): string
 }
 
 $token = trim((string)($_POST['token'] ?? ''));
+$hideInvisibleRequested =
+    (string)($_POST['hide_invisible'] ?? '1') !== '0';
 
 if ($token === '') {
     echo "ERR\tmissing_token\n";
@@ -48,9 +50,12 @@ try {
     $viewerStmt = $pdo->prepare(
         "SELECT
             s.user_id,
+            u.op_permission,
             p.latitude,
             p.longitude
          FROM user_sessions s
+         INNER JOIN users u
+            ON u.id = s.user_id
          INNER JOIN pilot_positions p
             ON p.session_token = s.token
          WHERE s.token = :token
@@ -65,6 +70,12 @@ try {
         echo "ERR\tinvalid_session_or_position\n";
         exit;
     }
+
+    $viewerOpPermission = (int)$viewer['op_permission'];
+    $maySeeInvisible = $viewerOpPermission > 1 && !$hideInvisibleRequested;
+    $invisibleCondition = $maySeeInvisible
+        ? "AND (s.is_invisible = 0 OR u.op_permission <= :viewer_op_permission)"
+        : "AND s.is_invisible = 0";
 
     $trafficStmt = $pdo->prepare(
         "SELECT
@@ -83,14 +94,20 @@ try {
          FROM pilot_positions p
          INNER JOIN user_sessions s
             ON s.token = p.session_token
+         INNER JOIN users u
+            ON u.id = p.user_id
          WHERE p.user_id <> :viewer_user_id
            AND s.is_active = 1
-           AND s.is_invisible = 0
+           $invisibleCondition
            AND p.last_update >= DATE_SUB(NOW(), INTERVAL 10 SECOND)"
     );
-    $trafficStmt->execute([
+    $trafficParameters = [
         'viewer_user_id' => (int)$viewer['user_id']
-    ]);
+    ];
+    if ($maySeeInvisible) {
+        $trafficParameters['viewer_op_permission'] = $viewerOpPermission;
+    }
+    $trafficStmt->execute($trafficParameters);
 
     $nearby = [];
     while ($row = $trafficStmt->fetch(PDO::FETCH_ASSOC)) {
@@ -138,4 +155,3 @@ try {
     error_log('VFN traffic poll failed: ' . $error->getMessage());
     echo "ERR\tserver_error\n";
 }
-

@@ -12,6 +12,26 @@ if (!isset($projectName) || trim($projectName) === '') {
 $isWebLoggedIn =
     isset($_SESSION['web_user_id']);
 
+$viewerOpPermission = 0;
+if ($isWebLoggedIn) {
+    try {
+        $mapPdo = new PDO(
+            "mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4",
+            $dbUser,
+            $dbPass,
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+        );
+        $mapViewerStmt = $mapPdo->prepare(
+            "SELECT op_permission FROM users WHERE id = :id LIMIT 1"
+        );
+        $mapViewerStmt->execute(['id' => (int)$_SESSION['web_user_id']]);
+        $viewerOpPermission =
+            (int)($mapViewerStmt->fetchColumn() ?: 0);
+    } catch (Throwable $error) {
+        error_log('Map viewer permission lookup failed: ' . $error->getMessage());
+    }
+}
+
 if (!isset($showRatings)) {
     $showRatings = false;
 }
@@ -667,6 +687,12 @@ if ($statusMessage !== '') {
             </select>
         </div>
         <a class="map-statistics-link" href="statistics.php"><?php echo htmlspecialchars(t('map_open_statistics')); ?></a>
+        <?php if ($viewerOpPermission > 1): ?>
+            <label class="map-invisible-filter">
+                <input id="hideInvisiblePilots" type="checkbox">
+                <?php echo htmlspecialchars(t('map_hide_invisible_pilots')); ?>
+            </label>
+        <?php endif; ?>
         <input id="pilotSearch" type="search" placeholder="<?php echo htmlspecialchars(t('map_search_pilot')); ?>">
         <div id="pilotDirectoryList"></div>
     </div>
@@ -1064,6 +1090,8 @@ if ($statusMessage !== '') {
     let selectedPilotData = null;
     let followedUserId = TARGET_FOLLOW ? TARGET_PILOT_ID : 0;
     let latestPilots = [];
+    const hideInvisiblePilots =
+        document.getElementById('hideInvisiblePilots');
     let initialTargetHandled = false;
     let heatmapLayer = null;
 
@@ -1511,6 +1539,17 @@ if ($statusMessage !== '') {
     }
 
     document.getElementById('pilotSearch').addEventListener('input', renderPilotDirectory);
+    if (hideInvisiblePilots) {
+        hideInvisiblePilots.checked =
+            localStorage.getItem('vfn_map_hide_invisible') === '1';
+        hideInvisiblePilots.addEventListener('change', function() {
+            localStorage.setItem(
+                'vfn_map_hide_invisible',
+                this.checked ? '1' : '0'
+            );
+            loadPilots();
+        });
+    }
     document.getElementById('pilotDirectoryList').addEventListener('click', function(event) {
         const item = event.target.closest('[data-pilot-user-id]');
         if (!item) return;
@@ -2629,7 +2668,11 @@ if ($statusMessage !== '') {
             }
 
             const activeCallsigns = [];
-            latestPilots = data.pilots || [];
+            latestPilots = (data.pilots || []).filter(function(pilot) {
+                return !hideInvisiblePilots
+                    || !hideInvisiblePilots.checked
+                    || !pilot.is_invisible;
+            });
 
             airportTrafficData =
                 buildAirportTrafficData(

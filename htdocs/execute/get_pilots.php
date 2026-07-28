@@ -190,7 +190,8 @@ try {
             $invisibleCount++;
 
             if (
-                $viewerOpPermission < $pilotPermission
+                $viewerOpPermission <= 1
+                || $viewerOpPermission < $pilotPermission
             ) {
                 continue;
             }

@@ -1268,6 +1268,9 @@ return [
     'admin_user_rank_denied' => 'Du darfst diesen Benutzer nicht bearbeiten.',
     'admin_user_saved' => 'Die Benutzerdaten wurden gespeichert.',
     'admin_user_save_failed' => 'Die Benutzerdaten konnten nicht gespeichert werden.',
+    'admin_user_invalid_fields' => 'Bitte prüfe die eingegebenen Benutzerdaten.',
+    'admin_user_invalid_division' => 'Die ausgewählte Division ist ungültig.',
+    'admin_user_note_required' => 'Bitte gib eine interne Notiz ein.',
     'admin_user_note_saved' => 'Die interne Notiz wurde gespeichert.',
     'admin_user_special_rating' => 'Staff-Rating',
     'admin_user_active' => 'Account aktiv',
@@ -1336,5 +1339,6 @@ return [
     'statistics_empty' => 'Für diesen Zeitraum liegen noch keine Daten vor.',
     'statistics_open_heatmap' => 'Traffic-Heatmap öffnen',
     'map_show_heatmap' => 'Traffic-Heatmap',
+    'map_hide_invisible_pilots' => 'Unsichtbare Spieler ausblenden',
     'map_open_statistics' => 'Top Airports und Top Countries anzeigen',
 ];

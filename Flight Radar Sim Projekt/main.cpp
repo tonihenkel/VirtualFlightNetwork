@@ -138,6 +138,7 @@ static bool gCanUseInvisible = false;
 static bool gIsInvisible = false;
 static bool gRestoreInvisibleOnLogin = false;
 static int gCurrentOpPermission = 0;
+static bool gHideInvisibleTraffic = false;
 
 static bool gCloseFlightplanAfterSend = false;
 static int gPositionUpdateFailureCount = 0;
@@ -1763,6 +1764,8 @@ void LoadInternalEnglishLanguage()
     gText["settings.invisible"] = "Invisible mode";
     gText["settings.invisible_hint"] = "Available from OP-Level 1.";
     gText["settings.invisible_locked"] = "Requires OP-Level 1.";
+    gText["settings.hide_invisible_traffic"] = "Hide invisible pilots";
+    gText["settings.hide_invisible_traffic_hint"] = "Do not display invisible staff aircraft.";
     gText["settings.language"] = "Plugin language";
     gText["settings.language_saved"] = "Language saved.";
     gText["settings.language_de"] = "Deutsch";
@@ -1937,6 +1940,8 @@ void ApplyInternalGermanLanguageFallbacks()
     gText["settings.invisible"] = "Unsichtbar-Modus";
     gText["settings.invisible_hint"] = "Verfuegbar ab OP-Level 1.";
     gText["settings.invisible_locked"] = "Benoetigt OP-Level 1.";
+    gText["settings.hide_invisible_traffic"] = "Unsichtbare Spieler ausblenden";
+    gText["settings.hide_invisible_traffic_hint"] = "Unsichtbare Staff-Flugzeuge nicht anzeigen.";
     gText["settings.language"] = "Plugin-Sprache";
     gText["settings.language_saved"] = "Sprache gespeichert.";
     gText["settings.language_de"] = "Deutsch";
@@ -2038,6 +2043,8 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "settings.invisible=Invisible mode\n";
             enFile << "settings.invisible_hint=Available from OP-Level 1.\n";
             enFile << "settings.invisible_locked=Requires OP-Level 1.\n";
+            enFile << "settings.hide_invisible_traffic=Hide invisible pilots\n";
+            enFile << "settings.hide_invisible_traffic_hint=Do not display invisible staff aircraft.\n";
             enFile << "settings.language=Plugin language\n";
             enFile << "settings.language_saved=Language saved.\n";
             enFile << "settings.language_de=Deutsch\n";
@@ -2208,6 +2215,8 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "settings.invisible=Unsichtbar-Modus\n";
             deFile << "settings.invisible_hint=Verfuegbar ab OP-Level 1.\n";
             deFile << "settings.invisible_locked=Benoetigt OP-Level 1.\n";
+            deFile << "settings.hide_invisible_traffic=Unsichtbare Spieler ausblenden\n";
+            deFile << "settings.hide_invisible_traffic_hint=Unsichtbare Staff-Flugzeuge nicht anzeigen.\n";
             deFile << "settings.language=Plugin-Sprache\n";
             deFile << "settings.language_saved=Sprache gespeichert.\n";
             deFile << "settings.language_de=Deutsch\n";
@@ -3031,6 +3040,7 @@ void LoadConfig()
     gSelectedVoiceOutputDeviceId = "default";
     gVoiceContinuousTransmit = false;
     gRestoreInvisibleOnLogin = false;
+    gHideInvisibleTraffic = false;
 
     CreateDefaultConfigIfMissing();
 
@@ -3102,6 +3112,14 @@ void LoadConfig()
         else if (line == "restore_invisible_on_login=false")
         {
             gRestoreInvisibleOnLogin = false;
+        }
+        else if (line == "hide_invisible_traffic=true")
+        {
+            gHideInvisibleTraffic = true;
+        }
+        else if (line == "hide_invisible_traffic=false")
+        {
+            gHideInvisibleTraffic = false;
         }
     }
 
@@ -3658,6 +3676,8 @@ void SaveConfig()
         << (gVoiceContinuousTransmit ? "true" : "false") << "\n";
     configFile << "restore_invisible_on_login="
         << (gRestoreInvisibleOnLogin ? "true" : "false") << "\n";
+    configFile << "hide_invisible_traffic="
+        << (gHideInvisibleTraffic ? "true" : "false") << "\n";
 
     configFile.close();
 }
@@ -4212,6 +4232,8 @@ void UpdateTrafficPolling(float elapsed)
 
     gTrafficPollElapsed = 0.0f;
     const std::string token = gAuthToken;
+    const bool hideInvisible =
+        gCurrentOpPermission <= 1 || gHideInvisibleTraffic;
 
     if (gTrafficPollThread.joinable())
     {
@@ -4219,12 +4241,14 @@ void UpdateTrafficPolling(float elapsed)
     }
 
     gTrafficPollThread = std::thread(
-        [token]()
+        [token, hideInvisible]()
         {
             const std::string response =
                 HttpPost(
                     gTrafficPollUrl,
                     "token=" + UrlEncode(token)
+                    + "&hide_invisible="
+                    + (hideInvisible ? "1" : "0")
                 );
 
             {
@@ -9513,11 +9537,16 @@ CustomRect GetSettingsInvisibleRect(int left, int top, int right)
     return { left + 24, top - 92, right - 24, top - 132 };
 }
 
+CustomRect GetSettingsHideInvisibleTrafficRect(int left, int top, int right)
+{
+    return { left + 24, top - 138, right - 24, top - 178 };
+}
+
 
 int GetSettingsLanguageTop(int top)
 {
     return gCanUseInvisible
-        ? top - 154
+        ? top - (gCurrentOpPermission > 1 ? 200 : 154)
         : top - 76;
 }
 
@@ -10363,6 +10392,38 @@ void DrawSettingsWindow(
         );
     }
 
+    if (gCurrentOpPermission > 1)
+    {
+        const CustomRect filterRect =
+            GetSettingsHideInvisibleTrafficRect(left, top, right);
+        const CustomRect checkbox =
+            { filterRect.left + 12, filterRect.top - 11,
+              filterRect.left + 30, filterRect.top - 29 };
+
+        DrawFilledRect(filterRect, 0.015f, 0.040f, 0.065f, 1.00f);
+        DrawRectOutline(filterRect, 0.18f, 0.40f, 0.52f, 0.95f);
+        DrawRectOutline(checkbox, 0.08f, 0.55f, 1.00f, 0.95f);
+        if (gHideInvisibleTraffic)
+        {
+            DrawText(
+                checkbox.left + 4, checkbox.top - 13, "X",
+                0.90f, 0.96f, 1.00f
+            );
+        }
+        DrawText(
+            filterRect.left + 44,
+            filterRect.top - 17,
+            T("settings.hide_invisible_traffic"),
+            0.82f, 0.88f, 0.95f
+        );
+        DrawText(
+            filterRect.left + 44,
+            filterRect.top - 31,
+            T("settings.hide_invisible_traffic_hint"),
+            0.50f, 0.66f, 0.78f
+        );
+    }
+
     DrawSettingsLanguageSelect(
         left,
         top,
@@ -10800,6 +10861,25 @@ int SettingsHandleMouse(
 
             ToggleCustomInvisible();
 
+            return 1;
+        }
+
+        if (
+            gCurrentOpPermission > 1
+            && PointInWindowRect(
+                x, y,
+                GetSettingsHideInvisibleTrafficRect(left, top, right),
+                left, top, bottom
+            )
+        )
+        {
+            gSettingsLanguageDropdownOpen = false;
+            gSettingsVoiceInputDropdownOpen = false;
+            gSettingsVoiceOutputDropdownOpen = false;
+            gHideInvisibleTraffic = !gHideInvisibleTraffic;
+            SaveConfig();
+            ClearMultiplayerTraffic();
+            gTrafficPollElapsed = 999.0f;
             return 1;
         }
 

@@ -1253,6 +1253,9 @@
     'admin_user_rank_denied' => 'You are not allowed to edit this user.',
     'admin_user_saved' => 'The user details were saved.',
     'admin_user_save_failed' => 'The user details could not be saved.',
+    'admin_user_invalid_fields' => 'Please check the entered user details.',
+    'admin_user_invalid_division' => 'The selected division is invalid.',
+    'admin_user_note_required' => 'Please enter an internal note.',
     'admin_user_note_saved' => 'The internal note was saved.',
     'admin_user_special_rating' => 'Staff rating',
     'admin_user_active' => 'Account active',
@@ -1321,5 +1324,6 @@
     'statistics_empty' => 'No data is available for this period yet.',
     'statistics_open_heatmap' => 'Open traffic heatmap',
     'map_show_heatmap' => 'Traffic heatmap',
+    'map_hide_invisible_pilots' => 'Hide invisible pilots',
     'map_open_statistics' => 'Show top airports and top countries',
 ];

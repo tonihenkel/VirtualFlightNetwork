@@ -225,11 +225,11 @@ if ($favouriteAircraftData) {
 }
 
 $onlineStmt = $pdo->prepare(
-    "SELECT p.user_id
+    "SELECT p.user_id, s.is_invisible
      FROM pilot_positions p
      INNER JOIN user_sessions s
-        ON s.user_id = p.user_id
-       AND s.is_active = 1
+        ON s.token = p.session_token
+        AND s.is_active = 1
      WHERE p.user_id = :user_id
         AND p.last_update >= DATE_SUB(NOW(), INTERVAL 15 SECOND)
         AND s.last_seen >= DATE_SUB(NOW(), INTERVAL 15 SECOND)
@@ -240,10 +240,21 @@ $onlineStmt->execute([
     'user_id' => $profileUserId
 ]);
 
-$isNetworkOnline =
-    $onlineStmt->fetch(PDO::FETCH_ASSOC)
-    ? true
-    : false;
+$onlineSession = $onlineStmt->fetch(PDO::FETCH_ASSOC);
+$isNetworkOnline = $onlineSession !== false;
+$isProfileInvisible =
+    $isNetworkOnline
+    && (int)($onlineSession['is_invisible'] ?? 0) === 1;
+$viewerOpPermission = (int)($viewerUser['op_permission'] ?? 0);
+$canShowLiveMapLink =
+    $isNetworkOnline
+    && (
+        !$isProfileInvisible
+        || (
+            $viewerOpPermission > 1
+            && $viewerOpPermission >= (int)$profileUser['op_permission']
+        )
+    );
 
 $displayName =
     $profileUser['real_name']
