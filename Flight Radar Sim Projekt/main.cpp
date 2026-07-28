@@ -6,6 +6,8 @@
 #define XPLM210 1
 #define XPLM300 1
 #define XPLM301 1
+#define XPLM303 1
+#define XPLM400 1
 
 #include "XPLMPlugin.h"
 #include "XPLMUtilities.h"
@@ -18,6 +20,8 @@
 #include "XPWidgets.h"
 #include "XPStandardWidgets.h"
 #include "XPWidgetUtils.h"
+#include "XPMPAircraft.h"
+#include "XPMPMultiplayer.h"
 
 #include <algorithm>
 #include <cctype>
@@ -29,6 +33,8 @@
 #include <string>
 #include <sstream>
 #include <map>
+#include <memory>
+#include <set>
 #include <vector>
 #include <atomic>
 #include <mutex>
@@ -116,6 +122,9 @@ gServerAddress + "/execute/chat_send.php";
 static const std::string gChatPollUrl =
 gServerAddress + "/execute/chat_poll.php";
 
+static const std::string gTrafficPollUrl =
+gServerAddress + "/execute/traffic_poll.php";
+
 static const std::string gDatisUrl =
 gServerAddress + "/execute/datis.php";
 
@@ -139,6 +148,286 @@ static std::atomic<bool> gPositionUpdateLastSuccess(true);
 static std::mutex gPositionUpdateResultMutex;
 static std::string gPositionUpdateLastResponse = "";
 static std::thread gPositionUpdateThread;
+
+std::string ExtractIcaoAirlineFromCallsign(
+    const std::string& callsign
+)
+{
+    if (callsign.size() < 4)
+    {
+        return "";
+    }
+
+    if (
+        std::isalpha(
+            static_cast<unsigned char>(callsign[0])
+        )
+        && std::isalpha(
+            static_cast<unsigned char>(callsign[1])
+        )
+        && std::isalpha(
+            static_cast<unsigned char>(callsign[2])
+        )
+        && std::isdigit(
+            static_cast<unsigned char>(callsign[3])
+        )
+    )
+    {
+        std::string airline =
+            callsign.substr(0, 3);
+
+        std::transform(
+            airline.begin(),
+            airline.end(),
+            airline.begin(),
+            [](unsigned char character)
+            {
+                return static_cast<char>(
+                    std::toupper(character)
+                );
+            }
+        );
+
+        return airline;
+    }
+
+    return "";
+}
+
+
+class VfnTrafficAircraft final : public XPMP2::Aircraft
+{
+public:
+    explicit VfnTrafficAircraft(
+        int userId,
+        const std::string& callsign,
+        const std::string& aircraftIcao
+    ) :
+        XPMP2::Aircraft(
+            aircraftIcao.empty() ? "C172" : aircraftIcao,
+            ExtractIcaoAirlineFromCallsign(callsign),
+            "",
+            static_cast<XPMPPlaneID>(
+                0x0F0000u + (static_cast<unsigned int>(userId) & 0xFFFFu)
+            ),
+            ""
+        ),
+        userId(userId)
+    {
+        label = callsign;
+        colLabel[0] = 0.20f;
+        colLabel[1] = 0.85f;
+        colLabel[2] = 1.00f;
+        colLabel[3] = 1.00f;
+    }
+
+    void SetTarget(
+        const std::string& callsign,
+        double latitude,
+        double longitude,
+        double altitudeMeters,
+        float heading,
+        float pitch,
+        float roll,
+        float airspeed,
+        float verticalSpeed,
+        bool onGround
+    )
+    {
+        label = callsign;
+        const float receivedAt =
+            XPLMGetElapsedTime();
+        const double altitudeFeet =
+            altitudeMeters * 3.28083989501312;
+
+        if (!hasPosition)
+        {
+            currentLatitude = latitude;
+            currentLongitude = longitude;
+            currentAltitudeFeet = altitudeFeet;
+            currentHeading = heading;
+            currentPitch = pitch;
+            currentRoll = roll;
+            hasPosition = true;
+        }
+        else
+        {
+            const double sampleSeconds =
+                static_cast<double>(
+                    receivedAt - targetReceivedAt
+                );
+
+            if (sampleSeconds >= 0.2 && sampleSeconds <= 5.0)
+            {
+                velocityLatitudePerSecond =
+                    (latitude - targetLatitude)
+                    / sampleSeconds;
+                velocityLongitudePerSecond =
+                    (longitude - targetLongitude)
+                    / sampleSeconds;
+                velocityAltitudeFeetPerSecond =
+                    (altitudeFeet - targetAltitudeFeet)
+                    / sampleSeconds;
+                hasNetworkVelocity = true;
+            }
+        }
+
+        targetLatitude = latitude;
+        targetLongitude = longitude;
+        targetAltitudeFeet = altitudeFeet;
+        targetHeading = heading;
+        targetPitch = pitch;
+        targetRoll = roll;
+        targetAirspeed = airspeed;
+        targetVerticalSpeed = verticalSpeed;
+        targetOnGround = onGround;
+        targetReceivedAt = receivedAt;
+        missedPolls = 0;
+    }
+
+    void UpdatePosition(float elapsed, int) override
+    {
+        if (!hasPosition)
+        {
+            return;
+        }
+
+        const double factor =
+            std::clamp(static_cast<double>(elapsed) * 3.0, 0.0, 1.0);
+
+        const double predictionSeconds =
+            std::clamp(
+                static_cast<double>(
+                    XPLMGetElapsedTime() - targetReceivedAt
+                ),
+                0.0,
+                4.0
+            );
+        double predictedLatitude = targetLatitude;
+        double predictedLongitude = targetLongitude;
+        double predictedAltitudeFeet = targetAltitudeFeet;
+
+        if (hasNetworkVelocity)
+        {
+            // Move continuously in every rendered frame based on the last two
+            // actual network samples. The next sample only corrects drift.
+            predictedLatitude +=
+                velocityLatitudePerSecond * predictionSeconds;
+            predictedLongitude +=
+                velocityLongitudePerSecond * predictionSeconds;
+            predictedAltitudeFeet +=
+                velocityAltitudeFeetPerSecond * predictionSeconds;
+        }
+        else
+        {
+            // First sample: use the reported aircraft data until a second
+            // network position allows calculating the real movement vector.
+            const double distanceNm =
+                (std::max)(0.0f, targetAirspeed)
+                * predictionSeconds
+                / 3600.0;
+            const double headingRadians =
+                static_cast<double>(targetHeading)
+                * 3.14159265358979323846
+                / 180.0;
+            const double longitudeScale =
+                (std::max)(
+                    0.15,
+                    std::cos(
+                        targetLatitude
+                        * 3.14159265358979323846
+                        / 180.0
+                    )
+                );
+
+            predictedLatitude +=
+                std::cos(headingRadians) * distanceNm / 60.0;
+            predictedLongitude +=
+                std::sin(headingRadians)
+                * distanceNm
+                / (60.0 * longitudeScale);
+            predictedAltitudeFeet +=
+                static_cast<double>(targetVerticalSpeed)
+                * predictionSeconds
+                / 60.0;
+        }
+
+        currentLatitude +=
+            (predictedLatitude - currentLatitude) * factor;
+        currentLongitude +=
+            (predictedLongitude - currentLongitude) * factor;
+        currentAltitudeFeet +=
+            (predictedAltitudeFeet - currentAltitudeFeet) * factor;
+
+        auto smoothAngle = [factor](float current, float target)
+        {
+            float difference =
+                std::fmod(target - current + 540.0f, 360.0f) - 180.0f;
+            return current + difference * static_cast<float>(factor);
+        };
+
+        currentHeading =
+            smoothAngle(currentHeading, targetHeading);
+        currentPitch +=
+            (targetPitch - currentPitch) * static_cast<float>(factor);
+        currentRoll +=
+            (targetRoll - currentRoll) * static_cast<float>(factor);
+
+        SetLocation(
+            currentLatitude,
+            currentLongitude,
+            currentAltitudeFeet,
+            targetOnGround
+        );
+        SetHeading(currentHeading);
+        SetPitch(currentPitch);
+        SetRoll(currentRoll);
+        SetGearRatio(targetOnGround ? 1.0f : 0.0f);
+        SetThrustRatio(
+            std::clamp(targetAirspeed / 180.0f, 0.15f, 1.0f)
+        );
+        SetLightsBeacon(true);
+        SetLightsNav(true);
+        SetLightsStrobe(!targetOnGround);
+    }
+
+    int userId = 0;
+    int missedPolls = 0;
+
+private:
+    bool hasPosition = false;
+    double currentLatitude = 0.0;
+    double currentLongitude = 0.0;
+    double currentAltitudeFeet = 0.0;
+    float currentHeading = 0.0f;
+    float currentPitch = 0.0f;
+    float currentRoll = 0.0f;
+
+    double targetLatitude = 0.0;
+    double targetLongitude = 0.0;
+    double targetAltitudeFeet = 0.0;
+    float targetHeading = 0.0f;
+    float targetPitch = 0.0f;
+    float targetRoll = 0.0f;
+    float targetAirspeed = 0.0f;
+    float targetVerticalSpeed = 0.0f;
+    float targetReceivedAt = 0.0f;
+    bool hasNetworkVelocity = false;
+    double velocityLatitudePerSecond = 0.0;
+    double velocityLongitudePerSecond = 0.0;
+    double velocityAltitudeFeetPerSecond = 0.0;
+    bool targetOnGround = false;
+};
+
+static bool gMultiplayerInitialized = false;
+static std::map<int, std::unique_ptr<VfnTrafficAircraft>>
+    gTrafficAircraft;
+static float gTrafficPollElapsed = 0.0f;
+static std::atomic<bool> gTrafficPollInProgress(false);
+static std::atomic<bool> gTrafficPollResultReady(false);
+static std::mutex gTrafficPollResultMutex;
+static std::string gTrafficPollLastResponse;
+static std::thread gTrafficPollThread;
 
 static const int gHttpResolveTimeoutMs = 1500;
 static const int gHttpConnectTimeoutMs = 1500;
@@ -3786,6 +4075,328 @@ std::string HttpPost(
     }
 
     return response;
+}
+
+void ClearMultiplayerTraffic()
+{
+    gTrafficAircraft.clear();
+}
+
+
+void ProcessTrafficPollResult()
+{
+    if (!gTrafficPollResultReady.exchange(false))
+    {
+        return;
+    }
+
+    std::string response;
+    {
+        std::lock_guard<std::mutex> lock(
+            gTrafficPollResultMutex
+        );
+        response = gTrafficPollLastResponse;
+    }
+
+    if (response.rfind("OK\t", 0) != 0)
+    {
+        return;
+    }
+
+    for (auto& item : gTrafficAircraft)
+    {
+        ++item.second->missedPolls;
+    }
+
+    std::istringstream responseStream(response);
+    std::string line;
+    std::getline(responseStream, line);
+
+    while (std::getline(responseStream, line))
+    {
+        if (line.empty())
+        {
+            continue;
+        }
+
+        const std::vector<std::string> fields =
+            SplitString(line, '\t');
+
+        if (fields.size() < 12)
+        {
+            continue;
+        }
+
+        try
+        {
+            const int userId = std::stoi(fields[0]);
+            auto found = gTrafficAircraft.find(userId);
+
+            if (found == gTrafficAircraft.end())
+            {
+                auto aircraft =
+                    std::make_unique<VfnTrafficAircraft>(
+                        userId,
+                        fields[1],
+                        fields[2]
+                    );
+                found =
+                    gTrafficAircraft.emplace(
+                        userId,
+                        std::move(aircraft)
+                    ).first;
+            }
+
+            found->second->SetTarget(
+                fields[1],
+                std::stod(fields[3]),
+                std::stod(fields[4]),
+                std::stod(fields[5]),
+                std::stof(fields[6]),
+                std::stof(fields[7]),
+                std::stof(fields[8]),
+                std::stof(fields[9]),
+                std::stof(fields[10]),
+                fields[11] == "1"
+            );
+        }
+        catch (const std::exception& error)
+        {
+            XPLMDebugString(
+                "VFN Multiplayer: Invalid traffic row: "
+            );
+            XPLMDebugString(error.what());
+            XPLMDebugString("\n");
+        }
+    }
+
+    for (auto iterator = gTrafficAircraft.begin();
+         iterator != gTrafficAircraft.end();)
+    {
+        if (iterator->second->missedPolls >= 3)
+        {
+            iterator =
+                gTrafficAircraft.erase(iterator);
+        }
+        else
+        {
+            ++iterator;
+        }
+    }
+}
+
+
+void UpdateTrafficPolling(float elapsed)
+{
+    if (!gMultiplayerInitialized)
+    {
+        return;
+    }
+
+    if (!gLoggedIn || gAuthToken.empty())
+    {
+        gTrafficPollElapsed = 0.0f;
+        ClearMultiplayerTraffic();
+        return;
+    }
+
+    gTrafficPollElapsed += elapsed;
+
+    if (
+        gTrafficPollElapsed < 1.0f
+        || gTrafficPollInProgress.exchange(true)
+    )
+    {
+        return;
+    }
+
+    gTrafficPollElapsed = 0.0f;
+    const std::string token = gAuthToken;
+
+    if (gTrafficPollThread.joinable())
+    {
+        gTrafficPollThread.join();
+    }
+
+    gTrafficPollThread = std::thread(
+        [token]()
+        {
+            const std::string response =
+                HttpPost(
+                    gTrafficPollUrl,
+                    "token=" + UrlEncode(token)
+                );
+
+            {
+                std::lock_guard<std::mutex> lock(
+                    gTrafficPollResultMutex
+                );
+                gTrafficPollLastResponse = response;
+            }
+
+            gTrafficPollInProgress = false;
+            gTrafficPollResultReady = true;
+        }
+    );
+}
+
+
+bool InitializeMultiplayer()
+{
+    if (gMultiplayerInitialized)
+    {
+        return true;
+    }
+
+    const std::string resourcePath =
+        gPluginDirectory + "\\resources\\XPMP2";
+
+    auto xpmpPreferences =
+        [](const char* section, const char* key, int defaultValue) -> int
+        {
+            if (
+                section
+                && key
+                && std::strcmp(section, XPMP_CFG_SEC_MODELS) == 0
+                && (
+                    std::strcmp(key, XPMP_CFG_ITM_REPLDATAREFS) == 0
+                    || std::strcmp(key, XPMP_CFG_ITM_REPLTEXTURE) == 0
+                )
+            )
+            {
+                return 1;
+            }
+
+            return defaultValue;
+        };
+
+    const char* result =
+        XPMPMultiplayerInit(
+            "VFN Network Pilot Client",
+            resourcePath.c_str(),
+            xpmpPreferences,
+            "C172",
+            "VFN"
+        );
+
+    if (result && result[0] != '\0')
+    {
+        XPLMDebugString(
+            "VFN Multiplayer: XPMP2 initialization failed: "
+        );
+        XPLMDebugString(result);
+        XPLMDebugString("\n");
+        return false;
+    }
+
+    result =
+        XPMPLoadCSLPackage(resourcePath.c_str());
+
+    if (result && result[0] != '\0')
+    {
+        XPLMDebugString(
+            "VFN Multiplayer: CSL loading failed: "
+        );
+        XPLMDebugString(result);
+        XPLMDebugString("\n");
+        XPMPMultiplayerCleanup();
+        return false;
+    }
+
+    // X-CSL Updater normally installs one shared library next to plugins:
+    //   <X-Plane>/Resources/plugins/IVAO_CSL/CSL/<aircraft ICAO>
+    // Support the current thin development layout and both common packaged
+    // layouts without copying the potentially very large model library.
+    const std::vector<std::filesystem::path> xCslCandidates = {
+        std::filesystem::path(gPluginDirectory)
+            / "IVAO_CSL" / "CSL",
+        std::filesystem::path(gPluginDirectory)
+            / ".." / "IVAO_CSL" / "CSL",
+        std::filesystem::path(gPluginDirectory)
+            / ".." / ".." / "IVAO_CSL" / "CSL"
+    };
+    std::set<std::string> checkedXCslPaths;
+
+    for (const std::filesystem::path& candidate : xCslCandidates)
+    {
+        std::error_code pathError;
+        const std::filesystem::path normalized =
+            std::filesystem::weakly_canonical(
+                candidate,
+                pathError
+            );
+
+        if (
+            pathError
+            || normalized.empty()
+            || !std::filesystem::is_directory(
+                normalized,
+                pathError
+            )
+        )
+        {
+            continue;
+        }
+
+        const std::string xCslPath =
+            normalized.string();
+
+        if (!checkedXCslPaths.insert(xCslPath).second)
+        {
+            continue;
+        }
+
+        const int modelsBefore =
+            XPMPGetNumberOfInstalledModels();
+        const char* xCslResult =
+            XPMPLoadCSLPackage(xCslPath.c_str());
+
+        if (xCslResult && xCslResult[0] != '\0')
+        {
+            XPLMDebugString(
+                "VFN Multiplayer: X-CSL loading failed at "
+            );
+            XPLMDebugString(xCslPath.c_str());
+            XPLMDebugString(": ");
+            XPLMDebugString(xCslResult);
+            XPLMDebugString("\n");
+        }
+        else
+        {
+            const int loadedModels =
+                XPMPGetNumberOfInstalledModels()
+                - modelsBefore;
+            char modelLog[512] = {};
+            sprintf_s(
+                modelLog,
+                "VFN Multiplayer: Loaded %d X-CSL models from %s\n",
+                loadedModels,
+                xCslPath.c_str()
+            );
+            XPLMDebugString(modelLog);
+        }
+
+        // There shall only be one shared installation per simulator.
+        break;
+    }
+
+    gMultiplayerInitialized = true;
+    XPLMDebugString(
+        "VFN Multiplayer: XPMP2 initialized.\n"
+    );
+    return true;
+}
+
+
+void ShutdownMultiplayer()
+{
+    ClearMultiplayerTraffic();
+
+    if (gMultiplayerInitialized)
+    {
+        XPMPMultiplayerCleanup();
+        gMultiplayerInitialized = false;
+    }
 }
 
 
@@ -17095,6 +17706,7 @@ float FlightLoopCallback(
     ProcessChatSendResult();
     ProcessDatisFetchResult();
     ProcessNetworkStatusUpdateResult();
+    ProcessTrafficPollResult();
 
     PollCompactChatMouseFocus();
     PollWindowsChatKeyboard();
@@ -17106,6 +17718,9 @@ float FlightLoopCallback(
         inElapsedSinceLastCall
     );
     UpdateDatisFetch(
+        inElapsedSinceLastCall
+    );
+    UpdateTrafficPolling(
         inElapsedSinceLastCall
     );
 
@@ -17497,6 +18112,7 @@ PLUGIN_API int XPluginStart(
 PLUGIN_API void XPluginStop(void)
 {
     StopVoiceService();
+    ShutdownMultiplayer();
 
     if (gTransponderIdentCommand != nullptr)
     {
@@ -17566,6 +18182,11 @@ PLUGIN_API void XPluginStop(void)
     if (gDatisFetchThread.joinable())
     {
         gDatisFetchThread.join();
+    }
+
+    if (gTrafficPollThread.joinable())
+    {
+        gTrafficPollThread.join();
     }
 
     if (gLoggedIn && !gAuthToken.empty())
@@ -17718,6 +18339,8 @@ PLUGIN_API void XPluginStop(void)
 
 PLUGIN_API void XPluginDisable(void)
 {
+    ShutdownMultiplayer();
+
     XPLMDebugString(
         T("debug.plugin_disabled")
     );
@@ -17726,6 +18349,13 @@ PLUGIN_API void XPluginDisable(void)
 
 PLUGIN_API int XPluginEnable(void)
 {
+    if (!InitializeMultiplayer())
+    {
+        XPLMDebugString(
+            "VFN Multiplayer: Rendering disabled; core plugin remains active.\n"
+        );
+    }
+
     XPLMDebugString(
         T("debug.plugin_enabled")
     );

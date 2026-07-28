@@ -283,11 +283,28 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 
 # 11. Multiplayer
 
-- [ ] Multiplayer-Flugzeuge in X-Plane darstellen
-- [ ] Aircraft Visibility
-- [ ] Model Matching
-- [ ] Netzwerkverkehr und Interpolation
-- [ ] Umgang mit Paketverlust und veralteten Positionen
+- [-] Multiplayer-Flugzeuge in X-Plane darstellen
+  - [x] XPMP2 3.6.1 statisch in den Windows-x64-Plugin-Build eingebunden
+  - [x] Kompatibilitaet mit X-Plane 11.55r2 und X-Plane 12 vorgesehen
+  - [x] Erste Stufe: maximal 10 Flugzeuge innerhalb von 50 NM
+  - [ ] Laufzeittest mit zwei verbundenen Simulatoren
+- [-] Aircraft Visibility
+  - [x] Nur aktive Positionen der letzten 10 Sekunden
+  - [x] Unsichtbare Staff-Sitzungen werden nicht ausgeliefert
+  - [ ] Einstellbare Sichtweite und Flugzeuganzahl
+- [-] Model Matching
+  - [x] Neutrales, leichtgewichtiges VFN-OBJ8-Fallbackmodell
+  - [x] XPMP2-Ressourcen und CSL-Paket im Download-ZIP
+  - [ ] Reale CSL-Modellpakete und ICAO-/Airline-/Livery-Matching
+- [-] Netzwerkverkehr und Interpolation
+  - [x] Eigener authentifizierter, kompakter Traffic-Endpunkt
+  - [x] Asynchroner Poll im Plugin ohne Blockierung des X-Plane-Threads
+  - [x] Geglaettete Position, Hoehe und Fluglage
+  - [ ] Adaptive Update-Rate und Extrapolation nach Geschwindigkeit
+- [-] Umgang mit Paketverlust und veralteten Positionen
+  - [x] Fehlgeschlagene Polls behalten vorhandene Flugzeuge
+  - [x] Nicht mehr gelieferte Flugzeuge werden nach drei erfolgreichen Polls entfernt
+  - [ ] Telemetrie und sichtbare Diagnose fuer Traffic-Verbindungsfehler
 
 # 12. Statistiksystem
 

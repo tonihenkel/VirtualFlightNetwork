@@ -1,0 +1,56 @@
+name: Build Linux / CMake
+description: Build library on Linux based on a CMake setup
+author: TwinFan
+
+inputs:                       
+  libName:
+    description: "Library's name, used as file name"
+    required: true
+  flags:
+    description: "Flags to be passed to CMake"
+    required: false
+
+outputs:
+  lib-file-name:
+    description: Path to the resulting lib file
+    value: ${{ steps.return.outputs.lib-file-name }}
+
+runs:
+  using: "composite"
+  steps:
+  - name: Install required libs   # We want Ninja and OpenGL libs
+    shell: bash
+    run: |
+      sudo apt-get update -y
+      sudo apt-get install -y ninja-build libglu1-mesa-dev freeglut3-dev mesa-common-dev
+  - name: Prepare
+    shell: bash
+    run: |
+      mkdir build-lin
+  - name: CMake
+    shell: bash
+    run: |
+      cd build-lin
+      pwd
+      cmake -G Ninja ${{ inputs.flags }} ..
+  - name: Build
+    shell: bash
+    run: |
+      cd build-lin
+      pwd
+      ninja
+  - name: Test for Target
+    shell: bash
+    env:
+      TARGET_LIB: build-lin/lib${{ inputs.libName }}.a
+    run: |
+      if [[ ! -f "$TARGET_LIB" ]]; then
+        echo Expected target build not found: "$TARGET_LIB"
+        exit 1
+      fi
+  - name: Return Value
+    id: return
+    shell: bash
+    env:
+      TARGET_LIB: build-lin/lib${{ inputs.libName }}.a
+    run: echo "lib-file-name=$(echo $TARGET_LIB)" >> $GITHUB_OUTPUT
