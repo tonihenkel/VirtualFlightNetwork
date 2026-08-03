@@ -1,11 +1,21 @@
 <?php
 
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
+startVfnWebSession();
 require_once 'execute/config.php';
 require_once 'includes/auth_security.php';
 require_once 'includes/ban_status.php';
+require_once 'includes/language_preferences.php';
 
-$language = strtolower((string)($_GET['lang'] ?? $_POST['lang'] ?? 'de')) === 'en' ? 'en' : 'de';
+$language = strtolower((string)(
+    $_GET['lang']
+    ?? $_POST['lang']
+    ?? $_COOKIE[VFN_LANGUAGE_COOKIE]
+    ?? $_SESSION['language']
+    ?? 'de'
+)) === 'en' ? 'en' : 'de';
+$_SESSION['language'] = $language;
+vfnStoreLanguageCookie($language);
 $de = $language === 'de';
 $message = '';
 $isError = false;

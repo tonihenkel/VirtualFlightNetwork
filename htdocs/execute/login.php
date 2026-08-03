@@ -13,6 +13,7 @@ $username = $_POST["username"] ?? "";
 $password = $_POST["password"] ?? "";
 $callsign = $_POST["callsign"] ?? "";
 $pluginVersion = trim((string)($_POST["plugin_version"] ?? ""));
+$spectatorMode = (string)($_POST["spectator"] ?? "0") === "1";
 
 $username = trim($username);
 $callsign = strtoupper(trim($callsign));
@@ -162,7 +163,8 @@ try {
                 token,
                 callsign,
                 is_active,
-                is_invisible
+                is_invisible,
+                is_spectator
             )
          VALUES
             (
@@ -170,14 +172,16 @@ try {
                 :token,
                 :callsign,
                 1,
-                0
+                0,
+                :is_spectator
             )"
     );
 
     $stmt->execute([
         "user_id" => (int)$user["id"],
         "token" => $token,
-        "callsign" => $callsign
+        "callsign" => $callsign,
+        "is_spectator" => $spectatorMode ? 1 : 0
     ]);
 
     echo json_encode([
@@ -196,6 +200,7 @@ try {
         "op_permission" => (int)$user["op_permission"],
         "can_use_invisible" => $canUseInvisible,
         "is_invisible" => false,
+        "is_spectator" => $spectatorMode,
         "callsign" => $callsign,
         "token" => $token
     ]);

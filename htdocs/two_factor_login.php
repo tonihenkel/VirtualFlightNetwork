@@ -1,6 +1,8 @@
 <?php
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
+startVfnWebSession();
 require_once 'execute/config.php';
+require_once 'includes/language_preferences.php';
 require_once 'includes/two_factor.php';
 require_once 'includes/language.php';
 require_once 'includes/csrf.php';
@@ -24,7 +26,8 @@ try {
     $stmt = $pdo->prepare(
         "SELECT c.id challenge_id, c.user_id, c.code_hash, c.method, c.attempts,
                 u.username, u.email, u.real_name, u.password_hash, u.op_permission,
-                u.rating_pilot, u.rating_atc, u.rating_special, f.totp_secret
+                u.rating_pilot, u.rating_atc, u.rating_special,
+                u.preferred_language, f.totp_secret
          FROM two_factor_challenges c
          JOIN users u ON u.id = c.user_id
          JOIN user_two_factor f ON f.user_id = c.user_id AND f.method = c.method
@@ -72,6 +75,26 @@ try {
             }
             $_SESSION['web_auth_fingerprint'] =
                 hash('sha256', (string)$challenge['password_hash']);
+            $loginLanguage =
+                vfnNormalizeLanguage($challenge['preferred_language'] ?? '');
+            if ($loginLanguage === '') {
+                $loginLanguage = vfnNormalizeLanguage(
+                    $_SESSION['language']
+                    ?? $_COOKIE[VFN_LANGUAGE_COOKIE]
+                    ?? ''
+                );
+                if ($loginLanguage !== '') {
+                    vfnSaveUserLanguage(
+                        $pdo,
+                        (int)$challenge['user_id'],
+                        $loginLanguage
+                    );
+                }
+            }
+            if ($loginLanguage !== '') {
+                $_SESSION['language'] = $loginLanguage;
+                vfnStoreLanguageCookie($loginLanguage);
+            }
             $pdo->prepare("UPDATE users SET last_login = NOW() WHERE id = :id")
                 ->execute(['id' => $challenge['user_id']]);
             unset($_SESSION['two_factor_challenge_token']);

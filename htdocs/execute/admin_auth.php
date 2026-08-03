@@ -1,8 +1,7 @@
 <?php
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+require_once __DIR__ . '/../includes/session_bootstrap.php';
+startVfnWebSession();
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/../includes/web_session.php';

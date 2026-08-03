@@ -45,6 +45,48 @@ $onGround =
 
 $onGround =
     $onGround === 1 ? 1 : 0;
+$aiControlsAircraft =
+    (int)($_POST['ai_controls_aircraft'] ?? 0) === 1 ? 1 : 0;
+$aiDestinationIcao =
+    strtoupper(trim((string)($_POST['ai_destination_icao'] ?? '')));
+if (
+    $aiControlsAircraft !== 1
+    || !preg_match('/^[A-Z0-9]{2,8}$/', $aiDestinationIcao)
+) {
+    $aiDestinationIcao = '';
+}
+
+$ratioValue = static function (string $name): float {
+    return max(
+        0.0,
+        min(1.0, (float)($_POST[$name] ?? 0.0))
+    );
+};
+$switchValue = static function (string $name): int {
+    return (int)($_POST[$name] ?? 0) === 1 ? 1 : 0;
+};
+$gearRatio = $ratioValue('gear_ratio');
+$flapRatio = $ratioValue('flap_ratio');
+$speedbrakeRatio = $ratioValue('speedbrake_ratio');
+$thrustRatio = $ratioValue('thrust_ratio');
+$engineRpm = max(0.0, (float)($_POST['engine_rpm'] ?? 0.0));
+$yokePitchRatio = max(
+    -1.0,
+    min(1.0, (float)($_POST['yoke_pitch_ratio'] ?? 0.0))
+);
+$yokeRollRatio = max(
+    -1.0,
+    min(1.0, (float)($_POST['yoke_roll_ratio'] ?? 0.0))
+);
+$yokeHeadingRatio = max(
+    -1.0,
+    min(1.0, (float)($_POST['yoke_heading_ratio'] ?? 0.0))
+);
+$taxiLights = $switchValue('taxi_lights');
+$landingLights = $switchValue('landing_lights');
+$beaconLights = $switchValue('beacon_lights');
+$strobeLights = $switchValue('strobe_lights');
+$navLights = $switchValue('nav_lights');
 
 $com1 = $_POST["com1"] ?? 0;
 $com2 = $_POST["com2"] ?? 0;
@@ -246,6 +288,86 @@ function resolveFlightplanLandingAirport(
     return $closestAirportCode;
 }
 
+function findNearestLandingAirport(
+    PDO $pdo,
+    float $landingLatitude,
+    float $landingLongitude,
+    float $maximumDistanceNm = 15.0
+): ?array {
+    $latitudeWindow = $maximumDistanceNm / 60.0;
+    $longitudeScale = max(0.15, abs(cos(deg2rad($landingLatitude))));
+    $longitudeWindow = $maximumDistanceNm / (60.0 * $longitudeScale);
+
+    $airportStmt = $pdo->prepare(
+        "SELECT ident, icao_code, gps_code, latitude_deg, longitude_deg
+         FROM airports
+         WHERE latitude_deg BETWEEN :minimum_latitude AND :maximum_latitude
+           AND longitude_deg BETWEEN :minimum_longitude AND :maximum_longitude"
+    );
+    $airportStmt->execute([
+        'minimum_latitude' => $landingLatitude - $latitudeWindow,
+        'maximum_latitude' => $landingLatitude + $latitudeWindow,
+        'minimum_longitude' => $landingLongitude - $longitudeWindow,
+        'maximum_longitude' => $landingLongitude + $longitudeWindow
+    ]);
+
+    $nearestAirport = null;
+    foreach ($airportStmt->fetchAll(PDO::FETCH_ASSOC) as $airportRow) {
+        $distanceNm = calculateDistanceNm(
+            $landingLatitude,
+            $landingLongitude,
+            (float)$airportRow['latitude_deg'],
+            (float)$airportRow['longitude_deg']
+        );
+        if ($distanceNm > $maximumDistanceNm) {
+            continue;
+        }
+        if ($nearestAirport !== null && $distanceNm >= $nearestAirport['distance_nm']) {
+            continue;
+        }
+        $code = strtoupper(trim((string)($airportRow['icao_code'] ?: $airportRow['gps_code'] ?: $airportRow['ident'])));
+        $nearestAirport = [
+            'code' => $code !== '' ? $code : null,
+            'distance_nm' => $distanceNm
+        ];
+    }
+
+    return $nearestAirport;
+}
+
+function distanceToAirportCode(
+    PDO $pdo,
+    ?string $airportCode,
+    float $latitude,
+    float $longitude
+): ?float {
+    $airportCode = normalizeLandingAirportCode($airportCode);
+    if ($airportCode === null) {
+        return null;
+    }
+    $stmt = $pdo->prepare(
+        "SELECT latitude_deg, longitude_deg
+         FROM airports
+         WHERE ident = :ident OR icao_code = :icao OR gps_code = :gps
+         LIMIT 1"
+    );
+    $stmt->execute([
+        'ident' => $airportCode,
+        'icao' => $airportCode,
+        'gps' => $airportCode
+    ]);
+    $airport = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$airport) {
+        return null;
+    }
+    return calculateDistanceNm(
+        $latitude,
+        $longitude,
+        (float)$airport['latitude_deg'],
+        (float)$airport['longitude_deg']
+    );
+}
+
 try {
     $pdo = new PDO(
         "mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4",
@@ -262,8 +384,11 @@ try {
             s.was_airborne,
             s.last_vertical_speed,
             s.is_invisible,
+            s.is_spectator,
             u.username,
-            u.op_permission
+            u.op_permission,
+            u.rating_atc,
+            u.rating_special
          FROM user_sessions s
          INNER JOIN users u ON u.id = s.user_id
          WHERE s.token = :token
@@ -299,7 +424,12 @@ try {
                 "SELECT activity_key, activity_value
                  FROM user_activity_log
                  WHERE user_id = :user_id
-                   AND activity_key IN ('activity_kicked', 'activity_kicked_spam', 'activity_banned')
+                   AND activity_key IN (
+                       'activity_kicked',
+                       'activity_kicked_spam',
+                       'activity_kicked_ground_vehicle_rank',
+                       'activity_banned'
+                   )
                    AND created_at >= DATE_SUB(:session_ended_at, INTERVAL 5 SECOND)
                  ORDER BY id DESC
                  LIMIT 1"
@@ -315,10 +445,14 @@ try {
                     (string)$kickActivity["activity_key"] === "activity_kicked_spam";
                 $isBan =
                     (string)$kickActivity["activity_key"] === "activity_banned";
+                $isGroundVehicleRankKick =
+                    (string)$kickActivity["activity_key"] ===
+                    "activity_kicked_ground_vehicle_rank";
                 echo json_encode([
                     "success" => false,
                     "kicked" => true,
                     "spam_kick" => $isSpamKick,
+                    "ground_vehicle_rank_kick" => $isGroundVehicleRankKick,
                     "message" => $isSpamKick
                         ? "Automatic chat spam protection triggered."
                         : ($isBan
@@ -381,6 +515,9 @@ try {
         $pdo->prepare(
             "DELETE FROM pilot_positions WHERE session_token = :token"
         )->execute(['token' => $token]);
+        $pdo->prepare(
+            "DELETE FROM pilot_tracks WHERE session_token = :token"
+        )->execute(['token' => $token]);
         $pdo->commit();
 
         echo json_encode([
@@ -390,6 +527,53 @@ try {
             "message" =>
                 "Das VFN-Netzwerk befindet sich im Wartungsmodus. "
                 . "Die Verbindung wurde getrennt."
+        ]);
+        exit;
+    }
+
+    if (
+        (int)($session['is_spectator'] ?? 0) !== 1
+        && $aircraft_category === 'groundvehicle'
+        && (int)($session['rating_atc'] ?? 0) < 3
+        && (int)($session['rating_special'] ?? 0) < 1
+    ) {
+        $kickReason =
+            'Ground vehicles require at least ATC rank TWR '
+            . 'or special rank VFN Operations Officer.';
+
+        $pdo->beginTransaction();
+        $pdo->prepare(
+            "UPDATE pilot_flights
+             SET status = 'aborted', completed_at = NOW()
+             WHERE session_token = :token AND status = 'active'"
+        )->execute(['token' => $token]);
+        $pdo->prepare(
+            "UPDATE user_sessions
+             SET is_active = 0, last_seen = NOW()
+             WHERE token = :token"
+        )->execute(['token' => $token]);
+        $pdo->prepare(
+            "DELETE FROM pilot_positions WHERE session_token = :token"
+        )->execute(['token' => $token]);
+        $pdo->prepare(
+            "DELETE FROM pilot_tracks WHERE session_token = :token"
+        )->execute(['token' => $token]);
+        $pdo->prepare(
+            "INSERT INTO user_activity_log
+                (user_id, actor_user_id, activity_type, activity_key, activity_value)
+             VALUES
+                (:user_id, 0, 'kick', 'activity_kicked_ground_vehicle_rank', :reason)"
+        )->execute([
+            'user_id' => (int)$session['user_id'],
+            'reason' => $kickReason
+        ]);
+        $pdo->commit();
+
+        echo json_encode([
+            'success' => false,
+            'kicked' => true,
+            'ground_vehicle_rank_kick' => true,
+            'message' => $kickReason
         ]);
         exit;
     }
@@ -470,6 +654,21 @@ try {
             roll_angle,
             vertical_speed,
             on_ground,
+            ai_controls_aircraft,
+            ai_destination_icao,
+            gear_ratio,
+            flap_ratio,
+            speedbrake_ratio,
+            thrust_ratio,
+            engine_rpm,
+            yoke_pitch_ratio,
+            yoke_roll_ratio,
+            yoke_heading_ratio,
+            taxi_lights,
+            landing_lights,
+            beacon_lights,
+            strobe_lights,
+            nav_lights,
             com1,
             com2,
             com3,
@@ -492,6 +691,21 @@ try {
             :roll_angle,
             :vertical_speed,
             :on_ground,
+            :ai_controls_aircraft,
+            :ai_destination_icao,
+            :gear_ratio,
+            :flap_ratio,
+            :speedbrake_ratio,
+            :thrust_ratio,
+            :engine_rpm,
+            :yoke_pitch_ratio,
+            :yoke_roll_ratio,
+            :yoke_heading_ratio,
+            :taxi_lights,
+            :landing_lights,
+            :beacon_lights,
+            :strobe_lights,
+            :nav_lights,
             :com1,
             :com2,
             :com3,
@@ -512,6 +726,21 @@ try {
             roll_angle = VALUES(roll_angle),
             vertical_speed = VALUES(vertical_speed),
             on_ground = VALUES(on_ground),
+            ai_controls_aircraft = VALUES(ai_controls_aircraft),
+            ai_destination_icao = VALUES(ai_destination_icao),
+            gear_ratio = VALUES(gear_ratio),
+            flap_ratio = VALUES(flap_ratio),
+            speedbrake_ratio = VALUES(speedbrake_ratio),
+            thrust_ratio = VALUES(thrust_ratio),
+            engine_rpm = VALUES(engine_rpm),
+            yoke_pitch_ratio = VALUES(yoke_pitch_ratio),
+            yoke_roll_ratio = VALUES(yoke_roll_ratio),
+            yoke_heading_ratio = VALUES(yoke_heading_ratio),
+            taxi_lights = VALUES(taxi_lights),
+            landing_lights = VALUES(landing_lights),
+            beacon_lights = VALUES(beacon_lights),
+            strobe_lights = VALUES(strobe_lights),
+            nav_lights = VALUES(nav_lights),
             com1 = VALUES(com1),
             com2 = VALUES(com2),
             com3 = VALUES(com3),
@@ -535,11 +764,42 @@ try {
         "roll_angle" => (float)$roll,
         "vertical_speed" => (float)$vertical_speed,
         "on_ground" => $onGround,
+        "ai_controls_aircraft" => $aiControlsAircraft,
+        "ai_destination_icao" => $aiDestinationIcao,
+        "gear_ratio" => $gearRatio,
+        "flap_ratio" => $flapRatio,
+        "speedbrake_ratio" => $speedbrakeRatio,
+        "thrust_ratio" => $thrustRatio,
+        "engine_rpm" => $engineRpm,
+        "yoke_pitch_ratio" => $yokePitchRatio,
+        "yoke_roll_ratio" => $yokeRollRatio,
+        "yoke_heading_ratio" => $yokeHeadingRatio,
+        "taxi_lights" => $taxiLights,
+        "landing_lights" => $landingLights,
+        "beacon_lights" => $beaconLights,
+        "strobe_lights" => $strobeLights,
+        "nav_lights" => $navLights,
         "com1" => (float)$com1,
         "com2" => (float)$com2,
         "com3" => (float)$com3,
         "transponder" => $transponder
     ]);
+
+    if ((int)($session['is_spectator'] ?? 0) === 1) {
+        echo json_encode([
+            "success" => true,
+            "message" => "Spectator-Position aktualisiert.",
+            "spectator" => true,
+            "aircraft_icao" => $aircraft_icao,
+            "aircraft_category" => $aircraft_category,
+            "transponder" => $transponder,
+            "on_ground" => $onGround,
+            "op_permission" => (int)$session["op_permission"],
+            "can_use_invisible" => $canUseInvisible,
+            "is_invisible" => ((int)$session["is_invisible"] === 1)
+        ]);
+        exit;
+    }
 
 
     $insertTrackStmt = $pdo->prepare(
@@ -789,19 +1049,6 @@ try {
             $landingId =
                 (int)$pdo->lastInsertId();
 
-            $completeFlightStmt = $pdo->prepare(
-                "UPDATE pilot_flights
-                 SET status = 'completed',
-                     completed_at = NOW(),
-                     landing_rate_fpm = :landing_rate
-                 WHERE session_token = :session_token
-                   AND status = 'active'"
-            );
-            $completeFlightStmt->execute([
-                'landing_rate' => $landingRateFpm,
-                'session_token' => $token
-            ]);
-
             $landingCounterStmt = $pdo->prepare(
                 "UPDATE users
                  SET total_landings =
@@ -815,6 +1062,7 @@ try {
             ]);
 
             $landingAirport = null;
+            $plannedArrivalAirport = null;
 
             $flightplanStmt = $pdo->prepare(
                 "SELECT
@@ -835,6 +1083,10 @@ try {
                 $flightplanStmt->fetch(PDO::FETCH_ASSOC);
 
             if ($flightplan) {
+                $plannedArrivalAirport =
+                    normalizeLandingAirportCode(
+                        $flightplan['arrival_airport'] ?? null
+                    );
                 $landingAirport =
                     resolveFlightplanLandingAirport(
                         $pdo,
@@ -847,6 +1099,42 @@ try {
                         (float)$longitude
                     );
             }
+
+            $nearestLandingAirport = findNearestLandingAirport(
+                $pdo,
+                (float)$latitude,
+                (float)$longitude
+            );
+            $destinationDistanceNm = distanceToAirportCode(
+                $pdo,
+                $plannedArrivalAirport,
+                (float)$latitude,
+                (float)$longitude
+            );
+            $flightCompletionStatus =
+                $plannedArrivalAirport !== null
+                && $destinationDistanceNm !== null
+                && $landingAirport === null
+                    ? 'wrong_destination'
+                    : 'completed';
+
+            $completeFlightStmt = $pdo->prepare(
+                "UPDATE pilot_flights
+                 SET status = :status,
+                     completed_at = NOW(),
+                     landing_rate_fpm = :landing_rate,
+                     landed_airport = :landed_airport,
+                     destination_distance_nm = :destination_distance_nm
+                 WHERE session_token = :session_token
+                   AND status = 'active'"
+            );
+            $completeFlightStmt->execute([
+                'status' => $flightCompletionStatus,
+                'landing_rate' => $landingRateFpm,
+                'landed_airport' => $nearestLandingAirport['code'] ?? null,
+                'destination_distance_nm' => $destinationDistanceNm,
+                'session_token' => $token
+            ]);
 
             checkLandingAwards(
                 $pdo,

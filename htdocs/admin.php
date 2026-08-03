@@ -621,6 +621,8 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 <a class="admin-button" href="admin_history.php"><?php echo htmlspecialchars(t('admin_private_history')); ?></a>
             <?php endif; ?>
             <a class="admin-button" href="flightplans.php"><?php echo htmlspecialchars(t('nav_flightplans')); ?></a>
+            <a class="admin-button" href="moderation.php"><?php echo htmlspecialchars(t('moderation_center_title')); ?></a>
+            <?php if ($adminOpPermission >= 5): ?><a class="admin-button" href="system_status.php"><?php echo htmlspecialchars(t('system_status_title')); ?></a><?php endif; ?>
         </p>
 
         <section class="admin-card">
@@ -3294,8 +3296,10 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
     refreshVoiceDevices();
     setInterval(pollMessages, 3000);
 
+    const requestedAdminTab =
+        new URLSearchParams(window.location.search).get('tab');
     const savedAdminTab =
-        localStorage.getItem('vfn_admin_active_tab');
+        requestedAdminTab || localStorage.getItem('vfn_admin_active_tab');
 
     if (savedAdminTab) {
         const savedTabButton =

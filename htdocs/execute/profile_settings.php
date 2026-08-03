@@ -1,5 +1,6 @@
 <?php
-session_start();
+require_once __DIR__ . '/../includes/session_bootstrap.php';
+startVfnWebSession();
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/../includes/activity_log.php';
 require_once __DIR__ . '/../includes/two_factor.php';
@@ -102,6 +103,19 @@ try {
             logActivity($pdo, $userId, 'country_changed', 'activity_country_changed', $country, $userId);
         }
         settingsRedirect('success', 'settings_saved');
+    }
+
+    if ($action === 'map_preferences') {
+        $waypointLabels = (string)($_POST['map_waypoint_labels_mode'] ?? 'always');
+        if (!in_array($waypointLabels, ['always', 'hover'], true)) {
+            settingsRedirect('error', 'settings_invalid_data');
+        }
+        $pdo->prepare(
+            "UPDATE users
+             SET map_waypoint_labels_mode = :mode, updated_at = NOW()
+             WHERE id = :id"
+        )->execute(['mode' => $waypointLabels, 'id' => $userId]);
+        settingsRedirect('success', 'settings_map_saved');
     }
 
     if ($action === 'division') {

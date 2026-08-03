@@ -76,6 +76,7 @@ async function authenticate(token) {
         s.user_id,
         UPPER(s.callsign) AS callsign,
         COALESCE(s.is_invisible, 0) AS is_invisible,
+        COALESCE(s.is_spectator, 0) AS is_spectator,
         COALESCE(u.op_permission, 0) AS op_permission
      FROM user_sessions s
      INNER JOIN users u ON u.id = s.user_id
@@ -126,7 +127,7 @@ function updateClientState(client, payload) {
   client.com2 = normalizeFrequency(payload.com2) || client.com2;
   client.txCom = Number(payload.txCom || client.txCom) === 2 ? 2 : 1;
   if (typeof payload.ptt === 'boolean') {
-    client.ptt = payload.ptt;
+    client.ptt = client.spectator ? false : payload.ptt;
   }
 
   const lat = Number(payload.latitude);
@@ -285,6 +286,7 @@ wss.on('connection', (ws) => {
     userId: null,
     callsign: '',
     opPermission: 0,
+    spectator: false,
     com1: null,
     com2: null,
     txCom: 1,
@@ -335,6 +337,7 @@ wss.on('connection', (ws) => {
           client.userId = Number(session.user_id);
           client.callsign = String(session.callsign || payload.callsign || '').toUpperCase();
           client.opPermission = Number(session.op_permission || 0);
+          client.spectator = Number(session.is_spectator || 0) === 1;
           updateClientState(client, payload);
           console.log(`Voice client authenticated: ${id}`);
 
@@ -342,7 +345,8 @@ wss.on('connection', (ws) => {
             type: 'hello',
             success: true,
             callsign: client.callsign,
-            opPermission: client.opPermission
+            opPermission: client.opPermission,
+            receiveOnly: client.spectator
           });
         } catch (error) {
           console.error('Authentication failed:', error);
@@ -359,7 +363,7 @@ wss.on('connection', (ws) => {
       }
 
       if (payload.type === 'ptt') {
-        client.ptt = payload.active === true;
+        client.ptt = client.spectator ? false : payload.active === true;
         client.lastPttAt = new Date().toISOString();
         client.txCom = Number(payload.txCom || client.txCom) === 2 ? 2 : 1;
         send(ws, {
@@ -371,6 +375,15 @@ wss.on('connection', (ws) => {
       }
 
       if (payload.type === 'audio') {
+        if (client.spectator) {
+          client.ptt = false;
+          send(ws, {
+            type: 'tx',
+            active: false,
+            receiveOnly: true
+          });
+          return;
+        }
         client.audioPacketsReceived += 1;
         client.lastAudioAt = new Date().toISOString();
 

@@ -3,8 +3,8 @@ header('Content-Type: text/plain; charset=utf-8');
 
 require_once 'config.php';
 
-const VFN_TRAFFIC_MAX_AIRCRAFT = 10;
-const VFN_TRAFFIC_MAX_DISTANCE_NM = 50.0;
+const VFN_TRAFFIC_MAX_AIRCRAFT = 100;
+const VFN_TRAFFIC_MAX_DISTANCE_NM = 30.0;
 const VFN_TRAFFIC_ACTIVE_SECONDS = 10;
 
 function trafficDistanceNm(
@@ -72,6 +72,7 @@ try {
     }
 
     $viewerOpPermission = (int)$viewer['op_permission'];
+    $maySeeSpectators = $viewerOpPermission >= 1;
     $maySeeInvisible = $viewerOpPermission > 1 && !$hideInvisibleRequested;
     $invisibleCondition = $maySeeInvisible
         ? "AND (s.is_invisible = 0 OR u.op_permission <= :viewer_op_permission)"
@@ -90,19 +91,40 @@ try {
             p.roll_angle,
             p.airspeed,
             p.vertical_speed,
-            p.on_ground
+            p.on_ground,
+            p.gear_ratio,
+            p.flap_ratio,
+            p.speedbrake_ratio,
+            p.thrust_ratio,
+            p.engine_rpm,
+            p.yoke_pitch_ratio,
+            p.yoke_roll_ratio,
+            p.yoke_heading_ratio,
+            p.taxi_lights,
+            p.landing_lights,
+            p.beacon_lights,
+            p.strobe_lights,
+            p.nav_lights,
+            s.is_spectator,
+            u.op_permission,
+            fp.departure_airport,
+            fp.arrival_airport
          FROM pilot_positions p
          INNER JOIN user_sessions s
             ON s.token = p.session_token
          INNER JOIN users u
             ON u.id = p.user_id
+         LEFT JOIN pilot_flightplans fp
+            ON fp.session_token = p.session_token
          WHERE p.user_id <> :viewer_user_id
            AND s.is_active = 1
+           AND (s.is_spectator = 0 OR :may_see_spectators = 1)
            $invisibleCondition
            AND p.last_update >= DATE_SUB(NOW(), INTERVAL 10 SECOND)"
     );
     $trafficParameters = [
-        'viewer_user_id' => (int)$viewer['user_id']
+        'viewer_user_id' => (int)$viewer['user_id'],
+        'may_see_spectators' => $maySeeSpectators ? 1 : 0
     ];
     if ($maySeeInvisible) {
         $trafficParameters['viewer_op_permission'] = $viewerOpPermission;
@@ -149,6 +171,25 @@ try {
             number_format((float)$row['airspeed'], 2, '.', ''),
             number_format((float)$row['vertical_speed'], 2, '.', ''),
             (string)((int)$row['on_ground'] === 1 ? 1 : 0),
+            number_format((float)$row['gear_ratio'], 3, '.', ''),
+            number_format((float)$row['flap_ratio'], 3, '.', ''),
+            number_format((float)$row['speedbrake_ratio'], 3, '.', ''),
+            number_format((float)$row['thrust_ratio'], 3, '.', ''),
+            number_format((float)$row['engine_rpm'], 1, '.', ''),
+            number_format((float)$row['yoke_pitch_ratio'], 3, '.', ''),
+            number_format((float)$row['yoke_roll_ratio'], 3, '.', ''),
+            number_format((float)$row['yoke_heading_ratio'], 3, '.', ''),
+            (string)((int)$row['taxi_lights'] === 1 ? 1 : 0),
+            (string)((int)$row['landing_lights'] === 1 ? 1 : 0),
+            (string)((int)$row['beacon_lights'] === 1 ? 1 : 0),
+            (string)((int)$row['strobe_lights'] === 1 ? 1 : 0),
+            (string)((int)$row['nav_lights'] === 1 ? 1 : 0),
+            trafficField((string)$row['aircraft_icao']),
+            trafficField((string)($row['departure_airport'] ?: 'ZZZZ')),
+            trafficField((string)($row['arrival_airport'] ?: 'ZZZZ')),
+            number_format((float)$row['distance_nm'], 1, '.', ''),
+            (string)((int)$row['is_spectator'] === 1 ? 1 : 0),
+            (string)(int)$row['op_permission'],
         ]) . "\n";
     }
 } catch (Throwable $error) {

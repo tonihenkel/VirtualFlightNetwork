@@ -13,6 +13,7 @@ $flightOffset = ($flightPage - 1) * $flightsPerPage;
 
 $flightStmt = $pdo->prepare(
     "SELECT id, callsign, aircraft_icao, departure_airport, arrival_airport,
+            landed_airport, destination_distance_nm,
             started_at, completed_at, duration_seconds, distance_nm,
             landing_rate_fpm, status
      FROM pilot_flights
@@ -48,14 +49,20 @@ $flights = $flightStmt->fetchAll(PDO::FETCH_ASSOC);
                     <tbody>
                     <?php foreach ($flights as $flight): ?>
                         <tr>
-                            <td><?php echo h(date('d.m.Y H:i', strtotime($flight['started_at']))); ?></td>
+                            <td><a href="flight.php?id=<?php echo (int)$flight['id']; ?>"><?php echo h(date('d.m.Y H:i', strtotime($flight['started_at']))); ?></a></td>
                             <td><?php echo h($flight['callsign']); ?></td>
-                            <td><?php echo h(($flight['departure_airport'] ?: 'ZZZZ') . ' → ' . ($flight['arrival_airport'] ?: 'ZZZZ')); ?></td>
+                            <td>
+                                <?php $departureCode = $flight['departure_airport'] ?: 'ZZZZ'; ?>
+                                <?php $arrivalCode = $flight['arrival_airport'] ?: 'ZZZZ'; ?>
+                                <?php if ($departureCode !== 'ZZZZ'): ?><a href="airport.php?icao=<?php echo rawurlencode($departureCode); ?>"><?php echo h($departureCode); ?></a><?php else: ?>ZZZZ<?php endif; ?>
+                                →
+                                <?php if ($arrivalCode !== 'ZZZZ'): ?><a href="airport.php?icao=<?php echo rawurlencode($arrivalCode); ?>"><?php echo h($arrivalCode); ?></a><?php else: ?>ZZZZ<?php endif; ?>
+                            </td>
                             <td><?php echo h($flight['aircraft_icao']); ?></td>
                             <td><?php echo h(formatFlightTime((int)$flight['duration_seconds'])); ?></td>
                             <td><?php echo h(number_format((float)$flight['distance_nm'], 1, ',', '.')); ?> NM</td>
                             <td><?php echo $flight['landing_rate_fpm'] !== null ? h($flight['landing_rate_fpm']) . ' fpm' : '—'; ?></td>
-                            <td><span class="flight-status <?php echo h($flight['status']); ?>"><?php echo h(t('profile_flight_status_' . $flight['status'])); ?></span></td>
+                            <td><span class="flight-status <?php echo h($flight['status']); ?>"><?php echo h(t('profile_flight_status_' . $flight['status'])); ?></span><?php if ($flight['status'] === 'wrong_destination' && !empty($flight['landed_airport'])): ?><small class="wrong-destination-airport"><?php echo h(t('profile_flight_landed_at')); ?> <?php echo h($flight['landed_airport']); ?></small><?php endif; ?></td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -77,7 +84,7 @@ $flights = $flightStmt->fetchAll(PDO::FETCH_ASSOC);
 .flight-table-scroll{overflow-x:auto}.flight-table{width:100%;border-collapse:collapse}
 .flight-table th,.flight-table td{padding:11px 9px;border-bottom:1px solid #24445c;text-align:left;white-space:nowrap}
 .flight-table th{color:#75bfff}.flight-status{padding:4px 7px;border-radius:4px;background:#344657}
-.flight-status.completed{color:#66e5a5}.flight-status.aborted{color:#ff9a9a}.flight-status.active{color:#ffd66b}
+.flight-status.completed{color:#66e5a5}.flight-status.wrong_destination{color:#ffad55}.flight-status.aborted{color:#ff9a9a}.flight-status.active{color:#ffd66b}.wrong-destination-airport{display:block;color:#d4a574;margin-top:3px}
 .flight-pagination{display:flex;gap:6px;flex-wrap:wrap;margin-top:18px}.flight-pagination a{padding:7px 10px;border:1px solid #285475;border-radius:4px;color:#9ed4ff;text-decoration:none}
 .flight-pagination a.active{background:#176dcc;color:#fff}
 </style>

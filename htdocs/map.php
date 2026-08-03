@@ -1,6 +1,7 @@
 <?php
 
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
+startVfnWebSession();
 
 require_once 'execute/config.php';
 require_once 'includes/language.php';
@@ -13,6 +14,7 @@ $isWebLoggedIn =
     isset($_SESSION['web_user_id']);
 
 $viewerOpPermission = 0;
+$mapWaypointLabelsMode = 'always';
 if ($isWebLoggedIn) {
     try {
         $mapPdo = new PDO(
@@ -22,11 +24,16 @@ if ($isWebLoggedIn) {
             [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
         );
         $mapViewerStmt = $mapPdo->prepare(
-            "SELECT op_permission FROM users WHERE id = :id LIMIT 1"
+            "SELECT op_permission, map_waypoint_labels_mode
+             FROM users WHERE id = :id LIMIT 1"
         );
         $mapViewerStmt->execute(['id' => (int)$_SESSION['web_user_id']]);
-        $viewerOpPermission =
-            (int)($mapViewerStmt->fetchColumn() ?: 0);
+        $mapViewer = $mapViewerStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $viewerOpPermission = (int)($mapViewer['op_permission'] ?? 0);
+        $mapWaypointLabelsMode =
+            ($mapViewer['map_waypoint_labels_mode'] ?? 'always') === 'hover'
+                ? 'hover'
+                : 'always';
     } catch (Throwable $error) {
         error_log('Map viewer permission lookup failed: ' . $error->getMessage());
     }
@@ -90,6 +97,7 @@ if (!isset($showRatings)) {
 
             min-width: 220px;
         }
+        #mapLegend{position:absolute;left:14px;bottom:28px;z-index:900;background:rgba(5,20,31,.9);border:1px solid #285475;border-radius:6px;padding:10px 12px;color:#cde4f7;font-size:12px;display:grid;gap:5px}.legend-swatch{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:7px;vertical-align:-2px}.legend-aircraft{background:#168cff}.legend-airport{background:#20b8ff}.legend-nav{background:#8f54ff}.legend-fir{background:rgba(22,140,255,.25);border:1px solid #37a5ff}
 
         #mapDirectory {
             position: absolute;
@@ -135,6 +143,29 @@ if (!isset($showRatings)) {
             background: #071521;
             box-sizing: border-box;
         }
+        .map-search-filters {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
+            align-items: center;
+            margin-top: 8px;
+            color: #bcd2e8;
+            font-size: 12px;
+        }
+        .map-search-filters select {
+            min-width: 0;
+            padding: 8px;
+            color: white;
+            background: #071521;
+            border: 1px solid #285475;
+            border-radius: 4px;
+        }
+        .map-search-filters label {
+            display: flex;
+            gap: 5px;
+            align-items: center;
+            white-space: nowrap;
+        }
         .map-layer-tools {
             display: grid;
             grid-template-columns: 1fr auto;
@@ -171,7 +202,11 @@ if (!isset($showRatings)) {
         .pilot-directory-item:hover,
         .pilot-directory-item.active { border-color: #55aaff; background: #12304a; }
         .pilot-directory-callsign { color: #55b4ff; font-weight: bold; }
+        .pilot-directory-item.airport-result .pilot-directory-callsign { color:#56e0b3; }
         .pilot-directory-meta { color: #95adc4; font-size: 12px; margin-top: 3px; }
+        .airport-metar{display:grid;gap:12px}
+        .airport-metar-raw{padding:14px;border-radius:5px;background:#091722;color:#65e7bc;font-family:monospace;font-size:14px;line-height:1.5;word-break:break-word}
+        .airport-metar-time{color:#60758a;font-size:12px}
         .panel-action {
             display: block;
             width: 100%;
@@ -183,8 +218,28 @@ if (!isset($showRatings)) {
             background: #176dcc;
             cursor: pointer;
             font-weight: bold;
+            text-align: center;
+            text-decoration: none;
         }
         .panel-action.following { background: #159447; }
+        .panel-action.route-visible { background: #d97800; }
+        .panel-action[hidden] { display: none; }
+        .pilot-panel-actions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .pilot-panel-actions .panel-action { margin-bottom: 0; }
+        .flightplan-waypoint-label {
+            color: #f28c18;
+            background: rgba(7, 20, 31, 0.88);
+            border: 1px solid #f28c18;
+            box-shadow: none;
+            font-weight: bold;
+            font-size: 10px;
+            padding: 2px 5px;
+        }
         .airport-panel-link {
             color: inherit;
             background: transparent;
@@ -241,7 +296,8 @@ if (!isset($showRatings)) {
         }
 
         #pilotInfoPanel,
-        #airportTrafficPanel {
+        #airportTrafficPanel,
+        #navigationPointPanel {
             position: absolute;
 
             top: 82px;
@@ -270,6 +326,7 @@ if (!isset($showRatings)) {
         #airportTrafficPanel.open {
             transform: translateX(0);
         }
+        #navigationPointPanel.open { transform:translateX(0); }
 
         #airportTrafficPanel .panel-route {
             grid-template-columns: 1fr;
@@ -630,7 +687,7 @@ if (!isset($showRatings)) {
 @media (max-width: 760px) {
     #mapDirectory { top: 135px; right: 8px; width: min(300px, calc(100% - 16px)); }
     #mapDirectory:not(.collapsed) { max-height: 48vh; }
-    #pilotInfoPanel, #airportTrafficPanel { top: 122px; width: min(360px, 100%); height: calc(100vh - 122px); }
+    #pilotInfoPanel, #airportTrafficPanel, #navigationPointPanel { top: 122px; width: min(360px, 100%); height: calc(100vh - 122px); }
     #statusBox { top: 135px; left: 8px; min-width: 0; }
 }
 </style>
@@ -685,6 +742,10 @@ if ($statusMessage !== '') {
                     </option>
                 <?php endforeach; ?>
             </select>
+            <label>
+                <input id="firBoundaryToggle" type="checkbox">
+                <?php echo htmlspecialchars(t('map_show_fir_boundaries')); ?>
+            </label>
         </div>
         <a class="map-statistics-link" href="statistics.php"><?php echo htmlspecialchars(t('map_open_statistics')); ?></a>
         <?php if ($viewerOpPermission > 1): ?>
@@ -694,6 +755,23 @@ if ($statusMessage !== '') {
             </label>
         <?php endif; ?>
         <input id="pilotSearch" type="search" placeholder="<?php echo htmlspecialchars(t('map_search_pilot')); ?>">
+        <?php if (!empty($_SESSION['web_user_id'])): ?>
+            <label class="map-nearby-filter"><input id="nearbyPilotsOnly" type="checkbox"> <?php echo htmlspecialchars(t('map_nearby_30nm')); ?></label>
+        <?php endif; ?>
+        <div class="map-search-filters">
+            <select id="mapSearchType" aria-label="<?php echo htmlspecialchars(t('map_search_type')); ?>">
+                <option value="all"><?php echo htmlspecialchars(t('map_search_type_all')); ?></option>
+                <option value="pilot"><?php echo htmlspecialchars(t('map_search_type_pilots')); ?></option>
+                <option value="airport"><?php echo htmlspecialchars(t('map_search_type_airports')); ?></option>
+                <option value="waypoint"><?php echo htmlspecialchars(t('map_search_type_waypoints')); ?></option>
+                <option value="navaid"><?php echo htmlspecialchars(t('map_search_type_navaids')); ?></option>
+                <option value="radar"><?php echo htmlspecialchars(t('map_search_type_radars')); ?></option>
+            </select>
+            <label>
+                <input id="mapSearchExact" type="checkbox">
+                <?php echo htmlspecialchars(t('map_search_exact')); ?>
+            </label>
+        </div>
         <div id="pilotDirectoryList"></div>
     </div>
 </aside>
@@ -719,6 +797,15 @@ if ($statusMessage !== '') {
     </div>
 
     <div class="panel-content">
+
+        <div class="pilot-panel-actions">
+            <button type="button" class="panel-action" id="followPilotButton" onclick="toggleFollowSelectedPilot()">
+                <?php echo htmlspecialchars(t('map_follow_pilot')); ?>
+            </button>
+            <button type="button" class="panel-action" id="flightPlanRouteButton" onclick="toggleSelectedFlightPlanRoute()" hidden>
+                <?php echo htmlspecialchars(t('map_show_flightplan_route')); ?>
+            </button>
+        </div>
 
         <div class="panel-card">
             <div class="panel-card-title"><?php echo htmlspecialchars(t("map_panel_pilot")); ?></div>
@@ -842,6 +929,26 @@ if ($statusMessage !== '') {
         </div>
 
         <div class="panel-card member-only">
+            <div class="panel-card-title"><?php echo htmlspecialchars(t('map_panel_flight_progress')); ?></div>
+            <div class="panel-row">
+                <div class="panel-row-label"><?php echo htmlspecialchars(t('map_panel_elapsed_flight_time')); ?></div>
+                <div class="panel-row-value" id="panelElapsedFlightTime">--:--</div>
+            </div>
+            <div class="panel-row">
+                <div class="panel-row-label"><?php echo htmlspecialchars(t('map_panel_remaining_flight_time')); ?></div>
+                <div class="panel-row-value" id="panelRemainingFlightTime">----</div>
+            </div>
+            <div class="panel-row">
+                <div class="panel-row-label"><?php echo htmlspecialchars(t('map_panel_route_distance')); ?></div>
+                <div class="panel-row-value" id="panelEstimatedRouteDistance">----</div>
+            </div>
+            <div class="panel-row">
+                <div class="panel-row-label"><?php echo htmlspecialchars(t('map_panel_route_calculation')); ?></div>
+                <div class="panel-row-value" id="panelRouteCalculation">----</div>
+            </div>
+        </div>
+
+        <div class="panel-card member-only">
             <div class="panel-card-title"><?php echo htmlspecialchars(t("map_panel_position")); ?></div>
 
             <div class="panel-row">
@@ -925,9 +1032,9 @@ if ($statusMessage !== '') {
 
     <div class="panel-content">
 
-        <button type="button" class="panel-action" id="followPilotButton" onclick="toggleFollowSelectedPilot()">
-            <?php echo htmlspecialchars(t('map_follow_pilot')); ?>
-        </button>
+        <a class="panel-action" id="airportDetailsLink" href="airport.php">
+            <?php echo htmlspecialchars(t('map_airport_details')); ?>
+        </a>
         <div class="panel-grid airport-summary">
             <div class="panel-stat">
                 <div class="panel-stat-value" id="airportPanelInboundCount">0</div>
@@ -956,13 +1063,56 @@ if ($statusMessage !== '') {
                 onclick="setAirportTrafficTab('outbound')">
                 <?php echo htmlspecialchars(t("map_airport_outbound")); ?>
             </button>
+
+            <button
+                type="button"
+                class="airport-tab-button"
+                id="airportMetarTab"
+                onclick="setAirportTrafficTab('metar')">
+                METAR
+            </button>
         </div>
 
         <div id="airportTrafficList" class="airport-traffic-list"></div>
     </div>
 </div>
 
+<div id="navigationPointPanel">
+    <div class="panel-header">
+        <span id="navigationPointIdentifier">----</span>
+        <span class="panel-close" onclick="closeNavigationPointPanel()">×</span>
+    </div>
+    <div class="panel-route">
+        <div>
+            <div id="navigationPointName">----</div>
+            <div class="panel-airport-name" id="navigationPointKind">----</div>
+        </div>
+    </div>
+    <div class="panel-content">
+        <div class="panel-card">
+            <div class="panel-card-title"><?php echo htmlspecialchars(t('map_navigation_details')); ?></div>
+            <div class="panel-row">
+                <div class="panel-row-label"><?php echo htmlspecialchars(t('map_navigation_type')); ?></div>
+                <div class="panel-row-value" id="navigationPointType">----</div>
+            </div>
+            <div class="panel-row">
+                <div class="panel-row-label"><?php echo htmlspecialchars(t('map_navigation_region')); ?></div>
+                <div class="panel-row-value" id="navigationPointRegion">----</div>
+            </div>
+            <div class="panel-row">
+                <div class="panel-row-label"><?php echo htmlspecialchars(t('map_navigation_frequency')); ?></div>
+                <div class="panel-row-value" id="navigationPointFrequency">----</div>
+            </div>
+            <div class="panel-row">
+                <div class="panel-row-label">AIRAC</div>
+                <div class="panel-row-value" id="navigationPointCycle">----</div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div id="map"></div>
+<div id="mapLegend"><strong><?php echo htmlspecialchars(t('map_legend')); ?></strong><span><i class="legend-swatch legend-aircraft"></i><?php echo htmlspecialchars(t('map_legend_aircraft')); ?></span><span><i class="legend-swatch legend-airport"></i><?php echo htmlspecialchars(t('map_legend_airports')); ?></span><span><i class="legend-swatch legend-nav"></i><?php echo htmlspecialchars(t('map_legend_navigation')); ?></span><span><i class="legend-swatch legend-fir"></i><?php echo htmlspecialchars(t('map_legend_fir')); ?></span></div>
 
 <?php require_once 'includes/auth_modals.php'; ?>
 
@@ -972,6 +1122,15 @@ if ($statusMessage !== '') {
 <script>
     const IS_WEB_LOGGED_IN =
         <?php echo $isWebLoggedIn ? 'true' : 'false'; ?>;
+
+    const WEB_USER_ID =
+        <?php echo (int)($_SESSION['web_user_id'] ?? 0); ?>;
+
+    const CAN_SEE_AI_CONTROL_STATUS =
+        <?php echo $viewerOpPermission >= 1 ? 'true' : 'false'; ?>;
+
+    const MAP_WAYPOINT_LABELS_MODE =
+        <?php echo json_encode($mapWaypointLabelsMode); ?>;
 
     const SHOW_RATINGS =
         <?php echo $showRatings ? 'true' : 'false'; ?>;
@@ -1029,11 +1188,28 @@ if ($statusMessage !== '') {
                 "airport_outbound" => t("map_airport_outbound"),
                 "airport_no_inbound" => t("map_airport_no_inbound"),
                 "airport_no_outbound" => t("map_airport_no_outbound"),
+                "airport_search_result" => t("map_airport_search_result"),
+                "airport_metar_loading" => t("map_airport_metar_loading"),
+                "airport_metar_unavailable" => t("map_airport_metar_unavailable"),
+                "airport_metar_observed" => t("map_airport_metar_observed"),
                 "airport_aircraft" => t("map_airport_aircraft"),
                 "airport_departure_time" => t("map_airport_departure_time"),
                 "follow_pilot" => t("map_follow_pilot"),
                 "stop_following" => t("map_stop_following"),
+                "route_via_waypoints" => t("map_route_via_waypoints"),
+                "route_direct" => t("map_route_direct"),
+                "route_estimating" => t("map_route_estimating"),
+                "route_unavailable" => t("map_route_unavailable"),
+                "show_flightplan_route" => t("map_show_flightplan_route"),
+                "hide_flightplan_route" => t("map_hide_flightplan_route"),
                 "no_pilots_found" => t("map_no_pilots_found")
+                ,"navigation_waypoint" => t("map_navigation_waypoint")
+                ,"navigation_navaid" => t("map_navigation_navaid")
+                ,"navigation_radar" => t("map_navigation_radar")
+                ,"fir_region" => t("map_fir_region")
+                ,"fir_division" => t("map_fir_division")
+                ,"fir_sector" => t("map_fir_sector")
+                ,"fir_data_error" => t("map_fir_data_error")
             ],
             JSON_UNESCAPED_UNICODE
         );
@@ -1042,6 +1218,15 @@ if ($statusMessage !== '') {
         <?php echo max(0, (int)($_GET['pilot_id'] ?? 0)); ?>;
     const TARGET_FOLLOW =
         <?php echo !empty($_GET['follow']) ? 'true' : 'false'; ?>;
+    const TARGET_AIRPORT =
+        <?php
+        $targetAirport = strtoupper(trim((string)($_GET['airport'] ?? '')));
+        echo json_encode(
+            preg_match('/^[A-Z0-9][A-Z0-9-]{1,14}$/', $targetAirport)
+                ? $targetAirport
+                : ''
+        );
+        ?>;
     const INITIAL_HEATMAP =
         <?php echo !empty($_GET['heatmap']) ? 'true' : 'false'; ?>;
     const map = L.map(
@@ -1071,12 +1256,17 @@ if ($statusMessage !== '') {
 
     const airportTrafficPanel =
         document.getElementById('airportTrafficPanel');
+    const navigationPointPanel =
+        document.getElementById('navigationPointPanel');
 
     const pilotMarkers = {};
 
     const pilotTracks = {};
 
     const pilotTrackLastIds = {};
+    const pilotTrackSegments = {};
+    const pilotTrackLastPoints = {};
+    let pilotTrackLoadGeneration = 0;
 
     const airportRouteLines = {};
 
@@ -1085,6 +1275,20 @@ if ($statusMessage !== '') {
     const trafficAirportMarkers = {};
 
     let airportTrafficData = {};
+    const searchedAirports = {};
+    let airportSearchResults = [];
+    let navigationSearchResults = [];
+    let currentAiracCycle = '';
+    let airportSearchTimer = null;
+    const airportMetarCache = {};
+    const flightRouteEstimateCache = {};
+    let flightRouteEstimateGeneration = 0;
+    let flightPlanRouteLayer = null;
+    let flightPlanRouteWaypointLayer = null;
+    let flightPlanRouteVisible = false;
+    let flightPlanRouteLoading = false;
+    let flightPlanRouteGeneration = 0;
+    let flightPlanRouteKey = '';
 
     let selectedCallsign = null;
     let selectedPilotData = null;
@@ -1094,8 +1298,14 @@ if ($statusMessage !== '') {
         document.getElementById('hideInvisiblePilots');
     let initialTargetHandled = false;
     let heatmapLayer = null;
+    let firBoundaryLayer = null;
+    let firBoundaryLoading = null;
+    let firDatasetLoading = null;
 
     let selectedAirportCode = null;
+    let selectedAirportMarker = null;
+    let selectedNavigationMarker = null;
+    let selectedRadarLayer = null;
 
     let selectedAirportTab = 'inbound';
 
@@ -1107,6 +1317,204 @@ if ($statusMessage !== '') {
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
+    }
+
+    function firBoundaryStyle()
+    {
+        return {
+            color: '#37a5ff',
+            weight: 1.6,
+            opacity: 0.85,
+            fillColor: '#168cff',
+            fillOpacity: 0.045
+        };
+    }
+
+    function featureExtentArea(feature)
+    {
+        let minLatitude = 90;
+        let maxLatitude = -90;
+        let minLongitude = 180;
+        let maxLongitude = -180;
+
+        function inspectCoordinates(value)
+        {
+            if (
+                Array.isArray(value)
+                && value.length >= 2
+                && Number.isFinite(Number(value[0]))
+                && Number.isFinite(Number(value[1]))
+            ) {
+                const longitude = Number(value[0]);
+                const latitude = Number(value[1]);
+                minLatitude = Math.min(minLatitude, latitude);
+                maxLatitude = Math.max(maxLatitude, latitude);
+                minLongitude = Math.min(minLongitude, longitude);
+                maxLongitude = Math.max(maxLongitude, longitude);
+                return;
+            }
+            if (Array.isArray(value)) value.forEach(inspectCoordinates);
+        }
+
+        inspectCoordinates(feature?.geometry?.coordinates);
+        if (minLatitude > maxLatitude || minLongitude > maxLongitude) return 0;
+        return (maxLatitude - minLatitude) * (maxLongitude - minLongitude);
+    }
+
+    function loadFirDataset()
+    {
+        if (!firDatasetLoading) {
+            firDatasetLoading = Promise.all([
+                fetch('execute/fir_boundaries.php'),
+                fetch('execute/fir_names.php')
+            ]).then(responses => {
+                if (!responses[0].ok) throw new Error('FIR data unavailable');
+                return Promise.all([
+                    responses[0].json(),
+                    responses[1].ok
+                        ? responses[1].json()
+                        : Promise.resolve({names: {}, types: {}})
+                ]);
+            }).then(results => ({
+                data: results[0],
+                names: results[1]?.names || {},
+                types: results[1]?.types || {}
+            })).catch(error => {
+                firDatasetLoading = null;
+                throw error;
+            });
+        }
+        return firDatasetLoading;
+    }
+
+    async function loadFirBoundaries()
+    {
+        const toggle = document.getElementById('firBoundaryToggle');
+        localStorage.setItem(
+            'vfn_map_show_fir_boundaries',
+            toggle.checked ? '1' : '0'
+        );
+
+        if (!toggle.checked) {
+            if (firBoundaryLayer && map.hasLayer(firBoundaryLayer)) {
+                map.removeLayer(firBoundaryLayer);
+            }
+            return;
+        }
+
+        if (firBoundaryLayer) {
+            firBoundaryLayer.addTo(map);
+            return;
+        }
+
+        if (!firBoundaryLoading) {
+            firBoundaryLoading = loadFirDataset()
+                .then(result => {
+                    const data = result.data;
+                    const firNames = result.names;
+                    const features = Array.isArray(data.features)
+                        ? data.features.slice()
+                        : [];
+                    const identifiers = features.map(feature =>
+                        String(feature?.properties?.id || '').toUpperCase()
+                    );
+                    const visibleFeatures = features
+                        .filter(function(feature) {
+                            const identifier = String(
+                                feature?.properties?.id || ''
+                            ).toUpperCase();
+                            if (!/^[A-Z]{2}XX$/.test(identifier)) return true;
+                            const countryPrefix = identifier.substring(0, 2);
+                            return !identifiers.some(other =>
+                                other !== identifier
+                                && other.startsWith(countryPrefix)
+                                && !/^[A-Z]{2}XX$/.test(other)
+                            );
+                        })
+                        .sort(function(left, right) {
+                            const leftId = String(left?.properties?.id || '');
+                            const rightId = String(right?.properties?.id || '');
+                            const areaDifference =
+                                featureExtentArea(right)
+                                - featureExtentArea(left);
+                            if (Math.abs(areaDifference) > 0.000001) {
+                                return areaDifference;
+                            }
+                            return Number(leftId.includes('-'))
+                                - Number(rightId.includes('-'));
+                        });
+                    firBoundaryLayer = L.geoJSON(
+                        {
+                            type: 'FeatureCollection',
+                            features: visibleFeatures
+                        },
+                        {
+                        style: firBoundaryStyle,
+                        onEachFeature: function(feature, layer) {
+                            const properties = feature.properties || {};
+                            const identifier = properties.id || '----';
+                            const region = properties.region || '----';
+                            const name =
+                                firNames[String(identifier).toUpperCase()]
+                                || '';
+                            const division = properties.division || '----';
+                            layer.bindTooltip(
+                                name ? identifier + ' · ' + name : identifier,
+                                {
+                                sticky: true,
+                                direction: 'top'
+                                }
+                            );
+                            layer.bindPopup(
+                                '<strong>' + escapeHtml(identifier) + '</strong>'
+                                + (name
+                                    ? '<br>' + escapeHtml(MAP_TEXT.fir_sector)
+                                        + ': ' + escapeHtml(name)
+                                    : '')
+                                + '<br>' + escapeHtml(MAP_TEXT.fir_region)
+                                + ': ' + escapeHtml(region)
+                                + '<br>' + escapeHtml(MAP_TEXT.fir_division)
+                                + ': ' + escapeHtml(division)
+                            );
+                            layer.on('click', function() {
+                                openNavigationPointPanel({
+                                    kind: 'radar',
+                                    identifier: String(identifier),
+                                    name: name || String(identifier),
+                                    type: result.types[
+                                        String(identifier).toUpperCase()
+                                    ] || 'FIR/UIR',
+                                    region: [region, division]
+                                        .filter(Boolean).join(' / '),
+                                    feature: feature,
+                                    preserveView: true
+                                });
+                            });
+                        }
+                        }
+                    );
+                    map.attributionControl.addAttribution(
+                        '<a href="https://github.com/vatsimnetwork/'
+                        + 'vatspy-data-project" target="_blank"'
+                        + ' rel="noopener">VATSpy FIR data</a>'
+                        + ' (CC BY-SA 4.0)'
+                    );
+                    return firBoundaryLayer;
+                })
+                .finally(() => {
+                    firBoundaryLoading = null;
+                });
+        }
+
+        try {
+            const layer = await firBoundaryLoading;
+            if (toggle.checked && !map.hasLayer(layer)) layer.addTo(map);
+        } catch (error) {
+            toggle.checked = false;
+            localStorage.setItem('vfn_map_show_fir_boundaries', '0');
+            console.error(MAP_TEXT.fir_data_error, error);
+            alert(MAP_TEXT.fir_data_error);
+        }
     }
 
     function buildRatingImage(rating)
@@ -1506,39 +1914,582 @@ if ($statusMessage !== '') {
         renderPilotDirectory();
     }
 
+    function pilotDistanceNm(first, second)
+    {
+        const toRadians = value => Number(value) * Math.PI / 180;
+        const latitude1 = toRadians(first.latitude);
+        const latitude2 = toRadians(second.latitude);
+        const latitudeDifference = latitude2 - latitude1;
+        const longitudeDifference =
+            toRadians(second.longitude) - toRadians(first.longitude);
+        const value = Math.sin(latitudeDifference / 2) ** 2
+            + Math.cos(latitude1) * Math.cos(latitude2)
+            * Math.sin(longitudeDifference / 2) ** 2;
+        return 3440.065 * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+    }
+
+    function formatFlightDuration(seconds)
+    {
+        const safeSeconds = Math.max(0, Math.round(Number(seconds) || 0));
+        const hours = Math.floor(safeSeconds / 3600);
+        const minutes = Math.floor((safeSeconds % 3600) / 60);
+        return String(hours).padStart(2, '0')
+            + ':' + String(minutes).padStart(2, '0') + ' h';
+    }
+
+    function filedCruiseSpeedKnots(value)
+    {
+        const text = String(value || '').trim().toUpperCase();
+        let match = text.match(/^N(\d{3,4})$/);
+        if (match) return Number(match[1]);
+        match = text.match(/^K(\d{3,4})$/);
+        if (match) return Number(match[1]) / 1.852;
+        match = text.match(/^M(\d{2,3})$/);
+        if (match) return (Number(match[1]) / 100) * 573;
+        if (/^\d{2,4}$/.test(text)) return Number(text);
+        return 0;
+    }
+
+    function estimatedCruiseSpeedKnots(pilot, flightplan, routeDistance, remainingDistance)
+    {
+        const elapsedSeconds = Number(pilot.active_flight_duration_seconds) || 0;
+        const flownDistance = Math.max(0, routeDistance - remainingDistance);
+        if (elapsedSeconds >= 300 && flownDistance >= 5) {
+            const achievedAverage = flownDistance / (elapsedSeconds / 3600);
+            if (achievedAverage >= 40 && achievedAverage <= 700) {
+                return achievedAverage;
+            }
+        }
+
+        const filedSpeed = filedCruiseSpeedKnots(flightplan.cruising_speed);
+        if (filedSpeed >= 40 && filedSpeed <= 700) return filedSpeed;
+
+        const liveSpeed = Number(pilot.airspeed) || 0;
+        if (liveSpeed >= 60 && liveSpeed <= 700) return liveSpeed;
+
+        const filedLevelNumber = Number(
+            String(flightplan.cruising_level || '').replace(/[^0-9]/g, '')
+        ) || 0;
+        const filedAltitude = filedLevelNumber > 0 && filedLevelNumber <= 600
+            ? filedLevelNumber * 100
+            : filedLevelNumber;
+        const altitude = Math.max(Number(pilot.altitude) || 0, filedAltitude);
+        const category = String(pilot.aircraft_category || '').toLowerCase();
+        if (category === 'heavy' || category === 'medium') return altitude >= 10000 ? 440 : 300;
+        if (category.includes('helicopter')) return 110;
+        return altitude >= 10000 ? 260 : 125;
+    }
+
+    function routeRemainingDistanceNm(pilot, route)
+    {
+        const points = Array.isArray(route.points) ? route.points : [];
+        if (points.length < 2) return 0;
+        if (route.mode === 'direct') {
+            return pilotDistanceNm(pilot, points[points.length - 1]);
+        }
+
+        let bestSegment = 0;
+        let bestDistance = Number.POSITIVE_INFINITY;
+        const latitudeScale = 60;
+        const longitudeScale = 60 * Math.max(0.15, Math.cos(Number(pilot.latitude) * Math.PI / 180));
+        const normalizeLongitude = value => ((Number(value) + 540) % 360) - 180;
+
+        for (let index = 0; index < points.length - 1; index++) {
+            const first = points[index];
+            const second = points[index + 1];
+            const ax = normalizeLongitude(Number(first.longitude) - Number(pilot.longitude)) * longitudeScale;
+            const ay = (Number(first.latitude) - Number(pilot.latitude)) * latitudeScale;
+            const bx = normalizeLongitude(Number(second.longitude) - Number(pilot.longitude)) * longitudeScale;
+            const by = (Number(second.latitude) - Number(pilot.latitude)) * latitudeScale;
+            const dx = bx - ax;
+            const dy = by - ay;
+            const lengthSquared = dx * dx + dy * dy;
+            const projection = lengthSquared > 0
+                ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lengthSquared))
+                : 0;
+            const distance = Math.hypot(ax + projection * dx, ay + projection * dy);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                bestSegment = index;
+            }
+        }
+
+        let remaining = pilotDistanceNm(pilot, points[bestSegment + 1]);
+        for (let index = bestSegment + 2; index < points.length; index++) {
+            remaining += pilotDistanceNm(points[index - 1], points[index]);
+        }
+        return remaining;
+    }
+
+    function requestFlightRouteEstimate(flightplan)
+    {
+        const departure = getAirportCode(flightplan.departure_airport);
+        const arrival = getAirportCode(flightplan.arrival_airport);
+        const routeText = String(flightplan.route_text || '').trim();
+        const key = [departure, arrival, routeText].join('|');
+        if (!flightRouteEstimateCache[key]) {
+            const body = new URLSearchParams({
+                departure: departure,
+                arrival: arrival,
+                route: routeText
+            });
+            flightRouteEstimateCache[key] = fetch('execute/flight_route_estimate.php', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'},
+                body: body.toString()
+            }).then(response => response.json()).catch(() => ({success:false}));
+        }
+        return flightRouteEstimateCache[key];
+    }
+
+    async function updateFlightProgressPanel(pilot)
+    {
+        const elapsedElement = document.getElementById('panelElapsedFlightTime');
+        const remainingElement = document.getElementById('panelRemainingFlightTime');
+        const distanceElement = document.getElementById('panelEstimatedRouteDistance');
+        const calculationElement = document.getElementById('panelRouteCalculation');
+        if (!elapsedElement || !IS_WEB_LOGGED_IN) return;
+
+        elapsedElement.textContent = formatFlightDuration(pilot.active_flight_duration_seconds);
+        const flightplan = getFlightplan(pilot);
+        const departure = getAirportCode(flightplan.departure_airport);
+        const arrival = getAirportCode(flightplan.arrival_airport);
+        if (departure === 'ZZZZ' || arrival === 'ZZZZ') {
+            remainingElement.textContent = MAP_TEXT.route_unavailable;
+            distanceElement.textContent = '----';
+            calculationElement.textContent = MAP_TEXT.route_unavailable;
+            return;
+        }
+
+        calculationElement.textContent = MAP_TEXT.route_estimating;
+        const generation = ++flightRouteEstimateGeneration;
+        const callsign = String(pilot.callsign || '');
+        const route = await requestFlightRouteEstimate(flightplan);
+        if (generation !== flightRouteEstimateGeneration || selectedCallsign !== callsign) return;
+        if (!route.success || !Array.isArray(route.points)) {
+            remainingElement.textContent = MAP_TEXT.route_unavailable;
+            distanceElement.textContent = '----';
+            calculationElement.textContent = MAP_TEXT.route_unavailable;
+            return;
+        }
+
+        const routeDistance = Number(route.distance_nm) || 0;
+        const remainingDistance = Math.max(0, routeRemainingDistanceNm(pilot, route));
+        const speed = estimatedCruiseSpeedKnots(pilot, flightplan, routeDistance, remainingDistance);
+        remainingElement.textContent = speed > 0
+            ? formatFlightDuration(remainingDistance / speed * 3600)
+            : MAP_TEXT.route_unavailable;
+        distanceElement.textContent = routeDistance.toFixed(1) + ' NM';
+        calculationElement.textContent = route.mode === 'waypoints'
+            ? MAP_TEXT.route_via_waypoints
+                + (route.resolved_waypoints?.length
+                    ? ' (' + route.resolved_waypoints.join(' · ') + ')' : '')
+            : MAP_TEXT.route_direct;
+    }
+
+    function selectedFlightPlanRouteKey(pilot)
+    {
+        const flightplan = getFlightplan(pilot);
+        return [
+            getAirportCode(flightplan.departure_airport),
+            getAirportCode(flightplan.arrival_airport),
+            String(flightplan.route_text || '').trim()
+        ].join('|');
+    }
+
+    function hasUsableFlightPlanRoute(pilot)
+    {
+        if (!IS_WEB_LOGGED_IN || !pilot) return false;
+        const flightplan = getFlightplan(pilot);
+        return getAirportCode(flightplan.departure_airport) !== 'ZZZZ'
+            && getAirportCode(flightplan.arrival_airport) !== 'ZZZZ';
+    }
+
+    function updateFlightPlanRouteButton(pilot)
+    {
+        const button = document.getElementById('flightPlanRouteButton');
+        if (!button) return;
+        const available = hasUsableFlightPlanRoute(pilot);
+        button.hidden = !available;
+        button.disabled = flightPlanRouteLoading;
+        button.classList.toggle('route-visible', available && flightPlanRouteVisible);
+        button.textContent = flightPlanRouteLoading
+            ? MAP_TEXT.route_estimating
+            : (flightPlanRouteVisible
+            ? MAP_TEXT.hide_flightplan_route
+            : MAP_TEXT.show_flightplan_route);
+    }
+
+    function removeFlightPlanRoute()
+    {
+        flightPlanRouteGeneration++;
+        if (flightPlanRouteLayer) {
+            map.removeLayer(flightPlanRouteLayer);
+            flightPlanRouteLayer = null;
+        }
+        if (flightPlanRouteWaypointLayer) {
+            map.removeLayer(flightPlanRouteWaypointLayer);
+            flightPlanRouteWaypointLayer = null;
+        }
+        flightPlanRouteVisible = false;
+        flightPlanRouteLoading = false;
+        flightPlanRouteKey = '';
+    }
+
+    function smoothFlightPlanRoute(points, samplesPerLeg = 8)
+    {
+        const routePoints = points.map(point => [
+            Number(point.latitude),
+            Number(point.longitude)
+        ]).filter(point => Number.isFinite(point[0]) && Number.isFinite(point[1]));
+
+        // Keep routes crossing the date line on the short side of the world.
+        for (let index = 1; index < routePoints.length; index++) {
+            while (routePoints[index][1] - routePoints[index - 1][1] > 180) routePoints[index][1] -= 360;
+            while (routePoints[index][1] - routePoints[index - 1][1] < -180) routePoints[index][1] += 360;
+        }
+
+        if (routePoints.length < 3) return routePoints;
+
+        // Catmull-Rom creates a subtle curve but, unlike corner cutting,
+        // interpolates every original waypoint exactly.
+        const result = [];
+        for (let index = 0; index < routePoints.length - 1; index++) {
+            const p0 = routePoints[Math.max(0, index - 1)];
+            const p1 = routePoints[index];
+            const p2 = routePoints[index + 1];
+            const p3 = routePoints[Math.min(routePoints.length - 1, index + 2)];
+            for (let sample = 0; sample < samplesPerLeg; sample++) {
+                const t = sample / samplesPerLeg;
+                const t2 = t * t;
+                const t3 = t2 * t;
+                result.push([0, 1].map(axis => 0.5 * (
+                    2 * p1[axis]
+                    + (-p0[axis] + p2[axis]) * t
+                    + (2 * p0[axis] - 5 * p1[axis] + 4 * p2[axis] - p3[axis]) * t2
+                    + (-p0[axis] + 3 * p1[axis] - 3 * p2[axis] + p3[axis]) * t3
+                )));
+            }
+        }
+        result.push(routePoints[routePoints.length - 1]);
+        return result;
+    }
+
+    async function toggleSelectedFlightPlanRoute()
+    {
+        const pilot = selectedPilotData;
+        if (!hasUsableFlightPlanRoute(pilot)) return;
+        if (flightPlanRouteLoading) return;
+        if (flightPlanRouteVisible) {
+            removeFlightPlanRoute();
+            updateFlightPlanRouteButton(pilot);
+            return;
+        }
+
+        const button = document.getElementById('flightPlanRouteButton');
+        const callsign = String(pilot.callsign || '');
+        const requestedKey = selectedFlightPlanRouteKey(pilot);
+        const generation = ++flightPlanRouteGeneration;
+        flightPlanRouteLoading = true;
+        flightPlanRouteKey = requestedKey;
+        button.disabled = true;
+        button.textContent = MAP_TEXT.route_estimating;
+
+        const route = await requestFlightRouteEstimate(getFlightplan(pilot));
+        if (
+            generation !== flightPlanRouteGeneration
+            || selectedCallsign !== callsign
+            || !selectedPilotData
+            || selectedFlightPlanRouteKey(selectedPilotData) !== requestedKey
+        ) return;
+
+        button.disabled = false;
+        flightPlanRouteLoading = false;
+        if (!route.success || !Array.isArray(route.points) || route.points.length < 2) {
+            button.textContent = MAP_TEXT.route_unavailable;
+            return;
+        }
+
+        const smoothedPoints = smoothFlightPlanRoute(route.points, 8);
+        flightPlanRouteLayer = L.polyline(smoothedPoints, {
+            color: '#f28c18',
+            weight: 3,
+            opacity: 0.95,
+            dashArray: '10, 8',
+            lineCap: 'round',
+            lineJoin: 'round',
+            smoothFactor: 0.5
+        }).addTo(map);
+        flightPlanRouteLayer.bringToFront();
+
+        flightPlanRouteWaypointLayer = L.layerGroup();
+        route.points.slice(1, -1).forEach(point => {
+            const latitude = Number(point.latitude);
+            const longitude = Number(point.longitude);
+            if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+            const marker = L.circleMarker([latitude, longitude], {
+                radius: 4,
+                color: '#fff2dc',
+                weight: 1,
+                fillColor: '#f28c18',
+                fillOpacity: 1,
+                opacity: 1
+            });
+            marker.bindTooltip(escapeHtml(point.identifier || ''), {
+                direction: 'top',
+                offset: [0, -4],
+                permanent: MAP_WAYPOINT_LABELS_MODE === 'always',
+                className: 'flightplan-waypoint-label'
+            });
+            marker.addTo(flightPlanRouteWaypointLayer);
+        });
+        flightPlanRouteWaypointLayer.addTo(map);
+        flightPlanRouteVisible = true;
+        flightPlanRouteKey = requestedKey;
+        updateFlightPlanRouteButton(pilot);
+    }
+
     function renderPilotDirectory()
     {
         const list = document.getElementById('pilotDirectoryList');
         const query = document.getElementById('pilotSearch').value
             .trim().toLocaleLowerCase();
+        const searchType = document.getElementById('mapSearchType').value;
+        const exactOnly = document.getElementById('mapSearchExact').checked;
+        const ownPilot = latestPilots.find(pilot =>
+            Number(pilot.user_id) === WEB_USER_ID
+        );
+        const nearbyOnly = Boolean(
+            document.getElementById('nearbyPilotsOnly')?.checked
+        );
         const pilots = latestPilots.filter(function(pilot) {
+            if (searchType !== 'all' && searchType !== 'pilot') return false;
+            if (
+                nearbyOnly
+                && (
+                    !ownPilot
+                    || Number(pilot.user_id) === WEB_USER_ID
+                    || pilotDistanceNm(ownPilot, pilot) > 30
+                )
+            ) return false;
             const flightplan = getFlightplan(pilot);
-            return [
+            const values = [
                 pilot.callsign, pilot.username, pilot.aircraft_icao,
                 flightplan.departure_airport, flightplan.arrival_airport
-            ].join(' ').toLocaleLowerCase().includes(query);
+            ].map(value => String(value || '').toLocaleLowerCase());
+            return exactOnly
+                ? values.includes(query)
+                : values.join(' ').includes(query);
         });
-        if (pilots.length === 0) {
+        const visibleAirports = airportSearchResults.filter(function(airport) {
+            if (searchType !== 'all' && searchType !== 'airport') return false;
+            return !exactOnly
+                || String(airport.code || '').toLocaleLowerCase() === query;
+        });
+        const visibleNavigation = navigationSearchResults.filter(function(point) {
+            if (searchType !== 'all' && searchType !== point.kind) return false;
+            return !exactOnly
+                || [point.identifier, point.name].some(value =>
+                    String(value || '').toLocaleLowerCase() === query
+                );
+        });
+        const airportHtml = visibleAirports.map(function(airport) {
+            return '<button type="button" class="pilot-directory-item airport-result"'
+                + ' data-airport-code="' + escapeHtml(airport.code) + '">'
+                + '<div class="pilot-directory-callsign">✈ '
+                + escapeHtml(airport.code) + '</div>'
+                + '<div class="pilot-directory-meta">'
+                + escapeHtml(airport.name)
+                + (airport.municipality ? ' · ' + escapeHtml(airport.municipality) : '')
+                + '</div></button>';
+        }).join('');
+        const navigationHtml = visibleNavigation.map(function(point) {
+            const index = navigationSearchResults.indexOf(point);
+            const kind = point.kind === 'radar'
+                ? MAP_TEXT.navigation_radar
+                : (point.kind === 'navaid'
+                    ? MAP_TEXT.navigation_navaid
+                    : MAP_TEXT.navigation_waypoint);
+            const detail = [kind, point.type, point.region]
+                .filter(Boolean).join(' · ');
+            return '<button type="button" class="pilot-directory-item"'
+                + ' data-navigation-index="' + index + '">'
+                + '<div class="pilot-directory-callsign">◆ '
+                + escapeHtml(point.identifier) + '</div>'
+                + '<div class="pilot-directory-meta">'
+                + escapeHtml(detail)
+                + (point.name && point.name !== point.identifier
+                    ? ' · ' + escapeHtml(point.name) : '')
+                + '</div></button>';
+        }).join('');
+        if (
+            pilots.length === 0
+            && visibleAirports.length === 0
+            && visibleNavigation.length === 0
+        ) {
             list.innerHTML = '<div class="pilot-directory-meta">'
                 + escapeHtml(MAP_TEXT.no_pilots_found) + '</div>';
             return;
         }
-        list.innerHTML = pilots.map(function(pilot) {
+        list.innerHTML = airportHtml + navigationHtml + pilots.map(function(pilot) {
             const flightplan = getFlightplan(pilot);
             const active = selectedCallsign === pilot.callsign ? ' active' : '';
             const following = followedUserId === Number(pilot.user_id) ? ' · ◉' : '';
+            const distance = ownPilot && Number(pilot.user_id) !== WEB_USER_ID
+                ? ' · ' + pilotDistanceNm(ownPilot, pilot).toFixed(1) + ' NM'
+                : '';
+            const spectator = pilot.is_spectator ? ' · SPECTATOR' : '';
             return '<button type="button" class="pilot-directory-item' + active
                 + '" data-pilot-user-id="' + Number(pilot.user_id) + '">'
                 + '<div class="pilot-directory-callsign">' + escapeHtml(pilot.callsign)
                 + escapeHtml(following) + '</div>'
                 + '<div class="pilot-directory-meta">' + escapeHtml(pilot.aircraft_icao || '----')
                 + ' · ' + escapeHtml(getAirportCode(flightplan.departure_airport))
-                + ' → ' + escapeHtml(getAirportCode(flightplan.arrival_airport)) + '</div>'
+                + ' → ' + escapeHtml(getAirportCode(flightplan.arrival_airport))
+                + escapeHtml(distance + spectator) + '</div>'
                 + '</button>';
         }).join('');
     }
 
-    document.getElementById('pilotSearch').addEventListener('input', renderPilotDirectory);
+    function normalizeRadarSearch(value)
+    {
+        return String(value || '')
+            .toLocaleLowerCase()
+            .replace(/ä/g, 'ae')
+            .replace(/ö/g, 'oe')
+            .replace(/ü/g, 'ue')
+            .replace(/ß/g, 'ss')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/_/g, '-');
+    }
+
+    function radarIdentifierDistance(left, right)
+    {
+        if (left.length !== right.length) return 99;
+        const differences = [];
+        for (let index = 0; index < left.length; index++) {
+            if (left[index] !== right[index]) differences.push(index);
+            if (differences.length > 2) return 99;
+        }
+        if (differences.length <= 1) return differences.length;
+        const first = differences[0];
+        const second = differences[1];
+        return second === first + 1
+            && left[first] === right[second]
+            && left[second] === right[first]
+                ? 1 : 99;
+    }
+
+    async function searchMapEntities(query)
+    {
+        if (query.trim().length < 2) {
+            airportSearchResults = [];
+            navigationSearchResults = [];
+            renderPilotDirectory();
+            return;
+        }
+        try {
+            const encodedQuery = encodeURIComponent(query.trim());
+            const results = await Promise.allSettled([
+                fetch('execute/airport_lookup.php?q=' + encodedQuery),
+                fetch('execute/airac_search.php?q=' + encodedQuery),
+                loadFirDataset()
+            ]);
+            const airportData = results[0].status === 'fulfilled'
+                ? await results[0].value.json() : {success:false};
+            const airacData = results[1].status === 'fulfilled'
+                ? await results[1].value.json() : {success:false};
+            airportSearchResults =
+                airportData.success ? (airportData.airports || []) : [];
+            const airacResults =
+                airacData.success ? (airacData.results || []) : [];
+            let radarResults = [];
+            if (results[2].status === 'fulfilled') {
+                const fir = results[2].value;
+                const needle = normalizeRadarSearch(query.trim());
+                const seen = new Set();
+                radarResults = (fir.data.features || []).filter(feature => {
+                    const properties = feature.properties || {};
+                    const identifier = String(properties.id || '').toUpperCase();
+                    const name = String(fir.names[identifier] || '');
+                    const normalizedIdentifier =
+                        normalizeRadarSearch(identifier);
+                    const haystack = normalizeRadarSearch([
+                        identifier, name, properties.region,
+                        properties.division
+                    ].join(' '));
+                    const comparableIdentifier =
+                        normalizedIdentifier.substring(0, needle.length);
+                    const nearIdentifier = needle.length >= 4
+                        && radarIdentifierDistance(
+                            comparableIdentifier,
+                            needle
+                        ) <= 1;
+                    if (!identifier
+                        || (!haystack.includes(needle) && !nearIdentifier)
+                        || seen.has(identifier)) return false;
+                    seen.add(identifier);
+                    return true;
+                }).slice(0, 30).map(feature => {
+                    const properties = feature.properties || {};
+                    const identifier = String(properties.id || '').toUpperCase();
+                    return {
+                        kind: 'radar',
+                        identifier: identifier,
+                        name: fir.names[identifier] || identifier,
+                        type: fir.types[identifier] || 'FIR/UIR',
+                        region: [properties.region, properties.division]
+                            .filter(Boolean).join(' / '),
+                        feature: feature
+                    };
+                });
+            }
+            navigationSearchResults = airacResults.concat(radarResults);
+            currentAiracCycle =
+                airacData.success ? (airacData.cycle || '') : '';
+        } catch (error) {
+            airportSearchResults = [];
+            navigationSearchResults = [];
+        }
+        renderPilotDirectory();
+    }
+
+    document.getElementById('pilotSearch').addEventListener('input', function() {
+        renderPilotDirectory();
+        clearTimeout(airportSearchTimer);
+        const query = this.value;
+        airportSearchTimer = setTimeout(() => searchMapEntities(query), 250);
+    });
+    const mapSearchType = document.getElementById('mapSearchType');
+    const mapSearchExact = document.getElementById('mapSearchExact');
+    mapSearchType.value =
+        localStorage.getItem('vfn_map_search_type') || 'all';
+    mapSearchExact.checked =
+        localStorage.getItem('vfn_map_search_exact') === '1';
+    mapSearchType.addEventListener('change', function() {
+        localStorage.setItem('vfn_map_search_type', this.value);
+        renderPilotDirectory();
+    });
+    mapSearchExact.addEventListener('change', function() {
+        localStorage.setItem(
+            'vfn_map_search_exact',
+            this.checked ? '1' : '0'
+        );
+        renderPilotDirectory();
+    });
+    const nearbyPilotsOnly = document.getElementById('nearbyPilotsOnly');
+    if (nearbyPilotsOnly) {
+        nearbyPilotsOnly.checked =
+            localStorage.getItem('vfn_map_nearby_only') === '1';
+        nearbyPilotsOnly.addEventListener('change', function() {
+            localStorage.setItem(
+                'vfn_map_nearby_only',
+                this.checked ? '1' : '0'
+            );
+            renderPilotDirectory();
+        });
+    }
     if (hideInvisiblePilots) {
         hideInvisiblePilots.checked =
             localStorage.getItem('vfn_map_hide_invisible') === '1';
@@ -1551,6 +2502,30 @@ if ($statusMessage !== '') {
         });
     }
     document.getElementById('pilotDirectoryList').addEventListener('click', function(event) {
+        const navigationItem = event.target.closest('[data-navigation-index]');
+        if (navigationItem) {
+            const point =
+                navigationSearchResults[Number(navigationItem.dataset.navigationIndex)];
+            if (point) openNavigationPointPanel(point);
+            return;
+        }
+        const airportItem = event.target.closest('[data-airport-code]');
+        if (airportItem) {
+            const airport = airportSearchResults.find(entry =>
+                entry.code === airportItem.dataset.airportCode);
+            if (airport) {
+                searchedAirports[airport.code] = airport;
+                ensureAirportTrafficBucket(
+                    airportTrafficData,
+                    airport.code,
+                    airport
+                );
+                updateAirportTrafficMarkers();
+                map.setView([airport.latitude, airport.longitude], 11, {animate:true});
+                openAirportTrafficPanel(airport.code);
+            }
+            return;
+        }
         const item = event.target.closest('[data-pilot-user-id]');
         if (!item) return;
         const pilot = latestPilots.find(entry =>
@@ -1606,6 +2581,12 @@ if ($statusMessage !== '') {
     document.getElementById('heatmapToggle').addEventListener('change', loadHeatmap);
     document.getElementById('heatmapPeriod').addEventListener('change', loadHeatmap);
     if (INITIAL_HEATMAP) loadHeatmap();
+    const firBoundaryToggle =
+        document.getElementById('firBoundaryToggle');
+    firBoundaryToggle.checked =
+        localStorage.getItem('vfn_map_show_fir_boundaries') === '1';
+    firBoundaryToggle.addEventListener('change', loadFirBoundaries);
+    if (firBoundaryToggle.checked) loadFirBoundaries();
 
     function createAirportTrafficMarker()
     {
@@ -1721,6 +2702,14 @@ if ($statusMessage !== '') {
                 traffic,
                 pilot,
                 'outbound'
+            );
+        });
+
+        Object.keys(searchedAirports).forEach(code => {
+            ensureAirportTrafficBucket(
+                traffic,
+                code,
+                searchedAirports[code]
             );
         });
 
@@ -1853,6 +2842,25 @@ if ($statusMessage !== '') {
         });
     }
 
+    function getPilotStatusIcons(pilot)
+    {
+        const invisibleIcon =
+            pilot.is_invisible
+            ? '👁 '
+            : '';
+
+        const aiControlled =
+            pilot.ai_controls_aircraft === true
+            || Number(pilot.ai_controls_aircraft) === 1;
+
+        const aiIcon =
+            CAN_SEE_AI_CONTROL_STATUS && aiControlled
+            ? '🤖 '
+            : '';
+
+        return invisibleIcon + aiIcon;
+    }
+
     function createTooltipContent(pilot)
     {
         const flightplan =
@@ -1871,16 +2879,14 @@ if ($statusMessage !== '') {
         const squawk =
             getSquawkCode(pilot);
 
-        const invisibleIcon =
-            pilot.is_invisible
-            ? '👁 '
-            : '';
+        const statusIcons =
+            getPilotStatusIcons(pilot);
 
         if (isEmergencySquawk(squawk))
         {
             return `
                 <div class="pilot-label-emergency-box">
-                    <div>${invisibleIcon}${pilot.callsign}</div>
+                    <div>${statusIcons}${pilot.callsign}</div>
                     <div>${pilot.aircraft_icao}</div>
                     <div>${dep} - ${arr}</div>
                 </div>
@@ -1889,7 +2895,7 @@ if ($statusMessage !== '') {
 
         return `
             <div class="pilot-label-normal-box">
-                <div><b>${invisibleIcon}${pilot.callsign}</b></div>
+                <div><b>${statusIcons}${pilot.callsign}</b></div>
                 <div>${pilot.aircraft_icao}</div>
                 <div>${dep} - ${arr}</div>
             </div>
@@ -1906,11 +2912,30 @@ if ($statusMessage !== '') {
 
     function removeAllTracks()
     {
+        pilotTrackLoadGeneration++;
+
         Object.keys(pilotTracks).forEach(callsign =>
         {
             map.removeLayer(pilotTracks[callsign]);
 
             delete pilotTracks[callsign];
+            delete pilotTrackLastIds[callsign];
+            delete pilotTrackSegments[callsign];
+            delete pilotTrackLastPoints[callsign];
+        });
+
+        /*
+            A track can be removed while an update request is still pending
+            or after its polyline has already disappeared. Clear every
+            remaining cursor as well. Otherwise reopening a pilot starts
+            after the old database ID and only the newly recorded taxi
+            section is drawn.
+        */
+        Object.keys(pilotTrackLastIds).forEach(callsign =>
+        {
+            delete pilotTrackLastIds[callsign];
+            delete pilotTrackSegments[callsign];
+            delete pilotTrackLastPoints[callsign];
         });
     }
 
@@ -1933,6 +2958,8 @@ if ($statusMessage !== '') {
 
     function resetTrackForCallsign(callsign)
     {
+        pilotTrackLoadGeneration++;
+
         if (pilotTracks[callsign])
         {
             map.removeLayer(pilotTracks[callsign]);
@@ -1941,22 +2968,25 @@ if ($statusMessage !== '') {
         }
 
         pilotTrackLastIds[callsign] = 0;
+        delete pilotTrackSegments[callsign];
+        delete pilotTrackLastPoints[callsign];
     }
 
     function appendTrackPoints(callsign, points)
     {
-        const latLngs =
+        const trackPoints =
             points
-                .map(point => [
-                    Number(point.latitude),
-                    Number(point.longitude)
-                ])
+                .map(point => ({
+                    latitude: Number(point.latitude),
+                    longitude: Number(point.longitude),
+                    timestamp: Date.parse(String(point.created_at || '').replace(' ', 'T') + 'Z')
+                }))
                 .filter(point =>
-                    !isNaN(point[0]) &&
-                    !isNaN(point[1])
+                    Number.isFinite(point.latitude) &&
+                    Number.isFinite(point.longitude)
                 );
 
-        if (latLngs.length === 0)
+        if (trackPoints.length === 0)
         {
             return;
         }
@@ -1973,34 +3003,57 @@ if ($statusMessage !== '') {
                         smoothFactor: 1.0
                     }
                 ).addTo(map);
+
+            pilotTrackSegments[callsign] = [];
         }
 
-        const existingPoints =
-            pilotTracks[callsign].getLatLngs();
+        const segments = pilotTrackSegments[callsign] || [];
 
-        latLngs.forEach(point =>
+        trackPoints.forEach(point =>
         {
-            const lastExisting =
-                existingPoints[
-                    existingPoints.length - 1
-                ];
+            const previous = pilotTrackLastPoints[callsign] || null;
+            const distanceNm = previous
+                ? pilotDistanceNm(previous, point)
+                : 0;
+            const timeGapSeconds = previous
+                && Number.isFinite(previous.timestamp)
+                && Number.isFinite(point.timestamp)
+                ? Math.max(0, (point.timestamp - previous.timestamp) / 1000)
+                : 0;
+
+            // Never draw a straight line across a simulator reposition, a
+            // disconnected update interval, or a resumed/stale track.
+            const startsNewSegment =
+                !previous
+                || distanceNm > 8
+                || timeGapSeconds > 60;
+
+            if (startsNewSegment) {
+                segments.push([]);
+            }
+
+            const currentSegment = segments[segments.length - 1];
+            const lastExisting = currentSegment[currentSegment.length - 1];
 
             if (
                 !lastExisting ||
-                lastExisting.lat !== point[0] ||
-                lastExisting.lng !== point[1]
+                lastExisting.lat !== point.latitude ||
+                lastExisting.lng !== point.longitude
             )
             {
-                existingPoints.push(
+                currentSegment.push(
                     L.latLng(
-                        point[0],
-                        point[1]
+                        point.latitude,
+                        point.longitude
                     )
                 );
             }
+
+            pilotTrackLastPoints[callsign] = point;
         });
 
-        pilotTracks[callsign].setLatLngs(existingPoints);
+        pilotTrackSegments[callsign] = segments;
+        pilotTracks[callsign].setLatLngs(segments);
     }
 
     function updateAirportRouteOverlays(pilot)
@@ -2164,6 +3217,8 @@ if ($statusMessage !== '') {
 
         const lastId =
             pilotTrackLastIds[callsign] || 0;
+        const requestGeneration =
+            pilotTrackLoadGeneration;
 
         try
         {
@@ -2179,6 +3234,11 @@ if ($statusMessage !== '') {
 
             const data =
                 await response.json();
+
+            if (requestGeneration !== pilotTrackLoadGeneration)
+            {
+                return;
+            }
 
             if (!data.success)
             {
@@ -2214,6 +3274,11 @@ if ($statusMessage !== '') {
     {
         const listElement =
             document.getElementById('airportTrafficList');
+
+        if (selectedAirportTab === 'metar') {
+            renderAirportMetar(airport.code);
+            return;
+        }
 
         const entries =
             airport[selectedAirportTab] || [];
@@ -2268,6 +3333,45 @@ if ($statusMessage !== '') {
                 .join('');
     }
 
+    async function renderAirportMetar(code)
+    {
+        const listElement = document.getElementById('airportTrafficList');
+        const cached = airportMetarCache[code];
+        if (cached) {
+            showAirportMetar(cached);
+            return;
+        }
+        listElement.innerHTML = '<div class="airport-traffic-empty">'
+            + escapeHtml(MAP_TEXT.airport_metar_loading) + '</div>';
+        try {
+            const response = await fetch(
+                'execute/airport_metar.php?airport=' + encodeURIComponent(code)
+            );
+            const data = await response.json();
+            if (!data.success) throw new Error('unavailable');
+            airportMetarCache[code] = data;
+            if (selectedAirportCode === code && selectedAirportTab === 'metar') {
+                showAirportMetar(data);
+            }
+        } catch (error) {
+            if (selectedAirportCode === code && selectedAirportTab === 'metar') {
+                listElement.innerHTML = '<div class="airport-traffic-empty">'
+                    + escapeHtml(MAP_TEXT.airport_metar_unavailable) + '</div>';
+            }
+        }
+    }
+
+    function showAirportMetar(data)
+    {
+        document.getElementById('airportTrafficList').innerHTML =
+            '<div class="airport-metar">'
+            + '<div class="airport-metar-raw">' + escapeHtml(data.raw_text) + '</div>'
+            + '<div class="airport-metar-time">'
+            + escapeHtml(MAP_TEXT.airport_metar_observed) + ': '
+            + escapeHtml(data.observed_at || '—')
+            + '</div></div>';
+    }
+
     function updateAirportTrafficPanel(code)
     {
         const airport =
@@ -2308,11 +3412,18 @@ if ($statusMessage !== '') {
                 selectedAirportTab === 'outbound'
             );
 
+        document
+            .getElementById('airportMetarTab')
+            .classList
+            .toggle('active', selectedAirportTab === 'metar');
+
         renderAirportTrafficList(airport);
     }
 
     function openAirportTrafficPanel(code)
     {
+        closeNavigationPointPanel();
+
         selectedAirportCode =
             code;
 
@@ -2332,9 +3443,73 @@ if ($statusMessage !== '') {
 
         removeAirportRouteOverlays();
 
+        if (selectedAirportMarker)
+        {
+            map.removeLayer(selectedAirportMarker);
+            selectedAirportMarker = null;
+        }
+
+        const selectedAirport =
+            airportTrafficData[code];
+        const selectedAirportLatLng =
+            selectedAirport
+            ? getAirportLatLng(selectedAirport.info)
+            : null;
+
+        if (selectedAirportLatLng)
+        {
+            selectedAirportMarker =
+                L.circleMarker(
+                    selectedAirportLatLng,
+                    {
+                        radius: 10,
+                        color: '#ffffff',
+                        weight: 3,
+                        fillColor: '#168cff',
+                        fillOpacity: 1,
+                        opacity: 1
+                    }
+                ).addTo(map);
+
+            selectedAirportMarker.bringToFront();
+        }
+
         updateAirportTrafficPanel(code);
+        document.getElementById('airportDetailsLink').href =
+            'airport.php?icao=' + encodeURIComponent(code);
 
         airportTrafficPanel.classList.add('open');
+    }
+
+    async function openTargetAirport()
+    {
+        if (!TARGET_AIRPORT) return;
+        try {
+            const response = await fetch(
+                'execute/airport_lookup.php?q='
+                + encodeURIComponent(TARGET_AIRPORT)
+            );
+            const data = await response.json();
+            const airport = (data.airports || []).find(entry =>
+                String(entry.code).toUpperCase() === TARGET_AIRPORT
+                || String(entry.ident).toUpperCase() === TARGET_AIRPORT
+            );
+            if (!airport) return;
+            searchedAirports[airport.code] = airport;
+            ensureAirportTrafficBucket(
+                airportTrafficData,
+                airport.code,
+                airport
+            );
+            updateAirportTrafficMarkers();
+            map.setView(
+                [Number(airport.latitude), Number(airport.longitude)],
+                11
+            );
+            openAirportTrafficPanel(airport.code);
+        } catch (error) {
+            console.warn('Target airport could not be opened.', error);
+        }
     }
 
     function closeAirportTrafficPanel()
@@ -2342,7 +3517,99 @@ if ($statusMessage !== '') {
         selectedAirportCode =
             null;
 
+        if (selectedAirportMarker)
+        {
+            map.removeLayer(selectedAirportMarker);
+            selectedAirportMarker = null;
+        }
+
         airportTrafficPanel.classList.remove('open');
+    }
+
+    function openNavigationPointPanel(point)
+    {
+        closeAirportTrafficPanel();
+        pilotInfoPanel.classList.remove('open');
+        selectedCallsign = null;
+        selectedPilotData = null;
+        followedUserId = 0;
+        updateFollowButton();
+        updateMapUrl(null);
+        removeAllTracks();
+        removeAirportRouteOverlays();
+
+        if (selectedNavigationMarker) {
+            map.removeLayer(selectedNavigationMarker);
+            selectedNavigationMarker = null;
+        }
+        if (selectedRadarLayer) {
+            map.removeLayer(selectedRadarLayer);
+            selectedRadarLayer = null;
+        }
+        if (point.kind === 'radar' && point.feature) {
+            selectedRadarLayer = L.geoJSON(point.feature, {
+                style: {
+                    color: '#00d9ff', weight: 4, opacity: 1,
+                    fillColor: '#168cff', fillOpacity: 0.18
+                }
+            }).addTo(map);
+            const bounds = selectedRadarLayer.getBounds();
+            if (!point.preserveView && bounds.isValid()) {
+                map.fitBounds(bounds, {padding:[40, 40]});
+            }
+        } else {
+            selectedNavigationMarker = L.circleMarker(
+                [Number(point.latitude), Number(point.longitude)],
+                {
+                    radius: 9,
+                    color: '#ffffff',
+                    weight: 3,
+                    fillColor: point.kind === 'navaid' ? '#8f54ff' : '#168cff',
+                    fillOpacity: 1
+                }
+            ).addTo(map);
+            selectedNavigationMarker.bringToFront();
+            map.setView(
+                [Number(point.latitude), Number(point.longitude)],
+                Math.max(map.getZoom(), 10),
+                {animate:true}
+            );
+        }
+
+        document.getElementById('navigationPointIdentifier').textContent =
+            point.identifier || '----';
+        document.getElementById('navigationPointName').textContent =
+            point.name || point.identifier || '----';
+        document.getElementById('navigationPointKind').textContent =
+            point.kind === 'radar'
+                ? MAP_TEXT.navigation_radar
+                : (point.kind === 'navaid'
+                    ? MAP_TEXT.navigation_navaid
+                    : MAP_TEXT.navigation_waypoint);
+        document.getElementById('navigationPointType').textContent =
+            point.type || '----';
+        document.getElementById('navigationPointRegion').textContent =
+            point.region || '----';
+        document.getElementById('navigationPointFrequency').textContent =
+            point.frequency
+                ? point.frequency + ' ' + (point.frequency_unit || '')
+                : '----';
+        document.getElementById('navigationPointCycle').textContent =
+            point.kind === 'radar' ? 'VATSpy' : (currentAiracCycle || '----');
+        navigationPointPanel.classList.add('open');
+    }
+
+    function closeNavigationPointPanel()
+    {
+        navigationPointPanel.classList.remove('open');
+        if (selectedNavigationMarker) {
+            map.removeLayer(selectedNavigationMarker);
+            selectedNavigationMarker = null;
+        }
+        if (selectedRadarLayer) {
+            map.removeLayer(selectedRadarLayer);
+            selectedRadarLayer = null;
+        }
     }
 
     function setAirportTrafficTab(tab)
@@ -2391,6 +3658,12 @@ if ($statusMessage !== '') {
 
     function openPilotPanel(pilot)
     {
+        closeNavigationPointPanel();
+
+        if (selectedCallsign !== pilot.callsign) {
+            removeFlightPlanRoute();
+        }
+
         selectedCallsign =
             pilot.callsign;
         selectedPilotData = pilot;
@@ -2424,6 +3697,8 @@ if ($statusMessage !== '') {
 
     function closePilotPanel()
     {
+        flightRouteEstimateGeneration++;
+        removeFlightPlanRoute();
         selectedCallsign = null;
         selectedPilotData = null;
         followedUserId = 0;
@@ -2473,7 +3748,7 @@ if ($statusMessage !== '') {
             document.getElementById('panelTransponder');
 
         document.getElementById('panelCallsign').innerText =
-            (pilot.is_invisible ? '👁 ' : '') + (pilot.callsign || '----');
+            getPilotStatusIcons(pilot) + (pilot.callsign || '----');
 
         document.getElementById('panelDeparture').innerText =
             departureCode;
@@ -2578,6 +3853,15 @@ if ($statusMessage !== '') {
 
         document.getElementById('panelRouteText').innerText =
             flightplan.route_text || '----';
+
+        updateFlightProgressPanel(pilot);
+        if (
+            (flightPlanRouteVisible || flightPlanRouteLoading)
+            && flightPlanRouteKey !== selectedFlightPlanRouteKey(pilot)
+        ) {
+            removeFlightPlanRoute();
+        }
+        updateFlightPlanRouteButton(pilot);
 
         document.getElementById('panelRemarks').innerText =
             flightplan.remarks || '----';
@@ -2695,6 +3979,10 @@ if ($statusMessage !== '') {
 
                 const category =
                     pilot.aircraft_category || 'unknown';
+
+                if (pilot.is_spectator) {
+                    return;
+                }
 
                 activeCallsigns.push(callsign);
 
@@ -2819,6 +4107,8 @@ if ($statusMessage !== '') {
                     }
 
                     delete pilotTrackLastIds[callsign];
+                    delete pilotTrackSegments[callsign];
+                    delete pilotTrackLastPoints[callsign];
 
                     if (selectedCallsign === callsign)
                     {
@@ -2871,6 +4161,7 @@ if ($statusMessage !== '') {
     }
 
     loadPilots();
+    openTargetAirport();
 
     setInterval(
         loadPilots,

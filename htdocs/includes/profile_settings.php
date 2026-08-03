@@ -37,7 +37,19 @@ $settingsMessageType = (string)($_GET['type'] ?? '');
     .settings-field textarea{min-height:90px;resize:vertical}
     .settings-button{margin-top:14px;padding:11px 18px;border:1px solid #168cff;border-radius:4px;background:#176dcc;color:#fff;cursor:pointer}
     .settings-note{color:#9fb3cf;font-size:13px;word-break:break-all}
+    .avatar-settings-layout{display:grid;grid-template-columns:180px minmax(0,1fr);gap:22px;align-items:start}
+    .avatar-current{width:160px;height:160px;border-radius:50%;overflow:hidden;border:3px solid #2d5a82;background:linear-gradient(135deg,#ffae4a,#16385c)}
+    .avatar-current img{display:block;width:100%;height:100%;object-fit:cover}
+    .avatar-editor{display:none;margin-top:16px;gap:12px}
+    .avatar-editor.active{display:grid}
+    .avatar-canvas-wrap{width:min(100%,420px);aspect-ratio:1;background:#06101d;border:1px solid #2d5a82;overflow:hidden;touch-action:none;cursor:grab}
+    .avatar-canvas-wrap:active{cursor:grabbing}
+    #avatarCanvas{display:block;width:100%;height:100%}
+    .avatar-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+    .avatar-actions .settings-button{margin-top:0}
+    .settings-button.danger{background:#8f2631;border-color:#d55360}
     @media(max-width:760px){.settings-grid{grid-template-columns:1fr}}
+    @media(max-width:760px){.avatar-settings-layout{grid-template-columns:1fr}}
 </style>
 
 <?php if ($settingsMessageKey !== ''): ?>
@@ -45,6 +57,68 @@ $settingsMessageType = (string)($_GET['type'] ?? '');
         <?php echo h(t($settingsMessageKey)); ?>
     </div>
 <?php endif; ?>
+
+<div class="settings-section">
+    <h2><?php echo h(t('settings_avatar_title')); ?></h2>
+    <div class="avatar-settings-layout">
+        <div class="avatar-current">
+            <?php if ($avatarUrl !== ''): ?>
+                <img src="<?php echo h($avatarUrl); ?>" alt="<?php echo h(t('profile_avatar_alt')); ?>">
+            <?php endif; ?>
+        </div>
+        <div>
+            <p class="settings-note"><?php echo h(t('settings_avatar_help')); ?></p>
+            <label class="settings-field">
+                <?php echo h(t('settings_avatar_choose')); ?>
+                <input id="avatarFile" type="file" accept="image/jpeg,image/png,image/webp">
+            </label>
+            <div id="avatarEditor" class="avatar-editor">
+                <div id="avatarCanvasWrap" class="avatar-canvas-wrap">
+                    <canvas id="avatarCanvas" width="512" height="512"></canvas>
+                </div>
+                <label class="settings-field">
+                    <?php echo h(t('settings_avatar_zoom')); ?>
+                    <input id="avatarZoom" type="range" min="1" max="3" step="0.01" value="1">
+                </label>
+                <div class="avatar-actions">
+                    <button id="avatarSave" type="button" class="settings-button">
+                        <?php echo h(t('settings_avatar_save')); ?>
+                    </button>
+                    <span id="avatarStatus" class="settings-note"></span>
+                </div>
+            </div>
+            <?php if ($avatarUrl !== ''): ?>
+                <form method="post" action="execute/profile_avatar.php"
+                      onsubmit="return confirm(<?php echo h(json_encode(t('settings_avatar_delete_confirm'))); ?>);">
+                    <input type="hidden" name="csrf" value="<?php echo h($csrf); ?>">
+                    <input type="hidden" name="action" value="delete">
+                    <button class="settings-button danger"><?php echo h(t('settings_avatar_delete')); ?></button>
+                </form>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>
+
+<div class="settings-section">
+    <h2><?php echo h(t('settings_map_title')); ?></h2>
+    <p class="settings-note"><?php echo h(t('settings_map_waypoint_labels_help')); ?></p>
+    <form method="post" action="execute/profile_settings.php">
+        <input type="hidden" name="csrf" value="<?php echo h($csrf); ?>">
+        <input type="hidden" name="action" value="map_preferences">
+        <label class="settings-field">
+            <?php echo h(t('settings_map_waypoint_labels')); ?>
+            <select name="map_waypoint_labels_mode">
+                <option value="always" <?php echo ($profileUser['map_waypoint_labels_mode'] ?? 'always') === 'always' ? 'selected' : ''; ?>>
+                    <?php echo h(t('settings_map_waypoint_labels_always')); ?>
+                </option>
+                <option value="hover" <?php echo ($profileUser['map_waypoint_labels_mode'] ?? 'always') === 'hover' ? 'selected' : ''; ?>>
+                    <?php echo h(t('settings_map_waypoint_labels_hover')); ?>
+                </option>
+            </select>
+        </label>
+        <button class="settings-button"><?php echo h(t('settings_save')); ?></button>
+    </form>
+</div>
 
 <div class="settings-section">
     <h2><?php echo h(t('settings_personal_title')); ?></h2>
@@ -165,3 +239,143 @@ twoFactorMethod.addEventListener('change', updateTotpSetup);
 updateTotpSetup();
 </script>
 <?php endif; ?>
+
+<script>
+(() => {
+    const fileInput = document.getElementById('avatarFile');
+    const editor = document.getElementById('avatarEditor');
+    const canvas = document.getElementById('avatarCanvas');
+    const wrap = document.getElementById('avatarCanvasWrap');
+    const zoomInput = document.getElementById('avatarZoom');
+    const saveButton = document.getElementById('avatarSave');
+    const status = document.getElementById('avatarStatus');
+    if (!fileInput || !canvas || !canvas.getContext) return;
+
+    const context = canvas.getContext('2d');
+    const csrf = <?php echo json_encode($csrf); ?>;
+    const text = {
+        loading: <?php echo json_encode(t('settings_avatar_loading')); ?>,
+        saving: <?php echo json_encode(t('settings_avatar_saving')); ?>,
+        failed: <?php echo json_encode(t('settings_avatar_failed')); ?>
+    };
+    let image = null;
+    let baseScale = 1;
+    let offsetX = 0;
+    let offsetY = 0;
+    let dragging = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    function clampOffsets() {
+        if (!image) return;
+        const scale = baseScale * Number(zoomInput.value);
+        const width = image.naturalWidth * scale;
+        const height = image.naturalHeight * scale;
+        offsetX = Math.min(0, Math.max(canvas.width - width, offsetX));
+        offsetY = Math.min(0, Math.max(canvas.height - height, offsetY));
+    }
+
+    function draw() {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        if (!image) return;
+        clampOffsets();
+        const scale = baseScale * Number(zoomInput.value);
+        context.drawImage(
+            image, offsetX, offsetY,
+            image.naturalWidth * scale, image.naturalHeight * scale
+        );
+    }
+
+    fileInput.addEventListener('change', () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) return;
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+            status.textContent = text.failed;
+            return;
+        }
+        status.textContent = text.loading;
+        const objectUrl = URL.createObjectURL(file);
+        const nextImage = new Image();
+        nextImage.onload = () => {
+            URL.revokeObjectURL(objectUrl);
+            image = nextImage;
+            baseScale = Math.max(
+                canvas.width / image.naturalWidth,
+                canvas.height / image.naturalHeight
+            );
+            zoomInput.value = '1';
+            zoomInput.dataset.previous = '1';
+            offsetX = (canvas.width - image.naturalWidth * baseScale) / 2;
+            offsetY = (canvas.height - image.naturalHeight * baseScale) / 2;
+            editor.classList.add('active');
+            status.textContent = '';
+            draw();
+        };
+        nextImage.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            status.textContent = text.failed;
+        };
+        nextImage.src = objectUrl;
+    });
+
+    zoomInput.addEventListener('input', () => {
+        if (!image) return;
+        const oldCenterX = (canvas.width / 2 - offsetX);
+        const oldCenterY = (canvas.height / 2 - offsetY);
+        const previous = Number(zoomInput.dataset.previous || 1);
+        const ratio = Number(zoomInput.value) / previous;
+        offsetX = canvas.width / 2 - oldCenterX * ratio;
+        offsetY = canvas.height / 2 - oldCenterY * ratio;
+        zoomInput.dataset.previous = zoomInput.value;
+        draw();
+    });
+
+    wrap.addEventListener('pointerdown', event => {
+        if (!image) return;
+        dragging = true;
+        lastX = event.clientX;
+        lastY = event.clientY;
+        wrap.setPointerCapture(event.pointerId);
+    });
+    wrap.addEventListener('pointermove', event => {
+        if (!dragging) return;
+        const factor = canvas.width / wrap.getBoundingClientRect().width;
+        offsetX += (event.clientX - lastX) * factor;
+        offsetY += (event.clientY - lastY) * factor;
+        lastX = event.clientX;
+        lastY = event.clientY;
+        draw();
+    });
+    wrap.addEventListener('pointerup', () => { dragging = false; });
+    wrap.addEventListener('pointercancel', () => { dragging = false; });
+
+    saveButton.addEventListener('click', () => {
+        if (!image) return;
+        saveButton.disabled = true;
+        status.textContent = text.saving;
+        canvas.toBlob(async blob => {
+            if (!blob) {
+                saveButton.disabled = false;
+                status.textContent = text.failed;
+                return;
+            }
+            const body = new FormData();
+            body.append('csrf', csrf);
+            body.append('action', 'upload');
+            body.append('avatar', blob, 'avatar.jpg');
+            try {
+                const response = await fetch('execute/profile_avatar.php', {
+                    method: 'POST',
+                    body
+                });
+                const data = await response.json();
+                if (!response.ok || !data.success) throw new Error('upload_failed');
+                location.href = 'profile.php?a=settings&type=success&message=settings_avatar_saved';
+            } catch (error) {
+                saveButton.disabled = false;
+                status.textContent = text.failed;
+            }
+        }, 'image/jpeg', 0.9);
+    });
+})();
+</script>

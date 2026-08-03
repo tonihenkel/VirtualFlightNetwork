@@ -1,6 +1,7 @@
 <?php
 
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
+startVfnWebSession();
 
 if (!isset($_SESSION['web_user_id'])) {
     header(
@@ -98,7 +99,8 @@ try {
             op_permission,
             total_flight_seconds,
             total_flight_miles,
-            total_landings
+            total_landings,
+            map_waypoint_labels_mode
          FROM users
          WHERE id = :id
          LIMIT 1"
@@ -115,6 +117,15 @@ try {
         header('Location: index.php?type=error&message=user_not_found');
         exit;
     }
+
+    $avatarRelativePath =
+        'uploads/avatars/' . (int)$profileUser['id'] . '.jpg';
+    $avatarAbsolutePath =
+        __DIR__ . DIRECTORY_SEPARATOR
+        . str_replace('/', DIRECTORY_SEPARATOR, $avatarRelativePath);
+    $avatarUrl = is_file($avatarAbsolutePath)
+        ? $avatarRelativePath . '?v=' . (int)filemtime($avatarAbsolutePath)
+        : '';
 
     $viewerStmt = $pdo->prepare(
         "SELECT id, op_permission
@@ -495,6 +506,15 @@ $awardImages = [
             border: 4px solid rgba(255,255,255,0.9);
             background: linear-gradient(135deg, #ffae4a, #16385c);
             box-shadow: 0 10px 35px rgba(0,0,0,0.4);
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+
+        .avatar img {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: cover;
         }
 
         .avatar-online {

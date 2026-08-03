@@ -1,0 +1,971 @@
+{
+  "fbx": "C:\\Users\\Administrator\\Desktop\\VFN-Projekt\\Flight Radar Sim Projekt\\Follow_Me_Car_Model\\source\\FINAL_MODEL.fbx",
+  "object_count": 27,
+  "mesh_count": 26,
+  "vertex_count": 414177,
+  "polygon_count": 293468,
+  "bounds": {
+    "min": [
+      -0.013984404504299164,
+      -0.02968750335276127,
+      -0.009019425138831139
+    ],
+    "max": [
+      0.01304690446704626,
+      0.02835940010845661,
+      0.011484401300549507
+    ],
+    "dimensions": [
+      0.027031308971345425,
+      0.05804690346121788,
+      0.020503826439380646
+    ]
+  },
+  "objects": [
+    {
+      "name": "vw_amorak_2018:body",
+      "type": "MESH",
+      "dimensions": [
+        0.027031298726797104,
+        0.020409077405929565,
+        0.05804689601063728
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.013984404504299164,
+          -0.02968750335276127,
+          -0.008924681693315506
+        ],
+        "max": [
+          0.01304690446704626,
+          0.02835940010845661,
+          0.011484401300549507
+        ]
+      },
+      "materials": [
+        "phong5",
+        "PLASTIC_BLACK",
+        "CHROME",
+        "plastic"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:far",
+      "type": "MESH",
+      "dimensions": [
+        0.017702369019389153,
+        0.004074320197105408,
+        0.047848399728536606
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.008851183578372002,
+          -0.022948002442717552,
+          -0.0014802617952227592
+        ],
+        "max": [
+          0.008851193822920322,
+          0.0249004028737545,
+          0.0025940618943423033
+        ]
+      },
+      "materials": [
+        "CHROME"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:led",
+      "type": "MESH",
+      "dimensions": [
+        0.017468828707933426,
+        0.009407838806509972,
+        0.049481600522994995
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.008734423667192459,
+          -0.025311002507805824,
+          -0.000991020817309618
+        ],
+        "max": [
+          0.008734413422644138,
+          0.02417059987783432,
+          0.00841682218015194
+        ]
+      },
+      "materials": [
+        "phong15"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:interior",
+      "type": "MESH",
+      "dimensions": [
+        0.015761999413371086,
+        0.012753999792039394,
+        0.022717999294400215
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.007881000638008118,
+          -0.013816001825034618,
+          -0.004128180909901857
+        ],
+        "max": [
+          0.007881001569330692,
+          0.00890200212597847,
+          0.008625821210443974
+        ]
+      },
+      "materials": [
+        "int_2",
+        "mirror",
+        "interior"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:steering_ok",
+      "type": "MESH",
+      "dimensions": [
+        0.0038199995178729296,
+        0.0034439999144524336,
+        0.0021120000164955854
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          0.002275001024827361,
+          -0.008400999940931797,
+          0.0011008194414898753
+        ],
+        "max": [
+          0.006095001008361578,
+          -0.006288998760282993,
+          0.004544819239526987
+        ]
+      },
+      "materials": [
+        "interior",
+        "int_2"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:v6tdi",
+      "type": "MESH",
+      "dimensions": [
+        0.016161998733878136,
+        0.004103678744286299,
+        0.011539999395608902
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.008080997504293919,
+          -0.024724001064896584,
+          -0.00048586082994006574
+        ],
+        "max": [
+          0.008081003092229366,
+          -0.013183998875319958,
+          0.0036178191658109426
+        ]
+      },
+      "materials": [
+        "engine",
+        "plastic",
+        "ENGINE",
+        "engine_2",
+        "grille"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:motionstock",
+      "type": "MESH",
+      "dimensions": [
+        0.018039999529719353,
+        0.0005709999823011458,
+        0.0046449992805719376
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.009012003429234028,
+          0.018247997388243675,
+          0.0017518213717266917
+        ],
+        "max": [
+          0.0090279970318079,
+          0.02289300039410591,
+          0.002322821645066142
+        ]
+      },
+      "materials": [
+        "standardSurface1"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:aventuramodular",
+      "type": "MESH",
+      "dimensions": [
+        0.01889199949800968,
+        0.015684999525547028,
+        0.03643700107932091
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.00944600347429514,
+          -0.011943002231419086,
+          -0.006738180760294199
+        ],
+        "max": [
+          0.00944600161164999,
+          0.024494001641869545,
+          0.00894682202488184
+        ]
+      },
+      "materials": [
+        "phong5",
+        "plate",
+        "CHROME"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:extra1",
+      "type": "MESH",
+      "dimensions": [
+        0.018044089898467064,
+        0.0005710005643777549,
+        0.0046449992805719376
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.00901404395699501,
+          0.018247997388243675,
+          0.0017518207896500826
+        ],
+        "max": [
+          0.009030046872794628,
+          0.02289300039410591,
+          0.002322821645066142
+        ]
+      },
+      "materials": [
+        "CHROME",
+        "interior"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:door_rr_ok",
+      "type": "MESH",
+      "dimensions": [
+        0.0030360000673681498,
+        0.013276999816298485,
+        0.009118999354541302
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.009646001271903515,
+          -0.0013180020032450557,
+          -0.004970179870724678
+        ],
+        "max": [
+          -0.006610000040382147,
+          0.0078009990975260735,
+          0.008306820876896381
+        ]
+      },
+      "materials": [
+        "dorr_R",
+        "RUBBER",
+        "PLASTIC_BLACK",
+        "glass"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:door_rf_ok",
+      "type": "MESH",
+      "dimensions": [
+        0.004353999625891447,
+        0.013311999849975109,
+        0.01169699989259243
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.011038999073207378,
+          -0.01189300138503313,
+          -0.00511618098244071
+        ],
+        "max": [
+          -0.006684998050332069,
+          -0.00019599961524363607,
+          0.008195819333195686
+        ]
+      },
+      "materials": [
+        "RUBBER",
+        "PLASTIC_BLACK",
+        "phong5",
+        "CHROME",
+        "mirror",
+        "glass"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:door_lr_ok",
+      "type": "MESH",
+      "dimensions": [
+        0.0030360000673681498,
+        0.013276999816298485,
+        0.009118999354541302
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          0.006609998643398285,
+          -0.0013179995585232973,
+          -0.004970179870724678
+        ],
+        "max": [
+          0.00964600034058094,
+          0.00780100142583251,
+          0.008306820876896381
+        ]
+      },
+      "materials": [
+        "dorr_R",
+        "RUBBER",
+        "PLASTIC_BLACK",
+        "glass"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:door_lf_ok",
+      "type": "MESH",
+      "dimensions": [
+        0.004550999961793423,
+        0.013311999849975109,
+        0.011696998029947281
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          0.006684999912977219,
+          -0.011892999522387981,
+          -0.00511618098244071
+        ],
+        "max": [
+          0.01123600173741579,
+          -0.00019599990628194064,
+          0.008195819333195686
+        ]
+      },
+      "materials": [
+        "PLASTIC_BLACK",
+        "phong5",
+        "RUBBER",
+        "CHROME",
+        "mirror",
+        "glass"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:bump_rear_ok",
+      "type": "MESH",
+      "dimensions": [
+        0.01840599998831749,
+        0.0030090000946074724,
+        0.0031139992643147707
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.009203003719449043,
+          0.0227969978004694,
+          -0.004627177957445383
+        ],
+        "max": [
+          0.009202996268868446,
+          0.0259110014885664,
+          -0.0016181779792532325
+        ]
+      },
+      "materials": [
+        "phong5",
+        "CHROME",
+        "plate"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:boot_ok",
+      "type": "MESH",
+      "dimensions": [
+        0.014101330190896988,
+        0.006649119779467583,
+        0.0034766984172165394
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.007050663698464632,
+          0.021800298243761063,
+          -0.002998298266902566
+        ],
+        "max": [
+          0.007050666492432356,
+          0.025276999920606613,
+          0.0036508217453956604
+        ]
+      },
+      "materials": [
+        "PLASTIC_BLACK",
+        "CHROME",
+        "standardSurface1",
+        "phong5",
+        "interior"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:bump_front_ok",
+      "type": "MESH",
+      "dimensions": [
+        0.019341999664902687,
+        0.005856997333467007,
+        0.005860199686139822
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.00967099703848362,
+          -0.02662920206785202,
+          -0.005772181786596775
+        ],
+        "max": [
+          0.009671003557741642,
+          -0.020768998190760612,
+          8.481572149321437e-05
+        ]
+      },
+      "materials": [
+        "phong5",
+        "CHROME",
+        "plate",
+        "glass"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:bonnet_ok",
+      "type": "MESH",
+      "dimensions": [
+        0.016161998733878136,
+        0.0035013705492019653,
+        0.012393499724566936
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.008080997504293919,
+          -0.025314001366496086,
+          0.00027044766466133296
+        ],
+        "max": [
+          0.008081003092229366,
+          -0.012920498847961426,
+          0.0037718189414590597
+        ]
+      },
+      "materials": [
+        "phong5",
+        "ENGINE",
+        "METAL_BLACK"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:cam",
+      "type": "MESH",
+      "dimensions": [
+        0.01855599880218506,
+        0.009391999803483486,
+        0.05053599551320076
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.009278003126382828,
+          -0.025503000244498253,
+          -0.0013971818843856454
+        ],
+        "max": [
+          0.009278003126382828,
+          0.025033000856637955,
+          0.007994821295142174
+        ]
+      },
+      "materials": [
+        "EXT_GLASS",
+        "glass"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:wheel",
+      "type": "MESH",
+      "dimensions": [
+        0.0025389997754245996,
+        0.007663999684154987,
+        0.007663998287171125
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.009667997248470783,
+          -0.02147050015628338,
+          -0.008924681693315506
+        ],
+        "max": [
+          -0.007128996308892965,
+          -0.013806500472128391,
+          -0.0012606809614226222
+        ]
+      },
+      "materials": [
+        "CHROME",
+        "PLASTIC_BLACK",
+        "tyre",
+        "phong18",
+        "phong19"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:hub_rf",
+      "type": "MESH",
+      "dimensions": [
+        0.0018370002508163452,
+        0.0024139999877661467,
+        0.0016729998169466853
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.008986997418105602,
+          -0.019652001559734344,
+          -0.005931181367486715
+        ],
+        "max": [
+          -0.00714999670162797,
+          -0.017978999763727188,
+          -0.0035171813797205687
+        ]
+      },
+      "materials": [
+        "dorr_R"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:hub_rb",
+      "type": "MESH",
+      "dimensions": [
+        0.0014869999140501022,
+        0.0018709999276325107,
+        0.0013630008324980736
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          -0.008828001096844673,
+          0.01141899824142456,
+          -0.0055101788602769375
+        ],
+        "max": [
+          -0.007341001648455858,
+          0.012781999073922634,
+          -0.0036391790490597486
+        ]
+      },
+      "materials": [
+        "dorr_R"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:hub_lf",
+      "type": "MESH",
+      "dimensions": [
+        0.0018370002508163452,
+        0.0024150002282112837,
+        0.0016729998169466853
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          0.0071500022895634174,
+          -0.019651997834444046,
+          -0.005932181607931852
+        ],
+        "max": [
+          0.00898700300604105,
+          -0.01797899790108204,
+          -0.0035171813797205687
+        ]
+      },
+      "materials": [
+        "dorr_R"
+      ]
+    },
+    {
+      "name": "vw_amorak_2018:hub_lb",
+      "type": "MESH",
+      "dimensions": [
+        0.0015160000184550881,
+        0.0018709999276325107,
+        0.0013630008324980736
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": {
+        "min": [
+          0.007311997935175896,
+          0.01141900010406971,
+          -0.0055101788602769375
+        ],
+        "max": [
+          0.008827997371554375,
+          0.012782001867890358,
+          -0.0036391790490597486
+        ]
+      },
+      "materials": [
+        "dorr_R"
+      ]
+    },
+    {
+      "name": "wheel",
+      "type": "MESH",
+      "dimensions": [
+        0.0025389997754245996,
+        0.007663999684154987,
+        0.007663998287171125
+      ],
+      "location": [
+        0.0,
+        -0.009474575519561768,
+        3.097207546234131
+      ],
+      "world_bounds": {
+        "min": [
+          -0.009668001905083656,
+          0.009501575492322445,
+          -0.009019425138831139
+        ],
+        "max": [
+          -0.007129000965505838,
+          0.017165573313832283,
+          -0.0013554244069382548
+        ]
+      },
+      "materials": [
+        "CHROME",
+        "PLASTIC_BLACK",
+        "tyre",
+        "phong18",
+        "phong19"
+      ]
+    },
+    {
+      "name": "wheel1",
+      "type": "MESH",
+      "dimensions": [
+        0.0025389997754245996,
+        0.007663999684154987,
+        0.007663998287171125
+      ],
+      "location": [
+        -1.5420066290516843e-07,
+        -0.009474575519561768,
+        -0.4304924011230469
+      ],
+      "world_bounds": {
+        "min": [
+          0.007128995377570391,
+          0.009501578286290169,
+          -0.009019425138831139
+        ],
+        "max": [
+          0.009667997248470783,
+          0.01716557703912258,
+          -0.0013554244069382548
+        ]
+      },
+      "materials": [
+        "CHROME",
+        "PLASTIC_BLACK",
+        "tyre",
+        "phong18",
+        "phong19"
+      ]
+    },
+    {
+      "name": "wheel2",
+      "type": "MESH",
+      "dimensions": [
+        0.0025389997754245996,
+        0.007663999684154987,
+        0.007663998287171125
+      ],
+      "location": [
+        -2.734099666668044e-07,
+        0.0,
+        -3.528367757797241
+      ],
+      "world_bounds": {
+        "min": [
+          0.007129000965505838,
+          -0.021477174013853073,
+          -0.008924681693315506
+        ],
+        "max": [
+          0.009668002836406231,
+          -0.01381317526102066,
+          -0.0012606809614226222
+        ]
+      },
+      "materials": [
+        "CHROME",
+        "PLASTIC_BLACK",
+        "tyre",
+        "phong18",
+        "phong19"
+      ]
+    },
+    {
+      "name": "group1",
+      "type": "EMPTY",
+      "dimensions": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "location": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "world_bounds": null,
+      "materials": []
+    }
+  ],
+  "materials": [
+    {
+      "name": "CHROME",
+      "images": []
+    },
+    {
+      "name": "dorr_R",
+      "images": [
+        "C:\\Users\\Administrator\\Desktop\\VFN-Projekt\\Flight Radar Sim Projekt\\Follow_Me_Car_Model\\source\\tex_amarok_aventura_door_rear.png"
+      ]
+    },
+    {
+      "name": "engine",
+      "images": [
+        "C:\\Users\\Administrator\\Desktop\\VFN-Projekt\\Flight Radar Sim Projekt\\Follow_Me_Car_Model\\source\\engine.png"
+      ]
+    },
+    {
+      "name": "ENGINE",
+      "images": [
+        "C:\\Users\\Administrator\\Desktop\\VFN-Projekt\\Flight Radar Sim Projekt\\Follow_Me_Car_Model\\source\\GTI_Engine.png"
+      ]
+    },
+    {
+      "name": "engine_2",
+      "images": [
+        "C:\\Users\\Administrator\\Desktop\\VFN-Projekt\\Flight Radar Sim Projekt\\Follow_Me_Car_Model\\source\\GTI_Engine.png"
+      ]
+    },
+    {
+      "name": "EXT_GLASS",
+      "images": [
+        "C:\\Users\\Administrator\\Desktop\\VFN-Projekt\\Flight Radar Sim Projekt\\Follow_Me_Car_Model\\source\\tex_amarok_aventura_exterior.png"
+      ]
+    },
+    {
+      "name": "glass",
+      "images": []
+    },
+    {
+      "name": "grille",
+      "images": [
+        "C:\\Users\\Administrator\\Desktop\\VFN-Projekt\\Flight Radar Sim Projekt\\Follow_Me_Car_Model\\source\\GTI_Grille2.png"
+      ]
+    },
+    {
+      "name": "int_2",
+      "images": [
+        "C:\\Users\\Administrator\\Desktop\\VFN-Projekt\\Flight Radar Sim Projekt\\Follow_Me_Car_Model\\source\\tex_amarok_highline_int.png"
+      ]
+    },
+    {
+      "name": "interior",
+      "images": [
+        "C:\\Users\\Administrator\\Desktop\\VFN-Projekt\\Flight Radar Sim Projekt\\Follow_Me_Car_Model\\source\\va18_tex.png"
+      ]
+    },
+    {
+      "name": "METAL_BLACK",
+      "images": []
+    },
+    {
+      "name": "mirror",
+      "images": []
+    },
+    {
+      "name": "phong15",
+      "images": [
+        "C:\\Users\\Administrator\\Desktop\\VFN-Projekt\\Flight Radar Sim Projekt\\Follow_Me_Car_Model\\source\\leftflash.png"
+      ]
+    },
+    {
+      "name": "phong18",
+      "images": [
+        "C:\\Users\\Administrator\\Desktop\\VFN-Projekt\\Flight Radar Sim Projekt\\Follow_Me_Car_Model\\source\\rims_logo.png"
+      ]
+    },
+    {
+      "name": "phong19",
+      "images": [
+        "C:\\Users\\Administrator\\Desktop\\VFN-Projekt\\Flight Radar Sim Projekt\\Follow_Me_Car_Model\\source\\breakdisc2.png"
+      ]
+    },
+    {
+      "name": "phong5",
+      "images": [
+        "C:\\Users\\Administrator\\Desktop\\VFN-Projekt\\Flight Radar Sim Projekt\\Follow_Me_Car_Model\\source\\tex_amarok_aventura_door_front.png"
+      ]
+    },
+    {
+      "name": "plastic",
+      "images": []
+    },
+    {
+      "name": "PLASTIC_BLACK",
+      "images": []
+    },
+    {
+      "name": "plate",
+      "images": [
+        "C:\\Users\\Administrator\\Desktop\\VFN-Projekt\\Flight Radar Sim Projekt\\Follow_Me_Car_Model\\source\\tex_amarok_aventura_exterior.png"
+      ]
+    },
+    {
+      "name": "RUBBER",
+      "images": []
+    },
+    {
+      "name": "standardSurface1",
+      "images": []
+    },
+    {
+      "name": "tyre",
+      "images": [
+        "C:\\Users\\Administrator\\Desktop\\VFN-Projekt\\Flight Radar Sim Projekt\\Follow_Me_Car_Model\\source\\tex_amarok_diff_clean.png"
+      ]
+    }
+  ]
+}

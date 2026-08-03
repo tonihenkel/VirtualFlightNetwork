@@ -16,6 +16,7 @@
 #include "XPLMMenus.h"
 #include "XPLMDisplay.h"
 #include "XPLMGraphics.h"
+#include "XPLMNavigation.h"
 
 #include "XPWidgets.h"
 #include "XPStandardWidgets.h"
@@ -30,6 +31,7 @@
 #include <ctime>
 #include <fstream>
 #include <filesystem>
+#include <iomanip>
 #include <string>
 #include <sstream>
 #include <map>
@@ -129,6 +131,8 @@ static const std::string gDatisUrl =
 gServerAddress + "/execute/datis.php";
 
 static bool gLoggedIn = false;
+static bool gSpectatorLogin = false;
+static bool gSpectatorMode = false;
 
 static std::string gCurrentUsername = "";
 static std::string gCurrentCallsign = "";
@@ -195,6 +199,92 @@ std::string ExtractIcaoAirlineFromCallsign(
     return "";
 }
 
+static std::set<std::string> gAvailableCslTypes;
+static std::map<std::string, std::string> gRelatedCslFallbackTypes;
+
+std::string NormalizeAircraftTypeCode(const std::string& value)
+{
+    std::string result;
+    for (unsigned char character : value)
+    {
+        if (std::isalnum(character))
+        {
+            result.push_back(static_cast<char>(std::toupper(character)));
+        }
+    }
+    return result;
+}
+
+std::string ResolveCslAircraftIcao(const std::string& reportedType)
+{
+    const std::string type = NormalizeAircraftTypeCode(reportedType);
+    if (type.empty())
+    {
+        return gAvailableCslTypes.count("B738") != 0 ? "B738" : "VFN0";
+    }
+    if (gAvailableCslTypes.count(type) != 0) return type;
+
+    const std::map<std::string, std::string> aliases = {
+        {"A380", "A388"}, {"A380800", "A388"},
+        {"A350", "A359"}, {"A350800", "A359"},
+        {"A350900", "A359"}, {"A3501000", "A359"},
+        {"A358", "A359"}, {"A35K", "A359"},
+        {"A330", "A333"}, {"A338", "A333"},
+        {"A339", "A333"}, {"A340", "A346"}, {"A320NEO", "A20N"},
+        {"A321NEO", "A21N"}, {"A319NEO", "A19N"},
+        {"A220", "E195"}, {"A221", "E195"}, {"A223", "E195"},
+        {"B737", "B738"}, {"B737MAX", "B738"}, {"B38M", "B738"},
+        {"B39M", "B739"}, {"B747", "B744"}, {"B757", "B752"},
+        {"B767", "B763"}, {"B777", "B772"}, {"B773", "B77W"},
+        {"B787", "B789"}, {"B78X", "B789"}, {"CRJ", "CRJ2"},
+        {"E135", "E145"}, {"E190E2", "E195"}, {"E195E2", "E195"}
+    };
+    const auto alias = aliases.find(type);
+    if (
+        alias != aliases.end()
+        && gAvailableCslTypes.count(alias->second) != 0
+    ) {
+        return alias->second;
+    }
+
+    const auto related = gRelatedCslFallbackTypes.find(type);
+    if (related != gRelatedCslFallbackTypes.end()) return related->second;
+
+    struct FamilyFallback { const char* prefix; const char* model; };
+    static const FamilyFallback families[] = {
+        {"A38", "A388"}, {"A35", "A359"}, {"A34", "A346"},
+        {"A33", "A333"}, {"A32", "A320"}, {"A31", "A319"},
+        {"B74", "B744"}, {"B73", "B738"}, {"B75", "B752"},
+        {"B76", "B763"}, {"B77", "B772"}, {"B78", "B789"},
+        {"CRJ", "CRJ2"}, {"DH8", "DH8D"}, {"AT7", "AT72"}
+    };
+    for (const FamilyFallback& family : families)
+    {
+        if (
+            type.rfind(family.prefix, 0) == 0
+            && gAvailableCslTypes.count(family.model) != 0
+        ) {
+            return family.model;
+        }
+    }
+
+    // Never fall back to the old blue VFN placeholder when a normal CSL
+    // airliner is available. B738 is part of the installed X-CSL package and
+    // is a visually useful neutral fallback for unknown aircraft types.
+    static const char* neutralFallbacks[] = {
+        "B738", "B737", "A320", "C172"
+    };
+    for (const char* fallback : neutralFallbacks)
+    {
+        if (gAvailableCslTypes.count(fallback) != 0)
+        {
+            return fallback;
+        }
+    }
+
+    return "VFN0";
+}
+
 
 class VfnTrafficAircraft final : public XPMP2::Aircraft
 {
@@ -205,7 +295,7 @@ public:
         const std::string& aircraftIcao
     ) :
         XPMP2::Aircraft(
-            aircraftIcao.empty() ? "C172" : aircraftIcao,
+            ResolveCslAircraftIcao(aircraftIcao),
             ExtractIcaoAirlineFromCallsign(callsign),
             "",
             static_cast<XPMPPlaneID>(
@@ -215,6 +305,7 @@ public:
         ),
         userId(userId)
     {
+        resolvedModelType = ResolveCslAircraftIcao(aircraftIcao);
         label = callsign;
         colLabel[0] = 0.20f;
         colLabel[1] = 0.85f;
@@ -232,10 +323,44 @@ public:
         float roll,
         float airspeed,
         float verticalSpeed,
-        bool onGround
+        bool onGround,
+        float gearRatio,
+        float flapRatio,
+        float speedbrakeRatio,
+        float thrustRatio,
+        float engineRpm,
+        float yokePitchRatio,
+        float yokeRollRatio,
+        float yokeHeadingRatio,
+        bool taxiLights,
+        bool landingLights,
+        bool beaconLights,
+        bool strobeLights,
+        bool navLights,
+        const std::string& aircraftIcao,
+        const std::string& departureAirport,
+        const std::string& arrivalAirport,
+        float distanceNm
     )
     {
-        label = callsign;
+        displayCallsign = callsign.empty() ? "----" : callsign;
+        displayAircraftIcao = aircraftIcao.empty() ? "----" : aircraftIcao;
+        displayDepartureAirport = departureAirport.empty()
+            ? "ZZZZ" : departureAirport;
+        displayArrivalAirport = arrivalAirport.empty()
+            ? "ZZZZ" : arrivalAirport;
+        displayDistanceNm = (std::max)(0.0f, distanceNm);
+        const std::string nextModelType =
+            ResolveCslAircraftIcao(aircraftIcao);
+        if (nextModelType != resolvedModelType)
+        {
+            ChangeModel(
+                nextModelType,
+                ExtractIcaoAirlineFromCallsign(callsign),
+                ""
+            );
+            resolvedModelType = nextModelType;
+        }
         const float receivedAt =
             XPLMGetElapsedTime();
         const double altitudeFeet =
@@ -282,6 +407,23 @@ public:
         targetAirspeed = airspeed;
         targetVerticalSpeed = verticalSpeed;
         targetOnGround = onGround;
+        targetGearRatio = std::clamp(gearRatio, 0.0f, 1.0f);
+        targetFlapRatio = std::clamp(flapRatio, 0.0f, 1.0f);
+        targetSpeedbrakeRatio =
+            std::clamp(speedbrakeRatio, 0.0f, 1.0f);
+        targetThrustRatio = std::clamp(thrustRatio, 0.0f, 1.0f);
+        targetEngineRpm = (std::max)(0.0f, engineRpm);
+        targetYokePitchRatio =
+            std::clamp(yokePitchRatio, -1.0f, 1.0f);
+        targetYokeRollRatio =
+            std::clamp(yokeRollRatio, -1.0f, 1.0f);
+        targetYokeHeadingRatio =
+            std::clamp(yokeHeadingRatio, -1.0f, 1.0f);
+        targetTaxiLights = taxiLights;
+        targetLandingLights = landingLights;
+        targetBeaconLights = beaconLights;
+        targetStrobeLights = strobeLights;
+        targetNavLights = navLights;
         targetReceivedAt = receivedAt;
         missedPolls = 0;
     }
@@ -383,17 +525,96 @@ public:
         SetHeading(currentHeading);
         SetPitch(currentPitch);
         SetRoll(currentRoll);
-        SetGearRatio(targetOnGround ? 1.0f : 0.0f);
-        SetThrustRatio(
-            std::clamp(targetAirspeed / 180.0f, 0.15f, 1.0f)
+        const float animationFactor =
+            static_cast<float>(
+                std::clamp(
+                    static_cast<double>(elapsed) * 4.0,
+                    0.0,
+                    1.0
+                )
+            );
+        auto smoothRatio =
+            [animationFactor](float current, float target)
+            {
+                return current
+                    + (target - current) * animationFactor;
+            };
+
+        SetGearRatio(
+            smoothRatio(GetGearRatio(), targetGearRatio)
         );
-        SetLightsBeacon(true);
-        SetLightsNav(true);
-        SetLightsStrobe(!targetOnGround);
+        SetFlapRatio(
+            smoothRatio(GetFlapRatio(), targetFlapRatio)
+        );
+        SetSpoilerRatio(
+            smoothRatio(
+                GetSpoilerRatio(),
+                targetSpeedbrakeRatio
+            )
+        );
+        SetSpeedbrakeRatio(
+            smoothRatio(
+                GetSpeedbrakeRatio(),
+                targetSpeedbrakeRatio
+            )
+        );
+        SetThrustRatio(
+            smoothRatio(GetThrustRatio(), targetThrustRatio)
+        );
+        SetEngineRotRpm(targetEngineRpm);
+        SetPropRotRpm(targetEngineRpm);
+        SetYokePitchRatio(targetYokePitchRatio);
+        SetYokeRollRatio(targetYokeRollRatio);
+        SetYokeHeadingRatio(targetYokeHeadingRatio);
+        SetLightsTaxi(targetTaxiLights);
+        // X-CSL landing lights can create an unrealistically huge bloom around
+        // the wing/gear section. Keep taxi and navigation lights, but suppress
+        // this remote landing-light emitter.
+        SetLightsLanding(false);
+        SetLightsBeacon(targetBeaconLights);
+        SetLightsStrobe(targetStrobeLights);
+        SetLightsNav(targetNavLights);
+
+        const int labelPage = static_cast<int>(
+            XPLMGetElapsedTime() / 3.0f
+        ) % 4;
+        if (labelPage == 0)
+        {
+            label = displayCallsign;
+        }
+        else if (labelPage == 1)
+        {
+            label = displayAircraftIcao;
+        }
+        else if (labelPage == 2)
+        {
+            label = displayDepartureAirport + " > " + displayArrivalAirport;
+        }
+        else
+        {
+            std::ostringstream distanceLabel;
+            distanceLabel << std::fixed << std::setprecision(1)
+                << displayDistanceNm << " NM";
+            label = distanceLabel.str();
+        }
     }
 
     int userId = 0;
     int missedPolls = 0;
+
+    bool GetCameraTarget(double& latitude, double& longitude,
+                         double& altitudeFeet, float& heading) const
+    {
+        if (!hasPosition)
+        {
+            return false;
+        }
+        latitude = currentLatitude;
+        longitude = currentLongitude;
+        altitudeFeet = currentAltitudeFeet;
+        heading = currentHeading;
+        return true;
+    }
 
 private:
     bool hasPosition = false;
@@ -418,11 +639,41 @@ private:
     double velocityLongitudePerSecond = 0.0;
     double velocityAltitudeFeetPerSecond = 0.0;
     bool targetOnGround = false;
+    float targetGearRatio = 0.0f;
+    float targetFlapRatio = 0.0f;
+    float targetSpeedbrakeRatio = 0.0f;
+    float targetThrustRatio = 0.0f;
+    float targetEngineRpm = 0.0f;
+    float targetYokePitchRatio = 0.0f;
+    float targetYokeRollRatio = 0.0f;
+    float targetYokeHeadingRatio = 0.0f;
+    bool targetTaxiLights = false;
+    bool targetLandingLights = false;
+    bool targetBeaconLights = false;
+    bool targetStrobeLights = false;
+    bool targetNavLights = false;
+    std::string displayCallsign = "----";
+    std::string displayAircraftIcao = "----";
+    std::string displayDepartureAirport = "ZZZZ";
+    std::string displayArrivalAirport = "ZZZZ";
+    float displayDistanceNm = 0.0f;
+    std::string resolvedModelType;
 };
 
 static bool gMultiplayerInitialized = false;
 static std::map<int, std::unique_ptr<VfnTrafficAircraft>>
     gTrafficAircraft;
+struct NearbyPlayerEntry
+{
+    int userId = 0;
+    std::string callsign;
+    std::string aircraftIcao;
+    float distanceNm = 0.0f;
+    bool spectator = false;
+    int opPermission = 0;
+};
+static std::vector<NearbyPlayerEntry> gNearbyPlayers;
+static int gFollowedTrafficUserId = 0;
 static float gTrafficPollElapsed = 0.0f;
 static std::atomic<bool> gTrafficPollInProgress(false);
 static std::atomic<bool> gTrafficPollResultReady(false);
@@ -450,6 +701,7 @@ static XPLMWindowID gCompactWindow = nullptr;
 static XPLMWindowID gLogoutConfirmWindow = nullptr;
 static XPLMWindowID gSettingsWindow = nullptr;
 static XPLMWindowID gAtcWindow = nullptr;
+static XPLMWindowID gPlayersWindow = nullptr;
 static XPLMWindowID gMessagesWindow = nullptr;
 static XPLMWindowID gDatisWindow = nullptr;
 static XPLMWindowID gKickNoticeWindow = nullptr;
@@ -461,6 +713,11 @@ static int gCustomLoginDragOffsetY = 0;
 static bool gCompactWindowDragging = false;
 static int gCompactWindowDragOffsetX = 0;
 static int gCompactWindowDragOffsetY = 0;
+static bool gPlayersWindowDragging = false;
+static int gPlayersWindowDragOffsetX = 0;
+static int gPlayersWindowDragOffsetY = 0;
+static int gPlayersContextUserId = 0;
+static int gPlayersScrollOffset = 0;
 static bool gWindowsChatMouseDown = false;
 static char gLastCompactKey = 0;
 static char gLastCompactVirtualKey = 0;
@@ -545,6 +802,7 @@ static std::string gCurrentPilotRatingCode = "FC0";
 static std::string gCurrentPilotRatingName = "New Flight Cadet";
 static std::string gCurrentAtcRatingCode = "TC0";
 static std::string gCurrentAtcRatingName = "New ATC Cadet";
+static int gPreviousOnGroundForTransponderWarning = -1;
 
 struct DatisData
 {
@@ -692,6 +950,20 @@ static XPLMDataRef gAirspeed = nullptr;
 static XPLMDataRef gPitch = nullptr;
 static XPLMDataRef gRoll = nullptr;
 static XPLMDataRef gVerticalSpeed = nullptr;
+static XPLMDataRef gGearDeployRatio = nullptr;
+static XPLMDataRef gGearHandleDown = nullptr;
+static XPLMDataRef gFlapRatio = nullptr;
+static XPLMDataRef gSpeedbrakeRatio = nullptr;
+static XPLMDataRef gThrottleRatio = nullptr;
+static XPLMDataRef gEngineRpm = nullptr;
+static XPLMDataRef gYokePitchRatio = nullptr;
+static XPLMDataRef gYokeRollRatio = nullptr;
+static XPLMDataRef gYokeHeadingRatio = nullptr;
+static XPLMDataRef gTaxiLights = nullptr;
+static XPLMDataRef gLandingLights = nullptr;
+static XPLMDataRef gBeaconLights = nullptr;
+static XPLMDataRef gStrobeLights = nullptr;
+static XPLMDataRef gNavLights = nullptr;
 
 static XPLMDataRef gCom1 = nullptr;
 static XPLMDataRef gCom2 = nullptr;
@@ -873,7 +1145,11 @@ void CALLBACK VoiceWaveInCallback(
         gVoiceCapturedPeakLevel = capturedPeak;
         gVoiceCapturedPeakLastUpdate = gVoiceElapsedTime.load();
 
-        if (gVoicePttActive && gVoiceAuthenticated.load())
+        if (
+            !gSpectatorMode
+            && gVoicePttActive
+            && gVoiceAuthenticated.load()
+        )
         {
             int captureSampleRate =
                 gVoiceCaptureSampleRate.load();
@@ -1018,7 +1294,7 @@ void ProcessIncomingVoiceMessage(const std::string& message)
         gVoiceAuthenticated = true;
         XPLMDebugString("VFN Voice: authenticated.\n");
         SendVoiceState();
-        if (gVoicePttActive)
+        if (gVoicePttActive && !gSpectatorMode)
         {
             SendVoiceMessage(
                 "{\"type\":\"ptt\",\"active\":true,\"txCom\":" +
@@ -1149,11 +1425,18 @@ void StartVoiceService()
     if (!gLoggedIn || gAuthToken.empty() || gVoiceRunning.load()) return;
     if (gVoiceThread.joinable()) gVoiceThread.join();
     gVoiceStopRequested = false;
-    if (gVoiceContinuousTransmit)
+    if (gVoiceContinuousTransmit && !gSpectatorMode)
     {
         gVoicePttActive = true;
     }
-    StartVoiceCapture();
+    else
+    {
+        gVoicePttActive = false;
+    }
+    if (!gSpectatorMode)
+    {
+        StartVoiceCapture();
+    }
     gVoiceThread = std::thread(VoiceWorker, gAuthToken, gCurrentCallsign);
 }
 
@@ -1206,6 +1489,7 @@ static XPLMDataRef gFuelCapacity = nullptr;
 static XPLMDataRef gSunPitchDegrees = nullptr;
 static XPLMDataRef gPausedRef = nullptr;
 static XPLMDataRef gReplayModeRef = nullptr;
+static XPLMDataRef gAiFliesAircraftRef = nullptr;
 
 static bool gNightFlightActive = false;
 static int gNightFlightSeconds = 0;
@@ -1737,6 +2021,7 @@ void LoadInternalEnglishLanguage()
     gText["window.frequency.title"] = "Radio Frequency";
     gText["window.settings.title"] = "Settings";
     gText["window.atc.title"] = "ATC Online";
+    gText["window.players.title"] = "Nearby players";
     gText["window.messages.title"] = "Messages";
     gText["window.datis.title"] = "D-ATIS";
 
@@ -1789,6 +2074,14 @@ void LoadInternalEnglishLanguage()
     gText["atc.title"] = "ATC Online";
     gText["atc.search"] = "Search...";
     gText["atc.empty"] = "No ATC online.";
+    gText["button.players"] = "PLAYERS";
+    gText["players.title"] = "Players within 30 NM";
+    gText["players.empty"] = "No players within 30 NM.";
+    gText["players.follow"] = "Follow / stop following";
+    gText["players.message"] = "Private message";
+    gText["players.warn"] = "Warn";
+    gText["players.kick"] = "Kick";
+    gText["players.ban"] = "Ban";
     gText["datis.title"] = "D-ATIS";
     gText["datis.unavailable"] = "No D-ATIS available.";
     gText["datis.airport"] = "Airport";
@@ -1825,6 +2118,7 @@ void LoadInternalEnglishLanguage()
     gText["status.connection_lost_auto_logout"] = "Connection lost. Logged out locally.";
     gText["status.kicked"] = "Kicked from network. ";
     gText["status.kicked_spam"] = "Kicked by automatic chat spam protection.";
+    gText["status.kicked_ground_vehicle_rank"] = "Ground vehicles require at least ATC rank TWR or special rank VFN Operations Officer.";
     gText["frequency.input_label"] = "Frequency (MHz):";
     gText["frequency.input_placeholder"] = "e.g. 122.800";
     gText["frequency.saved"] = "Frequency set.";
@@ -1832,6 +2126,7 @@ void LoadInternalEnglishLanguage()
     gText["chat.connected"] = "Connected to VFN Network.";
     gText["chat.rank_status"] = "Pilot Rank: {pilot} / ATC Rank: {atc}";
     gText["chat.ready"] = "Ready for network operations.";
+    gText["chat.transponder_standby_takeoff"] = "WARNING: Switch the transponder ON immediately after takeoff.";
 
     gText["label.flight_rules"] = "Flight Rules:";
     gText["label.flight_type"] = "Flight Type:";
@@ -1906,6 +2201,7 @@ void ApplyInternalGermanLanguageFallbacks()
     gText["window.frequency.title"] = "Funkfrequenz";
     gText["window.settings.title"] = "Einstellungen";
     gText["window.atc.title"] = "ATC Online";
+    gText["window.players.title"] = "Spieler in der Naehe";
     gText["window.messages.title"] = "Nachrichten";
     gText["window.datis.title"] = "D-ATIS";
     gText["button.set_frequency"] = "Frequenz setzen";
@@ -1917,9 +2213,11 @@ void ApplyInternalGermanLanguageFallbacks()
     gText["frequency.invalid"] = "Bitte eine gueltige COM-Frequenz von 118.000 bis 136.990 eingeben.";
     gText["status.kicked"] = "Aus dem Netzwerk gekickt. ";
     gText["status.kicked_spam"] = "Wegen Chat-Spam automatisch aus dem Netzwerk gekickt.";
+    gText["status.kicked_ground_vehicle_rank"] = "Bodenfahrzeuge benoetigen mindestens den ATC-Rang TWR oder den Spezialrang VFN Operations Officer.";
     gText["chat.connected"] = "Mit dem VFN Netzwerk verbunden.";
     gText["chat.rank_status"] = "Pilotenrang: {pilot} / ATC-Rang: {atc}";
     gText["chat.ready"] = "Bereit fuer den Netzwerkbetrieb.";
+    gText["chat.transponder_standby_takeoff"] = "WARNUNG: Der Transponder muss nach dem Abheben sofort eingeschaltet werden.";
     gText["button.send"] = "Senden";
     gText["chat.award_unlocked"] = "Award freigeschaltet";
     gText["award_first_flight"] = "Erster Flug";
@@ -1965,6 +2263,14 @@ void ApplyInternalGermanLanguageFallbacks()
     gText["atc.title"] = "ATC Online";
     gText["atc.search"] = "Suchen...";
     gText["atc.empty"] = "Keine ATC online.";
+    gText["button.players"] = "SPIELER";
+    gText["players.title"] = "Spieler im Umkreis von 30 NM";
+    gText["players.empty"] = "Keine Spieler im Umkreis von 30 NM.";
+    gText["players.follow"] = "Folgen / nicht mehr folgen";
+    gText["players.message"] = "Private Nachricht";
+    gText["players.warn"] = "Verwarnen";
+    gText["players.kick"] = "Kicken";
+    gText["players.ban"] = "Bannen";
     gText["datis.title"] = "D-ATIS";
     gText["datis.unavailable"] = "Keine D-ATIS verfuegbar.";
     gText["datis.airport"] = "Flughafen";
@@ -2102,6 +2408,7 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "status.connection_lost_auto_logout=Connection lost. Logged out locally.\n";
             enFile << "status.kicked=Kicked from network. \n";
             enFile << "status.kicked_spam=Kicked by automatic chat spam protection.\n";
+            enFile << "status.kicked_ground_vehicle_rank=Ground vehicles require at least ATC rank TWR or special rank VFN Operations Officer.\n";
             enFile << "frequency.input_label=Frequency (MHz):\n";
             enFile << "frequency.input_placeholder=e.g. 122.800\n";
             enFile << "frequency.saved=Frequency set.\n";
@@ -2137,6 +2444,7 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "chat.connected=Connected to VFN Network.\n";
             enFile << "chat.rank_status=Pilot Rank: {pilot} / ATC Rank: {atc}\n";
             enFile << "chat.ready=Ready for network operations.\n";
+            enFile << "chat.transponder_standby_takeoff=WARNING: Switch the transponder ON immediately after takeoff.\n";
             enFile << "chat.award_unlocked=Award unlocked\n";
             enFile << "award_first_flight=First Flight\n";
             enFile << "award_first_landing=First Landing\n";
@@ -2274,6 +2582,7 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "status.connection_lost_auto_logout=Verbindung verloren. Lokal ausgeloggt.\n";
             deFile << "status.kicked=Aus dem Netzwerk gekickt. \n";
             deFile << "status.kicked_spam=Wegen Chat-Spam automatisch aus dem Netzwerk gekickt.\n";
+            deFile << "status.kicked_ground_vehicle_rank=Bodenfahrzeuge benoetigen mindestens den ATC-Rang TWR oder den Spezialrang VFN Operations Officer.\n";
             deFile << "frequency.input_label=Frequenz (MHz):\n";
             deFile << "frequency.input_placeholder=z.B. 122.800\n";
             deFile << "frequency.saved=Frequenz gesetzt.\n";
@@ -2309,6 +2618,7 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "chat.connected=Mit dem VFN Netzwerk verbunden.\n";
             deFile << "chat.rank_status=Pilotenrang: {pilot} / ATC-Rang: {atc}\n";
             deFile << "chat.ready=Bereit fuer den Netzwerkbetrieb.\n";
+            deFile << "chat.transponder_standby_takeoff=WARNUNG: Der Transponder muss nach dem Abheben sofort eingeschaltet werden.\n";
             deFile << "chat.award_unlocked=Award freigeschaltet\n";
             deFile << "award_first_flight=Erster Flug\n";
             deFile << "award_first_landing=Erste Landung\n";
@@ -4099,7 +4409,90 @@ std::string HttpPost(
 
 void ClearMultiplayerTraffic()
 {
+    if (gFollowedTrafficUserId != 0)
+    {
+        gFollowedTrafficUserId = 0;
+        XPLMDontControlCamera();
+    }
     gTrafficAircraft.clear();
+}
+
+
+int FollowTrafficCamera(
+    XPLMCameraPosition_t* camera,
+    int losingControl,
+    void*
+)
+{
+    if (losingControl || camera == nullptr)
+    {
+        if (losingControl)
+        {
+            gFollowedTrafficUserId = 0;
+        }
+        return 0;
+    }
+
+    const auto found = gTrafficAircraft.find(gFollowedTrafficUserId);
+    if (found == gTrafficAircraft.end())
+    {
+        gFollowedTrafficUserId = 0;
+        return 0;
+    }
+
+    double latitude = 0.0;
+    double longitude = 0.0;
+    double altitudeFeet = 0.0;
+    float heading = 0.0f;
+    if (!found->second->GetCameraTarget(
+            latitude, longitude, altitudeFeet, heading))
+    {
+        return 1;
+    }
+
+    double targetX = 0.0;
+    double targetY = 0.0;
+    double targetZ = 0.0;
+    XPLMWorldToLocal(
+        latitude,
+        longitude,
+        altitudeFeet * 0.3048,
+        &targetX,
+        &targetY,
+        &targetZ
+    );
+
+    const double headingRadians =
+        static_cast<double>(heading) * 3.14159265358979323846 / 180.0;
+    camera->x = static_cast<float>(targetX - std::sin(headingRadians) * 85.0);
+    camera->y = static_cast<float>(targetY + 24.0);
+    camera->z = static_cast<float>(targetZ + std::cos(headingRadians) * 85.0);
+    camera->pitch = -10.0f;
+    camera->heading = heading;
+    camera->roll = 0.0f;
+    camera->zoom = 1.0f;
+    return 1;
+}
+
+
+void ToggleFollowTrafficPlayer(int userId)
+{
+    if (gFollowedTrafficUserId == userId)
+    {
+        gFollowedTrafficUserId = 0;
+        XPLMDontControlCamera();
+        return;
+    }
+    if (gTrafficAircraft.find(userId) == gTrafficAircraft.end())
+    {
+        return;
+    }
+    gFollowedTrafficUserId = userId;
+    XPLMControlCamera(
+        xplm_ControlCameraUntilViewChanges,
+        FollowTrafficCamera,
+        nullptr
+    );
 }
 
 
@@ -4127,6 +4520,7 @@ void ProcessTrafficPollResult()
     {
         ++item.second->missedPolls;
     }
+    gNearbyPlayers.clear();
 
     std::istringstream responseStream(response);
     std::string line;
@@ -4150,6 +4544,21 @@ void ProcessTrafficPollResult()
         try
         {
             const int userId = std::stoi(fields[0]);
+            const bool spectator =
+                fields.size() > 29 && fields[29] == "1";
+            gNearbyPlayers.push_back({
+                userId,
+                fields[1],
+                fields[2],
+                fields.size() > 28 ? std::stof(fields[28]) : 0.0f,
+                spectator,
+                fields.size() > 30 ? std::stoi(fields[30]) : 0
+            });
+
+            if (spectator)
+            {
+                continue;
+            }
             auto found = gTrafficAircraft.find(userId);
 
             if (found == gTrafficAircraft.end())
@@ -4177,7 +4586,26 @@ void ProcessTrafficPollResult()
                 std::stof(fields[8]),
                 std::stof(fields[9]),
                 std::stof(fields[10]),
-                fields[11] == "1"
+                fields[11] == "1",
+                fields.size() > 12
+                    ? std::stof(fields[12])
+                    : (fields[11] == "1" ? 1.0f : 0.0f),
+                fields.size() > 13 ? std::stof(fields[13]) : 0.0f,
+                fields.size() > 14 ? std::stof(fields[14]) : 0.0f,
+                fields.size() > 15 ? std::stof(fields[15]) : 0.0f,
+                fields.size() > 16 ? std::stof(fields[16]) : 0.0f,
+                fields.size() > 17 ? std::stof(fields[17]) : 0.0f,
+                fields.size() > 18 ? std::stof(fields[18]) : 0.0f,
+                fields.size() > 19 ? std::stof(fields[19]) : 0.0f,
+                fields.size() > 20 && fields[20] == "1",
+                fields.size() > 21 && fields[21] == "1",
+                fields.size() > 22 && fields[22] == "1",
+                fields.size() > 23 && fields[23] == "1",
+                fields.size() > 24 && fields[24] == "1",
+                fields.size() > 25 ? fields[25] : fields[2],
+                fields.size() > 26 ? fields[26] : "ZZZZ",
+                fields.size() > 27 ? fields[27] : "ZZZZ",
+                fields.size() > 28 ? std::stof(fields[28]) : 0.0f
             );
         }
         catch (const std::exception& error)
@@ -4195,6 +4623,11 @@ void ProcessTrafficPollResult()
     {
         if (iterator->second->missedPolls >= 3)
         {
+            if (gFollowedTrafficUserId == iterator->first)
+            {
+                gFollowedTrafficUserId = 0;
+                XPLMDontControlCamera();
+            }
             iterator =
                 gTrafficAircraft.erase(iterator);
         }
@@ -4216,6 +4649,9 @@ void UpdateTrafficPolling(float elapsed)
     if (!gLoggedIn || gAuthToken.empty())
     {
         gTrafficPollElapsed = 0.0f;
+        gNearbyPlayers.clear();
+        gFollowedTrafficUserId = 0;
+        XPLMDontControlCamera();
         ClearMultiplayerTraffic();
         return;
     }
@@ -4272,8 +4708,131 @@ bool InitializeMultiplayer()
         return true;
     }
 
-    const std::string resourcePath =
+    const std::string builtInResourcePath =
         gPluginDirectory + "\\resources\\XPMP2";
+
+    // X-CSL Updater normally installs one shared library next to plugins:
+    //   <X-Plane>/Resources/plugins/IVAO_CSL/CSL/<aircraft ICAO>
+    // Keep XPMP2's own supplemental files as the initialization resource.
+    // IVAO_CSL contains a differently formatted legacy Doc8643 table; its
+    // model tree is compatible, but that table must not replace XPMP2's.
+    const std::vector<std::filesystem::path> xCslRootCandidates = {
+        std::filesystem::path(gPluginDirectory)
+            / "IVAO_CSL",
+        std::filesystem::path(gPluginDirectory)
+            / ".." / "IVAO_CSL",
+        std::filesystem::path(gPluginDirectory)
+            / ".." / ".." / "IVAO_CSL"
+    };
+    std::filesystem::path xCslRoot;
+    std::set<std::string> checkedXCslPaths;
+
+    for (const std::filesystem::path& candidate : xCslRootCandidates)
+    {
+        std::error_code pathError;
+        const std::filesystem::path normalized =
+            std::filesystem::weakly_canonical(
+                candidate,
+                pathError
+            );
+
+        if (
+            pathError
+            || normalized.empty()
+            || !std::filesystem::is_directory(
+                normalized / "CSL",
+                pathError
+            )
+            || !std::filesystem::is_regular_file(
+                normalized / "Doc8643.txt",
+                pathError
+            )
+            || !std::filesystem::is_regular_file(
+                normalized / "related.txt",
+                pathError
+            )
+        )
+        {
+            continue;
+        }
+
+        const std::string normalizedPath =
+            normalized.string();
+
+        if (!checkedXCslPaths.insert(normalizedPath).second)
+        {
+            continue;
+        }
+
+        xCslRoot = normalized;
+        break;
+    }
+
+    gAvailableCslTypes.clear();
+    gRelatedCslFallbackTypes.clear();
+    if (!xCslRoot.empty())
+    {
+        std::error_code directoryError;
+        for (const auto& entry : std::filesystem::directory_iterator(
+                 xCslRoot / "CSL",
+                 directoryError
+             ))
+        {
+            if (entry.is_directory(directoryError))
+            {
+                gAvailableCslTypes.insert(
+                    NormalizeAircraftTypeCode(
+                        entry.path().filename().string()
+                    )
+                );
+            }
+        }
+
+        std::ifstream relatedFile(xCslRoot / "related.txt");
+        std::string relatedLine;
+        while (std::getline(relatedFile, relatedLine))
+        {
+            const std::size_t comment = relatedLine.find(';');
+            if (comment != std::string::npos)
+            {
+                relatedLine.erase(comment);
+            }
+            std::istringstream lineStream(relatedLine);
+            std::vector<std::string> group;
+            std::string item;
+            while (lineStream >> item)
+            {
+                item = NormalizeAircraftTypeCode(item);
+                if (!item.empty()) group.push_back(item);
+            }
+            std::string installedModel;
+            for (const std::string& candidate : group)
+            {
+                if (gAvailableCslTypes.count(candidate) != 0)
+                {
+                    installedModel = candidate;
+                    break;
+                }
+            }
+            if (installedModel.empty()) continue;
+            for (const std::string& candidate : group)
+            {
+                if (gAvailableCslTypes.count(candidate) == 0)
+                {
+                    gRelatedCslFallbackTypes[candidate] = installedModel;
+                }
+            }
+        }
+
+        char fallbackLog[256] = {};
+        sprintf_s(
+            fallbackLog,
+            "VFN Multiplayer: %zu CSL types and %zu related fallbacks indexed.\n",
+            gAvailableCslTypes.size(),
+            gRelatedCslFallbackTypes.size()
+        );
+        XPLMDebugString(fallbackLog);
+    }
 
     auto xpmpPreferences =
         [](const char* section, const char* key, int defaultValue) -> int
@@ -4297,9 +4856,9 @@ bool InitializeMultiplayer()
     const char* result =
         XPMPMultiplayerInit(
             "VFN Network Pilot Client",
-            resourcePath.c_str(),
+            builtInResourcePath.c_str(),
             xpmpPreferences,
-            "C172",
+            "VFN0",
             "VFN"
         );
 
@@ -4314,7 +4873,7 @@ bool InitializeMultiplayer()
     }
 
     result =
-        XPMPLoadCSLPackage(resourcePath.c_str());
+        XPMPLoadCSLPackage(builtInResourcePath.c_str());
 
     if (result && result[0] != '\0')
     {
@@ -4327,48 +4886,10 @@ bool InitializeMultiplayer()
         return false;
     }
 
-    // X-CSL Updater normally installs one shared library next to plugins:
-    //   <X-Plane>/Resources/plugins/IVAO_CSL/CSL/<aircraft ICAO>
-    // Support the current thin development layout and both common packaged
-    // layouts without copying the potentially very large model library.
-    const std::vector<std::filesystem::path> xCslCandidates = {
-        std::filesystem::path(gPluginDirectory)
-            / "IVAO_CSL" / "CSL",
-        std::filesystem::path(gPluginDirectory)
-            / ".." / "IVAO_CSL" / "CSL",
-        std::filesystem::path(gPluginDirectory)
-            / ".." / ".." / "IVAO_CSL" / "CSL"
-    };
-    std::set<std::string> checkedXCslPaths;
-
-    for (const std::filesystem::path& candidate : xCslCandidates)
+    if (!xCslRoot.empty())
     {
-        std::error_code pathError;
-        const std::filesystem::path normalized =
-            std::filesystem::weakly_canonical(
-                candidate,
-                pathError
-            );
-
-        if (
-            pathError
-            || normalized.empty()
-            || !std::filesystem::is_directory(
-                normalized,
-                pathError
-            )
-        )
-        {
-            continue;
-        }
-
         const std::string xCslPath =
-            normalized.string();
-
-        if (!checkedXCslPaths.insert(xCslPath).second)
-        {
-            continue;
-        }
+            (xCslRoot / "CSL").string();
 
         const int modelsBefore =
             XPMPGetNumberOfInstalledModels();
@@ -4399,9 +4920,6 @@ bool InitializeMultiplayer()
             );
             XPLMDebugString(modelLog);
         }
-
-        // There shall only be one shared installation per simulator.
-        break;
     }
 
     gMultiplayerInitialized = true;
@@ -5158,7 +5676,7 @@ void UpdateFlightplanWindowState()
         return;
     }
 
-    if (gLoggedIn)
+    if (gLoggedIn && !gSpectatorMode)
     {
         XPShowWidget(gFlightRulesLabel);
         XPShowWidget(gFlightTypeLabel);
@@ -5242,6 +5760,7 @@ void DoLogout()
     gRestoreInvisibleOnLogin = gCanUseInvisible && gIsInvisible;
     SaveConfig();
     gLoggedIn = false;
+    gSpectatorMode = false;
     gCurrentUsername = "";
     gCurrentCallsign = "";
     gAuthToken = "";
@@ -5339,6 +5858,13 @@ void DoLogout()
         gDatisWindowDragging = false;
     }
 
+    if (gPlayersWindow != nullptr)
+    {
+        XPLMSetWindowIsVisible(gPlayersWindow, 0);
+        gPlayersWindowDragging = false;
+        gPlayersContextUserId = 0;
+    }
+
     if (gSettingsWindow != nullptr)
     {
         XPLMSetWindowIsVisible(
@@ -5394,6 +5920,7 @@ void ForceLocalLogoutAfterConnectionFailures(
     gRestoreInvisibleOnLogin = gCanUseInvisible && gIsInvisible;
     SaveConfig();
     gLoggedIn = false;
+    gSpectatorMode = false;
     gCurrentUsername = "";
     gCurrentCallsign = "";
     gAuthToken = "";
@@ -5460,6 +5987,13 @@ void ForceLocalLogoutAfterConnectionFailures(
             0
         );
         gDatisWindowDragging = false;
+    }
+
+    if (gPlayersWindow != nullptr)
+    {
+        XPLMSetWindowIsVisible(gPlayersWindow, 0);
+        gPlayersWindowDragging = false;
+        gPlayersContextUserId = 0;
     }
 
     if (gSettingsWindow != nullptr)
@@ -5691,6 +6225,11 @@ void ProcessPositionUpdateResult()
         {
             message =
                 T("status.kicked_spam");
+        }
+        else if (ExtractJsonBoolValue(response, "ground_vehicle_rank_kick", false))
+        {
+            message =
+                T("status.kicked_ground_vehicle_rank");
         }
 
         ForceLocalLogoutAfterKick(
@@ -6140,6 +6679,129 @@ void SendChatMessage()
 }
 
 
+float ReadDataRefRatio(
+    XPLMDataRef dataRef,
+    float fallback = 0.0f
+)
+{
+    if (!dataRef)
+    {
+        return fallback;
+    }
+
+    return std::clamp(
+        XPLMGetDataf(dataRef),
+        0.0f,
+        1.0f
+    );
+}
+
+
+float ReadDataRefArrayMaximum(
+    XPLMDataRef dataRef,
+    float fallback = 0.0f
+)
+{
+    if (!dataRef)
+    {
+        return fallback;
+    }
+
+    float values[16] = {};
+    const int count =
+        XPLMGetDatavf(dataRef, values, 0, 16);
+    float maximum = fallback;
+
+    for (int index = 0; index < count; ++index)
+    {
+        maximum = (std::max)(maximum, values[index]);
+    }
+
+    return maximum;
+}
+
+
+bool ReadDataRefSwitch(
+    XPLMDataRef dataRef
+)
+{
+    if (!dataRef)
+    {
+        return false;
+    }
+
+    const XPLMDataTypeID types =
+        XPLMGetDataRefTypes(dataRef);
+
+    if ((types & xplmType_FloatArray) != 0)
+    {
+        return ReadDataRefArrayMaximum(dataRef) > 0.5f;
+    }
+
+    if ((types & xplmType_Float) != 0)
+    {
+        return XPLMGetDataf(dataRef) > 0.5f;
+    }
+
+    return XPLMGetDatai(dataRef) != 0;
+}
+
+
+std::string GetAiDestinationICAO()
+{
+    if (
+        !gAiFliesAircraftRef
+        || XPLMGetDatai(gAiFliesAircraftRef) == 0
+    )
+    {
+        return "";
+    }
+
+    const int entryCount =
+        XPLMCountFMSEntries();
+
+    for (int index = entryCount - 1; index >= 0; --index)
+    {
+        XPLMNavType navType = xplm_Nav_Unknown;
+        XPLMNavRef navRef = XPLM_NAV_NOT_FOUND;
+        char identifier[256] = {};
+
+        XPLMGetFMSEntryInfo(
+            index,
+            &navType,
+            identifier,
+            &navRef,
+            nullptr,
+            nullptr,
+            nullptr
+        );
+
+        if (
+            (navType & xplm_Nav_Airport) != 0
+            && identifier[0] != '\0'
+        )
+        {
+            std::string airport = identifier;
+            std::transform(
+                airport.begin(),
+                airport.end(),
+                airport.begin(),
+                [](unsigned char character)
+                {
+                    return static_cast<char>(
+                        std::toupper(character)
+                    );
+                }
+            );
+
+            return airport;
+        }
+    }
+
+    return "";
+}
+
+
 void SendPositionUpdate()
 {
     if (!gLoggedIn || gAuthToken.empty())
@@ -6176,6 +6838,70 @@ void SendPositionUpdate()
 
     int onGround =
         gOnGround ? XPLMGetDatai(gOnGround) : 0;
+    const int aiControlsAircraft =
+        gAiFliesAircraftRef
+            && XPLMGetDatai(gAiFliesAircraftRef) != 0
+                ? 1
+                : 0;
+    const std::string aiDestinationIcao =
+        aiControlsAircraft != 0
+            ? GetAiDestinationICAO()
+            : "";
+
+    // Some aircraft expose unused entries in deploy_ratio as permanently
+    // deployed. Taking the maximum of the entire array then keeps remote gear
+    // down forever. The cockpit gear handle is the reliable cross-aircraft
+    // command state; the remote model still animates smoothly towards it.
+    const float gearRatio =
+        gGearHandleDown
+            ? (XPLMGetDatai(gGearHandleDown) != 0 ? 1.0f : 0.0f)
+            : std::clamp(
+                ReadDataRefArrayMaximum(
+                    gGearDeployRatio,
+                    onGround ? 1.0f : 0.0f
+                ),
+                0.0f,
+                1.0f
+            );
+    const float flapRatio =
+        ReadDataRefRatio(gFlapRatio);
+    const float speedbrakeRatio =
+        ReadDataRefRatio(gSpeedbrakeRatio);
+    const float thrustRatio =
+        std::clamp(
+            ReadDataRefArrayMaximum(gThrottleRatio),
+            0.0f,
+            1.0f
+        );
+    const float engineRpm =
+        (std::max)(
+            0.0f,
+            ReadDataRefArrayMaximum(gEngineRpm)
+        );
+    const float yokePitchRatio =
+        gYokePitchRatio
+            ? std::clamp(
+                XPLMGetDataf(gYokePitchRatio),
+                -1.0f,
+                1.0f
+            )
+            : 0.0f;
+    const float yokeRollRatio =
+        gYokeRollRatio
+            ? std::clamp(
+                XPLMGetDataf(gYokeRollRatio),
+                -1.0f,
+                1.0f
+            )
+            : 0.0f;
+    const float yokeHeadingRatio =
+        gYokeHeadingRatio
+            ? std::clamp(
+                XPLMGetDataf(gYokeHeadingRatio),
+                -1.0f,
+                1.0f
+            )
+            : 0.0f;
 
     int com1 =
         gCom1 ? XPLMGetDatai(gCom1) : 0;
@@ -6213,6 +6939,21 @@ void SendPositionUpdate()
         "&roll=" + UrlEncode(FloatToString(roll)) +
         "&vertical_speed=" + UrlEncode(FloatToString(verticalSpeed)) +
         "&on_ground=" + UrlEncode(IntToString(onGround)) +
+        "&ai_controls_aircraft=" + UrlEncode(IntToString(aiControlsAircraft)) +
+        "&ai_destination_icao=" + UrlEncode(aiDestinationIcao) +
+        "&gear_ratio=" + UrlEncode(FloatToString(gearRatio)) +
+        "&flap_ratio=" + UrlEncode(FloatToString(flapRatio)) +
+        "&speedbrake_ratio=" + UrlEncode(FloatToString(speedbrakeRatio)) +
+        "&thrust_ratio=" + UrlEncode(FloatToString(thrustRatio)) +
+        "&engine_rpm=" + UrlEncode(FloatToString(engineRpm)) +
+        "&yoke_pitch_ratio=" + UrlEncode(FloatToString(yokePitchRatio)) +
+        "&yoke_roll_ratio=" + UrlEncode(FloatToString(yokeRollRatio)) +
+        "&yoke_heading_ratio=" + UrlEncode(FloatToString(yokeHeadingRatio)) +
+        "&taxi_lights=" + UrlEncode(IntToString(ReadDataRefSwitch(gTaxiLights) ? 1 : 0)) +
+        "&landing_lights=" + UrlEncode(IntToString(ReadDataRefSwitch(gLandingLights) ? 1 : 0)) +
+        "&beacon_lights=" + UrlEncode(IntToString(ReadDataRefSwitch(gBeaconLights) ? 1 : 0)) +
+        "&strobe_lights=" + UrlEncode(IntToString(ReadDataRefSwitch(gStrobeLights) ? 1 : 0)) +
+        "&nav_lights=" + UrlEncode(IntToString(ReadDataRefSwitch(gNavLights) ? 1 : 0)) +
         "&com1=" + UrlEncode(FormatComFrequency(com1)) +
         "&com2=" + UrlEncode(FormatComFrequency(com2)) +
         "&com3=" + UrlEncode(FormatComFrequency(com3)) +
@@ -6230,6 +6971,11 @@ void SendPositionUpdate()
 
 void SendFlightplan()
 {
+    if (gSpectatorMode)
+    {
+        SetFlightplanStatus("Spectator mode: flightplan disabled.");
+        return;
+    }
     if (!gLoggedIn || gAuthToken.empty())
     {
         SetFlightplanStatus(
@@ -6416,6 +7162,11 @@ CustomRect GetCustomLoginCallsignRect(int left, int top)
 CustomRect GetCustomLoginRememberRect(int left, int top)
 {
     return { left + 28, top - 286, left + 150, top - 306 };
+}
+
+CustomRect GetCustomLoginSpectatorRect(int left, int top)
+{
+    return { left + 174, top - 286, left + 332, top - 306 };
 }
 
 CustomRect GetCustomLoginButtonRect(int left, int top)
@@ -6658,7 +7409,8 @@ void PerformCustomLogin()
         "username=" + UrlEncode(username) +
         "&password=" + UrlEncode(password) +
         "&callsign=" + UrlEncode(callsign) +
-        "&plugin_version=" + UrlEncode(VFN_PLUGIN_VERSION);
+        "&plugin_version=" + UrlEncode(VFN_PLUGIN_VERSION) +
+        "&spectator=" + UrlEncode(gSpectatorLogin ? "1" : "0");
 
     std::string response =
         HttpPost(
@@ -6689,10 +7441,16 @@ void PerformCustomLogin()
         }
 
         gLoggedIn = true;
+        gSpectatorMode = ExtractJsonBoolValue(
+            response,
+            "is_spectator",
+            gSpectatorLogin
+        );
         gCurrentUsername = username;
         gCurrentCallsign = callsign;
         gPositionUpdateFailureCount = 0;
         ResetNightFlightTracking();
+        gPreviousOnGroundForTransponderWarning = -1;
         SetTransponderMode(1);
 
         gAuthToken =
@@ -6780,6 +7538,15 @@ void PerformCustomLogin()
 
         AddLoginChatSummary();
 
+        if (gSpectatorMode)
+        {
+            if (gCustomFlightplanWindow != nullptr)
+                XPLMSetWindowIsVisible(gCustomFlightplanWindow, 0);
+            if (gFlightplanWindow != nullptr) XPHideWidget(gFlightplanWindow);
+            if (gDatisWindow != nullptr)
+                XPLMSetWindowIsVisible(gDatisWindow, 0);
+        }
+
         XPLMDebugString(
             T("debug.login_success")
         );
@@ -6828,6 +7595,7 @@ void PerformCustomLogin()
     }
 
     gLoggedIn = false;
+    gSpectatorMode = false;
     gCurrentUsername = "";
     gCurrentCallsign = "";
     gAuthToken = "";
@@ -7765,6 +8533,40 @@ void DrawCustomLoginWindow(
         0.95f
     );
 
+    if (!gLoggedIn)
+    {
+        const CustomRect spectatorRect =
+            GetCustomLoginSpectatorRect(left, top);
+        DrawFilledRect(
+            { spectatorRect.left, spectatorRect.top - 14,
+              spectatorRect.left + 13, spectatorRect.top - 1 },
+            gSpectatorLogin ? 0.05f : 0.03f,
+            gSpectatorLogin ? 0.36f : 0.10f,
+            gSpectatorLogin ? 0.82f : 0.16f,
+            0.94f
+        );
+        DrawRectOutline(
+            { spectatorRect.left, spectatorRect.top - 14,
+              spectatorRect.left + 13, spectatorRect.top - 1 },
+            0.13f, 0.50f, 0.95f, 0.90f
+        );
+        if (gSpectatorLogin)
+        {
+            DrawText(
+                spectatorRect.left + 2,
+                spectatorRect.top - 13,
+                "X",
+                0.90f, 0.96f, 1.00f
+            );
+        }
+        DrawText(
+            spectatorRect.left + 22,
+            spectatorRect.top - 12,
+            "Spectator",
+            0.82f, 0.88f, 0.95f
+        );
+    }
+
     if (gLoggedIn)
     {
         DrawCustomLoginButton(
@@ -7811,7 +8613,7 @@ CustomRect GetCompactCloseRect(int left, int top, int right)
 
 CustomRect GetCompactTabRect(int left, int top, int index)
 {
-    int tabWidth = 120;
+    int tabWidth = 98;
     int tabLeft =
         left + 12 + (index * (tabWidth + 8));
 
@@ -7990,14 +8792,15 @@ void DrawCompactHeaderLogo(int left, int top)
 void DrawCompactTab(
     const CustomRect& rect,
     const std::string& label,
-    bool active
+    bool active,
+    bool enabled = true
 )
 {
     DrawFilledRect(
         rect,
-        active ? 0.06f : 0.035f,
-        active ? 0.22f : 0.070f,
-        active ? 0.50f : 0.095f,
+        !enabled ? 0.025f : (active ? 0.06f : 0.035f),
+        !enabled ? 0.035f : (active ? 0.22f : 0.070f),
+        !enabled ? 0.045f : (active ? 0.50f : 0.095f),
         0.96f
     );
 
@@ -8013,9 +8816,9 @@ void DrawCompactTab(
         rect.left + 31,
         rect.top - 22,
         label,
-        0.88f,
-        0.94f,
-        1.00f
+        enabled ? 0.88f : 0.34f,
+        enabled ? 0.94f : 0.38f,
+        enabled ? 1.00f : 0.42f
     );
 }
 
@@ -9484,6 +10287,10 @@ void OpenXPlaneKeyboardSettings()
 
 void SetVoiceTransmissionActive(bool active)
 {
+    if (gSpectatorMode && active)
+    {
+        active = false;
+    }
     gVoicePttActive = active;
     if (active)
     {
@@ -10580,7 +11387,7 @@ void DrawSettingsWindow(
         continuousCheckbox,
         0.08f, 0.55f, 1.00f, 0.95f
     );
-    if (gVoiceContinuousTransmit)
+    if (gVoiceContinuousTransmit && !gSpectatorMode)
     {
         DrawText(
             continuousCheckbox.left + 4,
@@ -10592,8 +11399,12 @@ void DrawSettingsWindow(
     DrawText(
         continuousRect.left + 28,
         continuousRect.top - 16,
-        T("settings.voice_continuous"),
-        0.76f, 0.84f, 0.92f
+        gSpectatorMode
+            ? "Receive only (Spectator)"
+            : T("settings.voice_continuous"),
+        gSpectatorMode ? 0.42f : 0.76f,
+        gSpectatorMode ? 0.48f : 0.84f,
+        gSpectatorMode ? 0.54f : 0.92f
     );
 
     CustomRect hintRect =
@@ -10890,7 +11701,7 @@ int SettingsHandleMouse(
             GetSettingsVoiceOutputSelectRect(left, top, right);
 
         // Voice controls use their exact drawn rectangles in popped-out windows.
-        if (PointInRect(
+        if (!gSpectatorMode && PointInRect(
             x, y,
             GetSettingsVoiceContinuousRect(left, top, right)))
         {
@@ -11578,6 +12389,260 @@ void ShowAtcWindow()
     XPLMBringWindowToFront(
         gAtcWindow
     );
+}
+
+
+CustomRect GetPlayersCloseRect(int left, int top, int right)
+{
+    return { right - 36, top - 32, right - 6, top - 4 };
+}
+
+CustomRect GetPlayersListRect(int left, int top, int right, int bottom)
+{
+    return { left + 14, top - 52, right - 14, bottom + 14 };
+}
+
+const NearbyPlayerEntry* FindNearbyPlayer(int userId)
+{
+    for (const auto& player : gNearbyPlayers)
+    {
+        if (player.userId == userId)
+        {
+            return &player;
+        }
+    }
+    return nullptr;
+}
+
+int PlayerAtWindowRow(int y, int top)
+{
+    const int firstRowTop = top - 60;
+    if (y > firstRowTop || y < firstRowTop - 28 * 11)
+    {
+        return -1;
+    }
+    return gPlayersScrollOffset + (firstRowTop - y) / 28;
+}
+
+void PreparePlayerChatCommand(const std::string& command)
+{
+    gChatInputText = command;
+    gChatInputFocused = true;
+    gChatScrollOffset = 0;
+    if (gCompactWindow != nullptr)
+    {
+        XPLMSetWindowIsVisible(gCompactWindow, 1);
+        XPLMBringWindowToFront(gCompactWindow);
+        XPLMTakeKeyboardFocus(gCompactWindow);
+    }
+}
+
+void DrawPlayersWindow(XPLMWindowID window, void*)
+{
+    int left, top, right, bottom;
+    XPLMGetWindowGeometry(window, &left, &top, &right, &bottom);
+    XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0);
+    DrawFilledRect({left, top, right, bottom}, 0.015f, 0.040f, 0.065f, 1.0f);
+    DrawRectOutline({left, top, right, bottom}, 0.18f, 0.36f, 0.50f, 1.0f);
+    DrawFilledRect({left, top, right, top - 38}, 0.018f, 0.075f, 0.115f, 1.0f);
+    DrawFilledRect({left + 3, top - 40, right - 3, top - 38},
+                   0.10f, 0.45f, 0.85f, 0.86f);
+    DrawCompactHeaderLogo(left + 4, top - 3);
+    DrawText(left + 90, top - 21, T("players.title"), 0.88f, 0.94f, 1.0f);
+    DrawText(right - 24, top - 21, "X", 0.72f, 0.80f, 0.88f);
+
+    const CustomRect listRect = GetPlayersListRect(left, top, right, bottom);
+    DrawFilledRect(listRect, 0.010f, 0.030f, 0.050f, 1.0f);
+    DrawRectOutline(listRect, 0.14f, 0.28f, 0.38f, 0.84f);
+
+    if (gNearbyPlayers.empty())
+    {
+        DrawText(listRect.left + 14, listRect.top - 24,
+                 T("players.empty"), 0.62f, 0.70f, 0.80f);
+    }
+    const int visibleRows = 11;
+    const int maximumOffset = (std::max)(
+        0, static_cast<int>(gNearbyPlayers.size()) - visibleRows);
+    gPlayersScrollOffset = std::clamp(gPlayersScrollOffset, 0, maximumOffset);
+    for (int visible = 0; visible < visibleRows; ++visible)
+    {
+        const int index = gPlayersScrollOffset + visible;
+        if (index >= static_cast<int>(gNearbyPlayers.size())) break;
+        const auto& player = gNearbyPlayers[index];
+        const int rowTop = top - 60 - visible * 28;
+        if (visible % 2 != 0)
+        {
+            DrawFilledRect({listRect.left + 2, rowTop,
+                            listRect.right - 2, rowTop - 27},
+                           0.025f, 0.075f, 0.105f, 0.8f);
+        }
+        std::string label = player.callsign;
+        if (player.spectator) label += " [SPECTATOR]";
+        if (player.userId == gFollowedTrafficUserId) label = "> " + label;
+        DrawText(listRect.left + 10, rowTop - 18,
+                 TruncateForField(label, 24),
+                 player.spectator ? 0.58f : 0.25f,
+                 player.spectator ? 0.72f : 0.82f,
+                 1.0f);
+        std::ostringstream distance;
+        distance << std::fixed << std::setprecision(1)
+                 << player.distanceNm << " NM";
+        DrawText(listRect.right - 72, rowTop - 18,
+                 distance.str(), 0.70f, 0.82f, 0.90f);
+    }
+
+    const NearbyPlayerEntry* context = FindNearbyPlayer(gPlayersContextUserId);
+    if (context != nullptr)
+    {
+        const int menuLeft = right - 176;
+        const bool mayModerate =
+            gCurrentOpPermission >= 1
+            && context->opPermission < gCurrentOpPermission;
+        const int entries = mayModerate ? 5 : 2;
+        const int menuTop = top - 72;
+        const int menuBottom = menuTop - entries * 28;
+        DrawFilledRect({menuLeft, menuTop, right - 12, menuBottom},
+                       0.025f, 0.055f, 0.080f, 1.0f);
+        DrawRectOutline({menuLeft, menuTop, right - 12, menuBottom},
+                        0.12f, 0.50f, 0.88f, 1.0f);
+        const char* actions[5] = {
+            "players.follow", "players.message", "players.warn",
+            "players.kick", "players.ban"
+        };
+        for (int index = 0; index < entries; ++index)
+        {
+            DrawText(menuLeft + 10, menuTop - 19 - index * 28,
+                     T(actions[index]), 0.86f, 0.92f, 1.0f);
+        }
+    }
+}
+
+int PlayersHandleCursor(XPLMWindowID, int, int, void*)
+{
+    return xplm_CursorDefault;
+}
+
+int PlayersHandleMouseWheel(XPLMWindowID, int, int, int, int clicks, void*)
+{
+    const int maximumOffset = (std::max)(
+        0, static_cast<int>(gNearbyPlayers.size()) - 11);
+    gPlayersScrollOffset = std::clamp(
+        gPlayersScrollOffset - clicks, 0, maximumOffset);
+    return 1;
+}
+
+int PlayersHandleMouse(XPLMWindowID window, int x, int y,
+                       XPLMMouseStatus status, void*)
+{
+    int left, top, right, bottom;
+    XPLMGetWindowGeometry(window, &left, &top, &right, &bottom);
+    if (status == xplm_MouseDown)
+    {
+        if (PointInWindowRect(x, y, GetPlayersCloseRect(left, top, right),
+                              left, top, bottom))
+        {
+            gPlayersContextUserId = 0;
+            XPLMSetWindowIsVisible(window, 0);
+            return 1;
+        }
+        const NearbyPlayerEntry* context =
+            FindNearbyPlayer(gPlayersContextUserId);
+        if (context != nullptr)
+        {
+            const bool mayModerate =
+                gCurrentOpPermission >= 1
+                && context->opPermission < gCurrentOpPermission;
+            const int entries = mayModerate ? 5 : 2;
+            const int menuLeft = right - 176;
+            const int menuTop = top - 72;
+            if (x >= menuLeft && x <= right - 12
+                && y <= menuTop && y >= menuTop - entries * 28)
+            {
+                const int action = (menuTop - y) / 28;
+                const std::string callsign = context->callsign;
+                const int userId = context->userId;
+                gPlayersContextUserId = 0;
+                if (action == 0) ToggleFollowTrafficPlayer(userId);
+                else if (action == 1) PreparePlayerChatCommand(
+                    "/msg " + callsign + " : ");
+                else if (action == 2) PreparePlayerChatCommand(
+                    "/warn " + callsign + " ");
+                else if (action == 3) PreparePlayerChatCommand(
+                    "/kick " + callsign + " ");
+                else if (action == 4) PreparePlayerChatCommand(
+                    "/ban " + callsign + " 1h ");
+                return 1;
+            }
+            gPlayersContextUserId = 0;
+        }
+        if (y >= top - 38)
+        {
+            gPlayersWindowDragging = true;
+            gPlayersWindowDragOffsetX = x - left;
+            gPlayersWindowDragOffsetY = top - y;
+        }
+    }
+    else if (status == xplm_MouseDrag && gPlayersWindowDragging)
+    {
+        const int width = right - left;
+        const int height = top - bottom;
+        const int newLeft = x - gPlayersWindowDragOffsetX;
+        const int newTop = y + gPlayersWindowDragOffsetY;
+        XPLMSetWindowGeometry(window, newLeft, newTop,
+                             newLeft + width, newTop - height);
+    }
+    else if (status == xplm_MouseUp)
+    {
+        gPlayersWindowDragging = false;
+    }
+    return 1;
+}
+
+int PlayersHandleRightClick(XPLMWindowID window, int, int y,
+                            XPLMMouseStatus status, void*)
+{
+    if (status != xplm_MouseDown) return 1;
+    int left, top, right, bottom;
+    XPLMGetWindowGeometry(window, &left, &top, &right, &bottom);
+    const int row = PlayerAtWindowRow(y, top);
+    if (row >= 0 && row < static_cast<int>(gNearbyPlayers.size()))
+    {
+        gPlayersContextUserId = gNearbyPlayers[row].userId;
+    }
+    return 1;
+}
+
+void CreatePlayersWindow()
+{
+    if (gPlayersWindow != nullptr) return;
+    XPLMCreateWindow_t params = {};
+    params.structSize = sizeof(params);
+    params.left = 480;
+    params.top = 650;
+    params.right = 840;
+    params.bottom = 290;
+    params.visible = 0;
+    params.drawWindowFunc = DrawPlayersWindow;
+    params.handleMouseClickFunc = PlayersHandleMouse;
+    params.handleRightClickFunc = PlayersHandleRightClick;
+    params.handleCursorFunc = PlayersHandleCursor;
+    params.handleMouseWheelFunc = PlayersHandleMouseWheel;
+    params.decorateAsFloatingWindow = xplm_WindowDecorationRoundRectangle;
+    params.layer = xplm_WindowLayerFloatingWindows;
+    gPlayersWindow = XPLMCreateWindowEx(&params);
+    if (gPlayersWindow != nullptr)
+    {
+        XPLMSetWindowTitle(gPlayersWindow, T("window.players.title"));
+        XPLMSetWindowResizingLimits(gPlayersWindow, 360, 360, 360, 360);
+    }
+}
+
+void ShowPlayersWindow()
+{
+    CreatePlayersWindow();
+    if (gPlayersWindow == nullptr) return;
+    XPLMSetWindowIsVisible(gPlayersWindow, 1);
+    XPLMBringWindowToFront(gPlayersWindow);
 }
 
 
@@ -12793,6 +13858,10 @@ void CreateDatisWindow()
 
 void ShowDatisWindow()
 {
+    if (gSpectatorMode)
+    {
+        return;
+    }
     CreateDatisWindow();
 
     if (gDatisWindow == nullptr)
@@ -13165,7 +14234,14 @@ void DrawCompactWindow(
 
     DrawText(left + 76, top - 18, "Network Pilot Client", 0.94f, 0.97f, 1.00f);
     DrawText(right - 234, top - 18, gCurrentCallsign.empty() ? "VFN" : gCurrentCallsign, 0.94f, 0.97f, 1.00f);
-    DrawText(right - 104, top - 18, "ONLINE", 0.24f, 0.92f, 0.25f);
+    DrawText(
+        right - (gSpectatorMode ? 126 : 104),
+        top - 18,
+        gSpectatorMode ? "SPECTATOR" : "ONLINE",
+        gSpectatorMode ? 0.20f : 0.24f,
+        gSpectatorMode ? 0.72f : 0.92f,
+        gSpectatorMode ? 1.00f : 0.25f
+    );
 
     DrawRectOutline(GetCompactCloseRect(left, top, right), 0.18f, 0.38f, 0.52f, 0.85f);
     DrawText(right - 22, top - 21, "X", 0.72f, 0.80f, 0.88f);
@@ -13314,6 +14390,12 @@ void DrawCompactWindow(
             senderGreen = 0.34f;
             senderBlue = 0.24f;
         }
+        else if (line.type == "warning")
+        {
+            senderRed = 1.00f;
+            senderGreen = 0.12f;
+            senderBlue = 0.08f;
+        }
         else if (line.sender == "ANNOUNCEMENT")
         {
             senderRed = 1.00f;
@@ -13354,6 +14436,12 @@ void DrawCompactWindow(
             messageRed = 1.00f;
             messageGreen = 0.42f;
             messageBlue = 0.32f;
+        }
+        else if (line.type == "warning")
+        {
+            messageRed = 1.00f;
+            messageGreen = 0.20f;
+            messageBlue = 0.14f;
         }
 
         DrawText(
@@ -13432,16 +14520,27 @@ void DrawCompactWindow(
     );
     DrawCompactTab(
         GetCompactTabRect(left, top, 1),
+        T("button.players"),
+        gPlayersWindow != nullptr && XPLMGetWindowIsVisible(gPlayersWindow)
+    );
+    DrawCompactTab(
+        GetCompactTabRect(left, top, 2),
         "MSG",
         gMessagesWindow != nullptr && XPLMGetWindowIsVisible(gMessagesWindow)
     );
-    DrawCompactTab(GetCompactTabRect(left, top, 2), "FP", false);
     DrawCompactTab(
         GetCompactTabRect(left, top, 3),
-        "D-ATIS",
-        gDatisWindow != nullptr && XPLMGetWindowIsVisible(gDatisWindow)
+        "FP",
+        false,
+        !gSpectatorMode
     );
-    DrawCompactTab(GetCompactTabRect(left, top, 4), T("button.settings"), false);
+    DrawCompactTab(
+        GetCompactTabRect(left, top, 4),
+        "D-ATIS",
+        gDatisWindow != nullptr && XPLMGetWindowIsVisible(gDatisWindow),
+        !gSpectatorMode
+    );
+    DrawCompactTab(GetCompactTabRect(left, top, 5), T("button.settings"), false);
 }
 
 
@@ -14883,7 +15982,7 @@ int CompactHandleMouse(
             return 1;
         }
 
-        if (gCustomFlightplanWindow != nullptr && PointInWindowRect(x, y, GetCompactTabRect(left, top, 2), left, top, bottom))
+        if (!gSpectatorMode && gCustomFlightplanWindow != nullptr && PointInWindowRect(x, y, GetCompactTabRect(left, top, 3), left, top, bottom))
         {
             gChatInputFocused = false;
             gChatSendButtonPressed = false;
@@ -14953,6 +16052,22 @@ int CompactHandleMouse(
         {
             gChatInputFocused = false;
             gChatSendButtonPressed = false;
+            XPLMTakeKeyboardFocus(nullptr);
+            if (gPlayersWindow != nullptr && XPLMGetWindowIsVisible(gPlayersWindow))
+            {
+                XPLMSetWindowIsVisible(gPlayersWindow, 0);
+            }
+            else
+            {
+                ShowPlayersWindow();
+            }
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCompactTabRect(left, top, 2), left, top, bottom))
+        {
+            gChatInputFocused = false;
+            gChatSendButtonPressed = false;
 
             XPLMTakeKeyboardFocus(
                 nullptr
@@ -14975,7 +16090,7 @@ int CompactHandleMouse(
             return 1;
         }
 
-        if (PointInWindowRect(x, y, GetCompactTabRect(left, top, 3), left, top, bottom))
+        if (!gSpectatorMode && PointInWindowRect(x, y, GetCompactTabRect(left, top, 4), left, top, bottom))
         {
             gChatInputFocused = false;
             gChatSendButtonPressed = false;
@@ -15001,7 +16116,7 @@ int CompactHandleMouse(
             return 1;
         }
 
-        if (PointInWindowRect(x, y, GetCompactTabRect(left, top, 4), left, top, bottom))
+        if (PointInWindowRect(x, y, GetCompactTabRect(left, top, 5), left, top, bottom))
         {
             gChatInputFocused = false;
             gChatSendButtonPressed = false;
@@ -15407,6 +16522,14 @@ int CustomLoginHandleMouse(
         }
 
         if (
+            !gLoggedIn
+            && PointInRect(x, y, GetCustomLoginSpectatorRect(left, top))
+        ) {
+            gSpectatorLogin = !gSpectatorLogin;
+            return 1;
+        }
+
+        if (
             !gLoggedIn &&
             PointInRect(x, y, GetCustomLoginButtonRect(left, top))
         ) {
@@ -15607,6 +16730,7 @@ int LoginWindowHandler(
                 gCurrentCallsign = callsign;
                 gPositionUpdateFailureCount = 0;
                 ResetNightFlightTracking();
+                gPreviousOnGroundForTransponderWarning = -1;
                 SetTransponderMode(1);
 
                 gAuthToken =
@@ -17702,6 +18826,11 @@ void MenuHandler(
             return;
         }
 
+        if (gSpectatorMode)
+        {
+            return;
+        }
+
         if (XPLMGetWindowIsVisible(gCustomFlightplanWindow))
         {
             XPLMSetWindowIsVisible(
@@ -17831,6 +18960,39 @@ float FlightLoopCallback(
 
     float verticalSpeed =
         XPLMGetDataf(gVerticalSpeed);
+
+    const int currentOnGround =
+        gOnGround ? (XPLMGetDatai(gOnGround) != 0 ? 1 : 0) : 1;
+    const int currentTransponderMode =
+        gTransponderMode ? XPLMGetDatai(gTransponderMode) : 0;
+
+    if (!gLoggedIn || gSpectatorMode)
+    {
+        gPreviousOnGroundForTransponderWarning = -1;
+    }
+    else
+    {
+        if (
+            gPreviousOnGroundForTransponderWarning == 1
+            && currentOnGround == 0
+            && currentTransponderMode <= 1
+        ) {
+            AddChatLine(
+                {
+                    0,
+                    "",
+                    "",
+                    "WARNING",
+                    "warning",
+                    T("chat.transponder_standby_takeoff")
+                },
+                true
+            );
+        }
+
+        gPreviousOnGroundForTransponderWarning =
+            currentOnGround;
+    }
 
     int com1 =
         gCom1 ? XPLMGetDatai(gCom1) : 0;
@@ -17977,6 +19139,76 @@ PLUGIN_API int XPluginStart(
             "sim/flightmodel/position/vh_ind_fpm"
         );
 
+    gGearDeployRatio =
+        XPLMFindDataRef(
+            "sim/flightmodel2/gear/deploy_ratio"
+        );
+
+    gGearHandleDown =
+        XPLMFindDataRef(
+            "sim/cockpit2/controls/gear_handle_down"
+        );
+
+    gFlapRatio =
+        XPLMFindDataRef(
+            "sim/cockpit2/controls/flap_ratio"
+        );
+
+    gSpeedbrakeRatio =
+        XPLMFindDataRef(
+            "sim/cockpit2/controls/speedbrake_ratio"
+        );
+
+    gThrottleRatio =
+        XPLMFindDataRef(
+            "sim/flightmodel/engine/ENGN_thro_use"
+        );
+
+    gEngineRpm =
+        XPLMFindDataRef(
+            "sim/flightmodel2/engines/engine_rotation_speed_rpm"
+        );
+
+    gYokePitchRatio =
+        XPLMFindDataRef(
+            "sim/joystick/yoke_pitch_ratio"
+        );
+
+    gYokeRollRatio =
+        XPLMFindDataRef(
+            "sim/joystick/yoke_roll_ratio"
+        );
+
+    gYokeHeadingRatio =
+        XPLMFindDataRef(
+            "sim/joystick/yoke_heading_ratio"
+        );
+
+    gTaxiLights =
+        XPLMFindDataRef(
+            "sim/cockpit2/switches/taxi_light_on"
+        );
+
+    gLandingLights =
+        XPLMFindDataRef(
+            "sim/cockpit2/switches/landing_lights_on"
+        );
+
+    gBeaconLights =
+        XPLMFindDataRef(
+            "sim/cockpit2/switches/beacon_on"
+        );
+
+    gStrobeLights =
+        XPLMFindDataRef(
+            "sim/cockpit2/switches/strobe_lights_on"
+        );
+
+    gNavLights =
+        XPLMFindDataRef(
+            "sim/cockpit2/switches/navigation_lights_on"
+        );
+
     gOnGround =
         XPLMFindDataRef(
             "sim/flightmodel/failures/onground_any"
@@ -18010,6 +19242,11 @@ PLUGIN_API int XPluginStart(
     gReplayModeRef =
         XPLMFindDataRef(
             "sim/operation/prefs/replay_mode"
+        );
+
+    gAiFliesAircraftRef =
+        XPLMFindDataRef(
+            "sim/operation/prefs/ai_flies_aircraft"
         );
 
     /*
@@ -18363,6 +19600,12 @@ PLUGIN_API void XPluginStop(void)
         );
 
         gAtcWindow = nullptr;
+    }
+
+    if (gPlayersWindow != nullptr)
+    {
+        XPLMDestroyWindow(gPlayersWindow);
+        gPlayersWindow = nullptr;
     }
 
     if (gMessagesWindow != nullptr)

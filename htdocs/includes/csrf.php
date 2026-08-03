@@ -3,7 +3,8 @@
 function csrfToken(string $scope = 'web'): string
 {
     if (session_status() === PHP_SESSION_NONE) {
-        session_start();
+        require_once __DIR__ . '/session_bootstrap.php';
+        startVfnWebSession();
     }
 
     $key = 'csrf_' . preg_replace('/[^a-z0-9_-]/i', '', $scope);

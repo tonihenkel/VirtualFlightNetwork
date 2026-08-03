@@ -3,7 +3,7 @@
     "minimumInvisibleOpPermission": 1,
     "showRatings": true,
     "maintenanceMode": false,
-    "registrationEnabled": false,
+    "registrationEnabled": true,
     "chatFrequencyRangeNm": 200,
     "aviationWeatherMetarCacheUrl": "https://aviationweather.gov/data/cache/metars.cache.xml.gz",
     "noaaMetarStationBaseUrl": "https://tgftp.nws.noaa.gov/data/observations/metar/stations/",

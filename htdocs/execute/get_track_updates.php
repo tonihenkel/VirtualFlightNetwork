@@ -32,8 +32,40 @@ try {
     );
 
     /*
-        Nur neue Punkte laden,
-        die der Browser noch nicht kennt.
+        Resolve the currently active simulator session first. A callsign can
+        be reused over many flights and pilot_tracks intentionally keeps the
+        session token. Filtering by callsign alone mixes historic flights and
+        can also leave the map cursor pointing into an older route.
+    */
+    $sessionStmt = $pdo->prepare(
+        "SELECT p.session_token
+         FROM pilot_positions p
+         INNER JOIN user_sessions s
+            ON s.token = p.session_token
+         WHERE p.callsign = :callsign
+           AND s.is_active = 1
+         ORDER BY p.last_update DESC
+         LIMIT 1"
+    );
+    $sessionStmt->execute([
+        "callsign" => $callsign
+    ]);
+    $activeSessionToken =
+        (string)($sessionStmt->fetchColumn() ?: "");
+
+    if ($activeSessionToken === "") {
+        echo json_encode([
+            "success" => true,
+            "callsign" => $callsign,
+            "last_id" => $lastId,
+            "points" => []
+        ]);
+        exit;
+    }
+
+    /*
+        Only load points from this flight/session that the browser does not
+        know yet.
     */
     $stmt = $pdo->prepare(
         "SELECT
@@ -44,9 +76,16 @@ try {
                 heading,
                 created_at
          FROM pilot_tracks
-         WHERE callsign = :callsign
+         WHERE session_token = :session_token
+           AND callsign = :callsign
            AND id > :last_id
          ORDER BY id ASC"
+    );
+
+    $stmt->bindValue(
+        ":session_token",
+        $activeSessionToken,
+        PDO::PARAM_STR
     );
 
     $stmt->bindValue(

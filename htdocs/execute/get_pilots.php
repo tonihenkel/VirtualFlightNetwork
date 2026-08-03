@@ -1,6 +1,7 @@
 <?php
 
-session_start();
+require_once __DIR__ . '/../includes/session_bootstrap.php';
+startVfnWebSession();
 
 header("Content-Type: application/json; charset=utf-8");
 
@@ -83,6 +84,8 @@ try {
             p.pitch,
             p.roll_angle,
             p.vertical_speed,
+            p.ai_controls_aircraft,
+            p.ai_destination_icao,
             p.com1,
             p.com2,
             p.com3,
@@ -92,6 +95,7 @@ try {
             u.division_code,
 
             s.is_invisible,
+            s.is_spectator,
 
             u.op_permission,
             u.rating_pilot,
@@ -108,7 +112,11 @@ try {
             fp.route_text,
             fp.cruising_level,
             fp.cruising_speed,
-            fp.remarks
+            fp.remarks,
+
+            af.started_at AS active_flight_started_at,
+            af.duration_seconds AS active_flight_duration_seconds,
+            af.distance_nm AS active_flight_distance_nm
 
          FROM pilot_positions p
 
@@ -120,6 +128,10 @@ try {
 
          LEFT JOIN pilot_flightplans fp
             ON fp.session_token = p.session_token
+
+         LEFT JOIN pilot_flights af
+            ON af.session_token = p.session_token
+           AND af.status = 'active'
 
          WHERE s.is_active = 1
             AND p.last_update >= DATE_SUB(NOW(), INTERVAL :activeSeconds SECOND)
@@ -179,6 +191,12 @@ try {
 
     foreach ($pilots as &$pilot) {
 
+        $isSpectator = ((int)($pilot['is_spectator'] ?? 0) === 1);
+        if ($isSpectator && $viewerOpPermission < 1) {
+            continue;
+        }
+        $pilot['is_spectator'] = $isSpectator;
+
         $isInvisible =
             ((int)$pilot["is_invisible"] === 1);
 
@@ -212,6 +230,13 @@ try {
         ) {
             $pilot["transponder"] = "0000";
         }
+
+        $pilot["aircraft_icao"] =
+            strtoupper(
+                trim((string)($pilot["aircraft_icao"] ?? "UNKNOWN"))
+            );
+        $pilot["ai_controls_aircraft"] =
+            (int)($pilot["ai_controls_aircraft"] ?? 0) === 1;
 
         $pilotRating =
             (int)($pilot["rating_pilot"] ?? 0);
@@ -248,6 +273,18 @@ try {
         if ($arrivalAirport === "") {
             $arrivalAirport = "ZZZZ";
         }
+
+        $pilot["ai_destination_icao"] =
+            strtoupper(
+                trim((string)($pilot["ai_destination_icao"] ?? ""))
+            );
+        $pilot["flightplan_destination_icao"] =
+            $arrivalAirport === "ZZZZ" ? "" : $arrivalAirport;
+        $pilot["destination_icao"] =
+            $pilot["ai_controls_aircraft"]
+            && $pilot["ai_destination_icao"] !== ""
+                ? $pilot["ai_destination_icao"]
+                : $pilot["flightplan_destination_icao"];
 
         if ($alternate1Airport === "") {
             $alternate1Airport = "ZZZZ";

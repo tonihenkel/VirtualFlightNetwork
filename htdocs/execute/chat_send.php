@@ -6,6 +6,31 @@ require_once '../includes/chat_system.php';
 require_once '../includes/activity_log.php';
 require_once '../includes/chat_spam_protection.php';
 
+function pluginModerationExpiry(string $duration): array
+{
+    $duration = strtolower(trim($duration));
+    if ($duration === 'permanent') {
+        return [null, 'permanent'];
+    }
+    if (!preg_match('/^(\d+)(min|h|d|w|mo|y)$/', $duration, $matches)) {
+        throw new InvalidArgumentException('invalid_duration');
+    }
+    $value = (int)$matches[1];
+    $units = [
+        'min' => 'minutes', 'h' => 'hours', 'd' => 'days',
+        'w' => 'weeks', 'mo' => 'months', 'y' => 'years'
+    ];
+    if ($value < 1 || ($matches[2] === 'y' && $value > 10)) {
+        throw new InvalidArgumentException('invalid_duration');
+    }
+    return [
+        (new DateTimeImmutable('now'))
+            ->modify('+' . $value . ' ' . $units[$matches[2]])
+            ->format('Y-m-d H:i:s'),
+        $duration
+    ];
+}
+
 $token =
     trim($_POST['token'] ?? '');
 
@@ -505,6 +530,97 @@ try {
         exit;
     }
 
+    if (preg_match('/^\/(warn|ban)\s+([A-Z0-9_\-]+)\s+(?:(permanent|\d+(?:min|h|d|w|mo|y))\s+)?(.+)$/i', $message, $matches)) {
+        $action = strtolower($matches[1]);
+        if ((int)$session['op_permission'] < 1) {
+            echo json_encode(['success' => false, 'message' => 'Keine Berechtigung.']);
+            exit;
+        }
+        $targetCallsign = strtoupper(trim($matches[2]));
+        $duration = trim((string)($matches[3] ?? ''));
+        $reason = mb_substr(trim((string)$matches[4]), 0, 500);
+        if ($duration === '') {
+            $duration = $action === 'warn' ? 'permanent' : '';
+        }
+        if ($reason === '' || $duration === '') {
+            echo json_encode(['success' => false, 'message' => 'Grund oder Dauer fehlt.']);
+            exit;
+        }
+        try {
+            [$expiresAt, $durationLabel] = pluginModerationExpiry($duration);
+        } catch (InvalidArgumentException $error) {
+            echo json_encode(['success' => false, 'message' => 'Ungueltige Dauer.']);
+            exit;
+        }
+        $targetStmt = $pdo->prepare(
+            "SELECT s.user_id, s.callsign, u.op_permission
+             FROM user_sessions s
+             INNER JOIN users u ON u.id = s.user_id
+             WHERE UPPER(s.callsign) = :callsign AND s.is_active = 1
+             ORDER BY s.last_seen DESC LIMIT 1"
+        );
+        $targetStmt->execute(['callsign' => $targetCallsign]);
+        $target = $targetStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$target) {
+            echo json_encode(['success' => false, 'message' => 'Ziel nicht online.']);
+            exit;
+        }
+        if ((int)$target['user_id'] === $senderUserId
+            || (int)$target['op_permission'] >= (int)$session['op_permission']) {
+            echo json_encode(['success' => false, 'message' => 'Moderation dieses Spielers nicht erlaubt.']);
+            exit;
+        }
+        $targetUserId = (int)$target['user_id'];
+        if ($action === 'warn') {
+            $pdo->prepare(
+                "INSERT INTO user_warnings
+                    (user_id, issued_by_user_id, reason, expires_at)
+                 VALUES (:user_id, :actor_id, :reason, :expires_at)"
+            )->execute([
+                'user_id' => $targetUserId,
+                'actor_id' => $senderUserId,
+                'reason' => $reason,
+                'expires_at' => $expiresAt
+            ]);
+            logActivity($pdo, $targetUserId, 'warning',
+                'activity_warning_issued',
+                $reason . ' [' . $durationLabel . ']', $senderUserId);
+            insertChatMessage($pdo, null, $targetUserId, $senderUserId,
+                'ADMIN', 'system',
+                'Du wurdest verwarnt. Grund: ' . $reason);
+        } else {
+            $pdo->prepare(
+                "UPDATE users SET is_banned = 1, ban_reason = :reason,
+                    ban_expires_at = :expires_at, banned_at = NOW(),
+                    banned_by_user_id = :actor_id WHERE id = :user_id"
+            )->execute([
+                'reason' => $reason,
+                'expires_at' => $expiresAt,
+                'actor_id' => $senderUserId,
+                'user_id' => $targetUserId
+            ]);
+            logActivity($pdo, $targetUserId, 'ban', 'activity_banned',
+                $reason . ' [' . $durationLabel . ']', $senderUserId);
+            $pdo->prepare(
+                "UPDATE user_sessions SET is_active = 0, last_seen = NOW()
+                 WHERE user_id = :user_id AND is_active = 1"
+            )->execute(['user_id' => $targetUserId]);
+            $pdo->prepare(
+                "UPDATE pilot_flights SET status = 'aborted', completed_at = NOW()
+                 WHERE user_id = :user_id AND status = 'active'"
+            )->execute(['user_id' => $targetUserId]);
+            $pdo->prepare("DELETE FROM pilot_positions WHERE user_id = :user_id")
+                ->execute(['user_id' => $targetUserId]);
+        }
+        insertUserChatSystemMessage(
+            $pdo, $senderUserId, 'system',
+            strtoupper((string)$target['callsign']) . ' wurde '
+                . ($action === 'warn' ? 'verwarnt.' : 'gebannt.')
+        );
+        echo json_encode(['success' => true, 'message' => 'Moderation ausgefuehrt.']);
+        exit;
+    }
+
     if (preg_match('/^\/kick\s+([A-Z0-9_\-]+)(?:\s+(.+))?\s*$/i', $message, $matches)) {
         if ((int)$session['op_permission'] < 1) {
             insertUserChatSystemMessage(
@@ -539,8 +655,10 @@ try {
             "SELECT
                 s.user_id,
                 s.token,
-                s.callsign
+                s.callsign,
+                u.op_permission
              FROM user_sessions s
+             INNER JOIN users u ON u.id = s.user_id
              WHERE UPPER(s.callsign) = :callsign
                AND s.is_active = 1
              ORDER BY s.last_seen DESC
@@ -580,6 +698,14 @@ try {
             echo json_encode([
                 'success' => false,
                 'message' => 'Self-kick nicht erlaubt.'
+            ]);
+            exit;
+        }
+
+        if ((int)$targetSession['op_permission'] >= (int)$session['op_permission']) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Moderation dieses Spielers nicht erlaubt.'
             ]);
             exit;
         }
@@ -707,6 +833,16 @@ try {
             'success' => false,
             'message' => 'Ungueltiger /kick Befehl.'
         ]);
+        exit;
+    }
+
+    if (preg_match('/^\/(warn|ban)\b/i', $message, $commandMatch)) {
+        $syntax = strtolower($commandMatch[1]) === 'warn'
+            ? '/warn CALLSIGN [Dauer] Grund'
+            : '/ban CALLSIGN Dauer Grund';
+        insertUserChatSystemMessage($pdo, $senderUserId, 'system',
+            'Syntax: ' . $syntax . ' (z.B. 30min, 2h, 7d, 2w, 6mo, 1y, permanent)');
+        echo json_encode(['success' => false, 'message' => 'Ungueltiger Moderationsbefehl.']);
         exit;
     }
 

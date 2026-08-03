@@ -1,6 +1,6 @@
 # Virtual Flight Network (VFN) – Master-TODO
 
-Letzte Prüfung: 27.07.2026
+Letzte Prüfung: 02.08.2026
 
 ## Status
 
@@ -24,6 +24,8 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Web-Login und Web-Logout
 - [x] Plugin-Login und Plugin-Logout
 - [x] Session- und Token-System
+- [x] Websession mit gleitender Laufzeit von 30 Tagen
+- [x] Sprache im Benutzerkonto und für ausgeloggte Besucher per Cookie speichern
 - [x] „Angemeldet bleiben“ im Plugin
 - [x] Passwort-Recovery per E-Mail
 - [x] Einmalige, gehashte und zeitlich begrenzte Reset-Tokens
@@ -60,12 +62,20 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Landungsanzahl und letzte Aufsetzrate
 - [x] Flugzeugstatistiken
 - [x] Öffentliche Pilot-Unterseite mit paginiertem Flugbuch und Flughistorie
+- [x] Verlinkte Flugdetailseite mit Flugdaten und gespeicherter Route
 - [ ] Eigene ATC-Unterseite
 - [x] Profil-Einstellungen für das eigene Profil
+- [x] Profilbild hochladen, verschieben, zoomen und löschen
+- [x] Sichere serverseitige Avatar-Neucodierung als einheitliches 512×512-JPEG
 - [x] Private „Administrative History“ für Staff ab OP-Level 4
 - [x] Staff-Ansicht für Warnungen, Banns, Trainings- und Prüfungsverlauf
 
 # 3. Activity-System
+
+- [x] Zentrales Web-Benachrichtigungszentrum für Activities, PMs und Staff-Anfragen
+- [x] Ungelesene Activities und private Nachrichten im Header kennzeichnen
+- [x] Activities nur durch den jeweiligen Profilinhaber als gelesen markieren; Staff-Ansichten bleiben lesend
+- [x] Activity- und Award-Schlüssel im Benachrichtigungszentrum übersetzt darstellen
 
 - [x] Tabelle `user_activity_log`
 - [x] Activity-Logging-Funktion
@@ -82,8 +92,11 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Divisionstransfer beantragen, genehmigen/ablehnen und protokollieren
 - [-] Flugbeginn und Flugabschluss vollständig protokollieren
   - [x] Einzelne aktive, abgeschlossene und abgebrochene Flüge in `pilot_flights` speichern
+  - [x] Landungen außerhalb von Ziel-/Ausweichflughäfen als `Falscher Zielflughafen` markieren und tatsächlichen Landeplatz speichern
   - [ ] Flugbeginn und Flugabschluss zusätzlich als Activity-Einträge erfassen
-- [ ] Erste, 10. und 100. Landung protokollieren
+- [-] Erste, 10. und 100. Landung protokollieren
+  - [x] Erste Landung protokollieren
+  - [ ] 10. und 100. Landung protokollieren
 - [ ] Prüfung bestanden/nicht bestanden protokollieren
 - [ ] Training begonnen/abgeschlossen protokollieren
 - [x] Rating vergeben/entziehen mit Staff-Aktion und Activity-Eintrag
@@ -133,12 +146,39 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Landungserkennung und Aufsetzrate
 - [x] Airport-Traffic-Gruppierung auf der Karte
 - [x] Durchsuchbare Online-Pilotenliste auf der Karte
+- [x] Optionaler 30-NM-Filter mit laufender Entfernung zur eigenen Simulatorposition
+- [x] Spectators für Staff ab OP-Level 1 in der Kartenliste kennzeichnen, aber nicht als Flugzeug darstellen
+- [x] KI-gesteuerte Flugzeuge für Staff ab OP-Level 1 mit Bot-Symbol kennzeichnen
+- [x] Kartenlegende und persistente Filter-/Ebeneneinstellungen
 - [x] Live-Follow-Modus für ein ausgewähltes Flugzeug
+  - [x] Sichtbarer Start-/Stopp-Schalter direkt im Piloten-Detailpanel
+- [x] Flugfortschritt im Kartenpanel mit geflogener Zeit, AIRAC-Routendistanz und geschätzter Restflugdauer
+- [x] Schaltbare orange Flugplanroute mit geglätteter Wegpunktkurve und benutzerspezifischer Beschriftungsanzeige
 - [x] Direkter Sprung vom Spielerprofil zur aktuellen Kartenposition
 - [x] Klickbare Abflug- und Zielflughäfen mit linkem Trafficpanel
+- [x] Flughafensuche nach ICAO, Name und Stadt auch ohne aktuellen Traffic
+- [x] Flughafenpanel mit Inbound-, Outbound- und METAR-Reiter
+- [x] Ausgewählten Flughafen bis zum Schließen des Panels blau markieren
+- [x] AIRAC-Wegpunkte und Navaids in der Karte suchen und markieren
+- [x] Radarstationen und FIR/UIR-Sektoren in der Kartensuche finden, markieren und im linken Detailpanel anzeigen
+- [x] Helipads und Flughäfen mit nichtstandardisierten Kennungen auf der Flughafen-Detailseite darstellen
+- [x] AIRAC-Abfragen und aktuellen Zyklus serverseitig für 24 Stunden cachen
+- [x] Kartensuche nach Piloten, Flughäfen, Wegpunkten und Navaids filtern sowie auf exakte Kennungen begrenzen
+- [-] ATC-Sektoren und Zuständigkeitsgrenzen als schaltbare Kartenebene darstellen
+  - [x] Weltweite FIR/ARTCC-Grenzen aus dem CC-BY-SA-lizenzierten VATSpy-GeoJSON lokal importieren
+  - [x] FIR/ARTCC-Ebene in der Karte schaltbar, verzögert geladen und anklickbar machen
+  - [ ] Weltweite reale CTR-, CTA- und TMA-Lufträume aus einer zulässigen Quelle importieren
+  - [ ] Eigenes GeoJSON-Format und Admin-Import für operative VFN-Untersektoren bereitstellen
+  - [ ] FIR/ACC-, APP- und weitere Sektorebenen mit Höhenband und Bezeichnung unterscheiden
+- [ ] Airways mit allen Segmenten auf der Karte darstellen
 - [x] Direkt verlinkbare Kartenansicht über stabile Benutzer-ID
 - [-] Automatische Bereinigung veralteter Positionen und Tracks
-- [ ] Eigene Airport-Traffic-Seiten
+- [x] Eigene Airport-Traffic-Seiten
+  - [x] Stammdaten, Kartenposition und aktuelles METAR
+  - [x] Sichtbarer Live-Verkehr sowie letzte abgeschlossene Flüge
+  - [x] Bewegungen, Abflüge, Ankünfte und eindeutige Piloten
+  - [x] Top-Routen, Flugzeugtypen und Piloten
+  - [x] Verlinkung aus Karte, Flugbuch, Flugplänen und Statistik
 - [x] Netzwerkstatistikseite mit Top Airports, Piloten-Herkunftsländern und Movement-Ländern
 - [ ] Erweiterte Flugverlaufsanalyse
 - [x] Zeitraumabhängige Traffic-Heatmap direkt in `map.php`
@@ -161,6 +201,7 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Frequenzbasierter Netzwerk-Chat
 - [x] Plugin-Chatfenster und Nachrichtenton
 - [x] Private Nachrichten (`/msg`)
+- [x] Web-Postfach mit gemeinsamen Plugin-/Website-PMs, Spielersuche und neuen Unterhaltungen
 - [x] Spielerliste (`/list`)
 - [x] Spielerprofil öffnen (`/playerinfo`)
 - [x] Staff-Chat (`/staff`)
@@ -180,7 +221,7 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Spam-Kick als Benutzer-Activity
 - [ ] SELCAL
 - [ ] CPDLC
-- [ ] Vollständiges Bann- und Verwarnungs-Kommando
+- [x] Bann-, Kick-, Verwarnungs- und PM-Kommandos mit serverseitiger OP-Hierarchie
 - [x] Chat-Spam-Schutz mit hohen Burst-, Minuten- und Wiederholungsschwellen
 - [ ] Nachrichtenaufbewahrung und automatische Archivierung definieren
 
@@ -215,6 +256,7 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] TX-/RX-Pegelanzeigen in den Einstellungen
 - [x] Audioempfang und Wiedergabe
 - [x] Voice-Einstellungen dauerhaft speichern
+- [x] Spectator-Modus auf reinen Voice-Empfang begrenzen
 - [ ] Opus statt unkomprimierter PCM/Base64-Übertragung
 - [ ] Jitter-Buffer, Paketverlustbehandlung und adaptive Audiopufferung
 - [ ] Echo-Unterdrückung, Noise Gate und automatische Verstärkung
@@ -244,6 +286,11 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
   - [ ] Binäre Codesignatur für die XPL
 - [ ] Tests unter mehreren X-Plane-12-Versionen
 - [ ] Linux- und macOS-Plugin-Builds
+- [x] Spectator-Modus mit deaktiviertem Flugplan, D-ATIS und Voice-Senden
+- [x] 30-NM-Spielerliste mit laufender Distanzanzeige
+- [x] Spieler aus der Plugin-Liste per Kamera verfolgen
+- [x] Kontextaktionen für PM sowie rangabhängige Verwarnung, Kick und Bann
+- [x] Wechselnde Multiplayer-Beschriftung mit Callsign, Flugzeugtyp, Route und Entfernung
 
 # 10. Admin Panel und Berechtigungen
 
@@ -262,6 +309,7 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
   - [x] Bootstrap-Account `admin` mit OP-Level 5 für den Wiederzugang neu anlegen
   - [x] Alle Web- und Plugin-Sitzungen zuverlässig ungültig machen
   - [x] Sessions, Chat-Cursor und AUTO_INCREMENT-Werte kontrolliert zurücksetzen
+  - [x] Hochgeladene Profilbilder beim Reset vollständig entfernen
 - [x] Typisierte OP-Level-5-Konfigurationsverwaltung ohne SQL-Zugangsdaten
   - [x] Separate, DB-Reset-feste Runtime-Override-Datei
   - [x] Allowlist und Validierung für URLs, Zahlen, Boolean, E-Mail und Dateiname
@@ -283,23 +331,37 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 
 # 11. Multiplayer
 
-- [-] Multiplayer-Flugzeuge in X-Plane darstellen
+- [x] Multiplayer-Flugzeuge in X-Plane darstellen
   - [x] XPMP2 3.6.1 statisch in den Windows-x64-Plugin-Build eingebunden
   - [x] Kompatibilitaet mit X-Plane 11.55r2 und X-Plane 12 vorgesehen
-  - [x] Erste Stufe: maximal 10 Flugzeuge innerhalb von 50 NM
-  - [ ] Laufzeittest mit zwei verbundenen Simulatoren
+  - [x] Bis zu 100 Flugzeuge innerhalb von 30 NM über den Traffic-Endpunkt bereitstellen
+  - [x] Grundlegender Laufzeittest mit zwei verbundenen Simulatoren unter X-Plane 11 und 12
+  - [x] X-CSL-Modell- und Livery-Test mit zwei verbundenen Simulatoren
+  - [x] Fahrwerk, Klappen, Taxi-, Landes-, Beacon-, Strobe- und Navigationslichter übertragen
+  - [ ] Abschließender Zwei-Simulator-Test der letzten Änderungen verschoben: Fahrwerk, Klappen, Lichter, 30-NM-Liste, Kamera-Follow, Kontextmoderation, Spectator-Sichtbarkeit und wechselnde Labels prüfen
 - [-] Aircraft Visibility
   - [x] Nur aktive Positionen der letzten 10 Sekunden
-  - [x] Unsichtbare Staff-Sitzungen werden nicht ausgeliefert
+  - [x] Unsichtbare Staff-Sitzungen bleiben für OP 0 und OP 1 verborgen
+  - [x] Staff ab OP-Level 2 sieht nur unsichtbare Spieler mit gleichem oder niedrigerem Rang
+  - [x] Option zum Ausblenden erlaubter unsichtbarer Spieler in Karte und Plugin
+  - [x] Spectator-Sitzungen nur für Staff ab OP-Level 1 in der Spielerliste anzeigen und nie als Flugzeug erzeugen
   - [ ] Einstellbare Sichtweite und Flugzeuganzahl
-- [-] Model Matching
+- [x] Model Matching
   - [x] Neutrales, leichtgewichtiges VFN-OBJ8-Fallbackmodell
-  - [x] XPMP2-Ressourcen und CSL-Paket im Download-ZIP
-  - [ ] Reale CSL-Modellpakete und ICAO-/Airline-/Livery-Matching
+  - [x] XPMP2-Laufzeitressourcen und VFN-Fallbackmodell im Download-ZIP
+  - [x] Reale X-CSL-Modellpakete und ICAO-/Airline-/Livery-Matching
+    - [x] Vollständiges X-CSL-Paket heruntergeladen
+    - [x] Einbindung und Laufzeittest mit zwei Simulatoren
+    - [x] Ähnliche ICAO-Typen auf vorhandene CSL-Modelle abbilden, bevor das Fallback verwendet wird
+    - [x] Unbekannte Modelle bevorzugt als neutrales B738-CSL statt als blaues VFN-Platzhaltermodell anzeigen
+  - [x] Beim Abheben mit Transponder auf STBY/OFF eine rote Chatwarnung ausgeben
+  - [x] Bodenfahrzeuge serverseitig auf mindestens ATC-Rang TWR oder Spezialrang Operations Officer beschränken
+  - [ ] Model-Matching-Diagnose im Plugin anzeigen
 - [-] Netzwerkverkehr und Interpolation
   - [x] Eigener authentifizierter, kompakter Traffic-Endpunkt
   - [x] Asynchroner Poll im Plugin ohne Blockierung des X-Plane-Threads
   - [x] Geglaettete Position, Hoehe und Fluglage
+  - [x] Zustandsübertragung für Fahrwerk, Klappen und Beleuchtung
   - [ ] Adaptive Update-Rate und Extrapolation nach Geschwindigkeit
 - [-] Umgang mit Paketverlust und veralteten Positionen
   - [x] Fehlgeschlagene Polls behalten vorhandene Flugzeuge
@@ -347,6 +409,9 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] `chat_spam_events`
 - [x] `user_warnings`
 - [x] `pilot_flights`
+- [x] `users.preferred_language`
+- [x] `web_notification_state`
+- [x] `system_job_status`
 
 ## Offene SQL-Arbeiten
 
@@ -383,10 +448,14 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
   - [x] Web-Login
   - [x] Passwort-Recovery
   - [x] Registrierung nach IP und Benutzerkennung
-  - [ ] Chat und weitere API-Endpunkte
+  - [x] Plugin-Chat mit Burst-, Minuten- und Wiederholungsschutz
+  - [ ] Weitere API-Endpunkte
 - [x] Security Header und deaktiviertes Directory Browsing in IIS/web.config
 - [ ] Produktionsfehler protokollieren, ohne interne Details auszugeben
-- [ ] Zentrales Monitoring für IIS, PHP, MySQL und Voice-Service
+- [-] Zentrales Monitoring für IIS, PHP, MySQL und Voice-Service
+  - [x] OP-5-Systemzustandsseite für Datenbank, Voice-Port, Plugin-API, Datenbestände und Release
+  - [x] Statusspeicher für Daten- und Hintergrundjobs
+  - [ ] IIS-Worker-, Zertifikatsablauf- und Windows-Dienststatus direkt auslesen
 - [ ] Alarmierung bei Ausfall von Webseite, Datenbank oder Voice
 - [ ] Abhängigkeiten regelmäßig auf Sicherheitsupdates prüfen
 - [ ] Test-/Debug-Dateien aus der Produktionswebseite entfernen

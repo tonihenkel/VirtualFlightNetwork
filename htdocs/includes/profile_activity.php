@@ -74,16 +74,20 @@ function activityIcon(string $type): string
     }
 }
 
-$markReadStmt = $pdo->prepare(
-    "UPDATE user_activity_log
-     SET is_read = 1
-     WHERE user_id = :user_id
-       AND is_read = 0"
-);
+// Reading another player's profile as staff must not consume that player's
+// notifications. Only the owner of the profile may mark their activities read.
+if ($isOwnProfile) {
+    $markReadStmt = $pdo->prepare(
+        "UPDATE user_activity_log
+         SET is_read = 1
+         WHERE user_id = :user_id
+           AND is_read = 0"
+    );
 
-$markReadStmt->execute([
-    'user_id' => $profileUserId
-]);
+    $markReadStmt->execute([
+        'user_id' => $profileUserId
+    ]);
+}
 
 ?>
 
@@ -142,6 +146,9 @@ $markReadStmt->execute([
                                     if ($activity['activity_type'] === 'award') {
                                         $activityValue =
                                             t($activityValue);
+                                    } elseif ($activity['activity_key'] === 'activity_database_reset') {
+                                        $activityValue =
+                                            t('activity_database_reset_details');
                                     }
                                 ?>
 

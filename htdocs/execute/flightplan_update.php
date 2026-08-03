@@ -134,7 +134,7 @@ try {
         Session pruefen.
     */
     $stmt = $pdo->prepare(
-        "SELECT user_id
+        "SELECT user_id, is_spectator
          FROM user_sessions
          WHERE token = :token
            AND is_active = 1
@@ -151,6 +151,14 @@ try {
         echo json_encode([
             "success" => false,
             "message" => "Ungueltige oder abgelaufene Session."
+        ]);
+        exit;
+    }
+
+    if ((int)($session['is_spectator'] ?? 0) === 1) {
+        echo json_encode([
+            "success" => false,
+            "message" => "Im Spectator-Modus ist kein Flugplan verfuegbar."
         ]);
         exit;
     }

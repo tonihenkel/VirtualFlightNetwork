@@ -1,5 +1,6 @@
 <?php
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
+startVfnWebSession();
 
 require_once 'execute/config.php';
 require_once 'includes/activity_log.php';

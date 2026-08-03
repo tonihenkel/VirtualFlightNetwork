@@ -22,9 +22,8 @@ try {
          SET status = 'aborted', completed_at = NOW()
          WHERE session_token = :token AND status = 'active'"
     )->execute(['token' => $token]);
-    $pdo->prepare(
-        "DELETE FROM pilot_tracks WHERE session_token = :token"
-    )->execute(['token' => $token]);
+    // Keep route points for flight history. Reset/retention maintenance
+    // remains responsible for removing old tracks.
     $pdo->prepare(
         "DELETE FROM pilot_positions WHERE session_token = :token"
     )->execute(['token' => $token]);
@@ -42,4 +41,3 @@ try {
     }
     echo json_encode(['success' => false, 'message' => 'Serverfehler.']);
 }
-

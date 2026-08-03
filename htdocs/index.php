@@ -1,6 +1,7 @@
 <?php
 
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
+startVfnWebSession();
 
 require_once 'execute/config.php';
 require_once 'includes/language.php';
@@ -571,6 +572,18 @@ if ($statusMessage !== '') {
             <div class="feature-icon">&#127780;</div>
             <h3><?php echo htmlspecialchars(t('feature_atis_title')); ?></h3>
             <p><?php echo htmlspecialchars(t('feature_atis_text')); ?></p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">&#128506;</div>
+            <h3><?php echo htmlspecialchars(t('feature_navigation_title')); ?></h3>
+            <p><?php echo htmlspecialchars(t('feature_navigation_text')); ?></p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">&#128276;</div>
+            <h3><?php echo htmlspecialchars(t('feature_messages_title')); ?></h3>
+            <p><?php echo htmlspecialchars(t('feature_messages_text')); ?></p>
         </div>
 
     </section>

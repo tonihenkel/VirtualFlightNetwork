@@ -20,7 +20,12 @@
             <div class="card hero-card">
                 <div class="user-hero">
                     <div class="avatar-wrap">
-                        <div class="avatar"></div>
+                        <div class="avatar">
+                            <?php if ($avatarUrl !== ''): ?>
+                                <img src="<?php echo h($avatarUrl); ?>"
+                                     alt="<?php echo h(t('profile_avatar_alt')); ?>">
+                            <?php endif; ?>
+                        </div>
                         <div class="avatar-online <?php echo $isNetworkOnline ? '' : 'offline'; ?>"></div>
                     </div>
 

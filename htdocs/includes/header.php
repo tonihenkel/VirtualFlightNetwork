@@ -35,6 +35,7 @@ function renderFlag(string $language): string
 $unreadActivityCount = 0;
 $pendingDivisionTransferCount = 0;
 $pendingBanAppealCount = 0;
+$unreadPrivateMessageCount = 0;
 $headerOpPermission =
     (int)($_SESSION['web_op_permission'] ?? 0);
 
@@ -76,6 +77,28 @@ if (isset($_SESSION['web_user_id'])) {
 
         $unreadActivityCount =
             (int)$unreadActivityStmt->fetchColumn();
+
+        try {
+            $privateMessageStmt = $headerPdo->prepare(
+                "SELECT COUNT(*)
+                 FROM chat_messages c
+                 LEFT JOIN web_notification_state n ON n.user_id = :user_id
+                 WHERE c.recipient_user_id = :user_id
+                   AND c.sender_user_id <> :user_id
+                   AND c.message_text LIKE '[PM]%'
+                   AND c.id > COALESCE(n.last_private_message_id, 0)"
+            );
+            $privateMessageStmt->execute(['user_id'=>(int)$_SESSION['web_user_id']]);
+            $unreadPrivateMessageCount=(int)$privateMessageStmt->fetchColumn();
+        } catch (Throwable $ignored) {
+            try {
+                $fallbackPrivateStmt=$headerPdo->prepare("SELECT COUNT(*) FROM chat_messages WHERE recipient_user_id=:uid AND sender_user_id<>:uid AND message_text LIKE '[PM]%'");
+                $fallbackPrivateStmt->execute(['uid'=>(int)$_SESSION['web_user_id']]);
+                $unreadPrivateMessageCount=(int)$fallbackPrivateStmt->fetchColumn();
+            } catch (Throwable $ignoredAgain) {
+                $unreadPrivateMessageCount=0;
+            }
+        }
 
         $opPermissionStmt = $headerPdo->prepare(
             "SELECT op_permission
@@ -450,6 +473,16 @@ if (isset($_SESSION['web_user_id'])) {
                 <?php echo htmlspecialchars(t('nav_flightplans')); ?>
             </a>
 
+            <a href="messages.php">
+                <?php echo htmlspecialchars(t('nav_messages')); ?>
+                <?php if ($unreadPrivateMessageCount > 0): ?><span class="header-notification-dot"></span><?php endif; ?>
+            </a>
+
+            <a href="notifications.php" title="<?php echo htmlspecialchars(t('nav_notifications')); ?>">
+                🔔
+                <?php if ($unreadActivityCount > 0 || $unreadPrivateMessageCount > 0 || $pendingDivisionTransferCount > 0 || $pendingBanAppealCount > 0): ?><span class="header-notification-dot"></span><?php endif; ?>
+            </a>
+
             <?php if ($headerOpPermission > 1): ?>
                 <a href="admin.php">
                     <?php echo htmlspecialchars(t('nav_admin_panel')); ?>
@@ -476,7 +509,7 @@ if (isset($_SESSION['web_user_id'])) {
             </a>
             </span>
 
-            <a href="web_logout.php?return_to=<?php echo urlencode($_SERVER['REQUEST_URI'] ?? 'index.php'); ?>">
+            <a href="web_logout.php?return_to=index.php">
                 <?php echo htmlspecialchars(t('nav_logout')); ?>
             </a>
 

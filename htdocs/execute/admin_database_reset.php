@@ -143,8 +143,26 @@ try {
     $activityStmt->execute([
         'user_id' => 1,
         'actor_user_id' => 1,
-        'value' => 'airports, divisions and chat_filter_words preserved; admin bootstrap account recreated'
+        'value' => 'activity_database_reset_details'
     ]);
+
+    $avatarDirectory =
+        dirname(__DIR__) . DIRECTORY_SEPARATOR . 'uploads'
+        . DIRECTORY_SEPARATOR . 'avatars';
+    if (is_dir($avatarDirectory)) {
+        foreach (glob($avatarDirectory . DIRECTORY_SEPARATOR . '*') ?: [] as $avatarFile) {
+            if (
+                is_file($avatarFile)
+                && preg_match('/\.(?:jpe?g|png|webp)$/i', basename($avatarFile))
+                && !unlink($avatarFile)
+            ) {
+                throw new RuntimeException(
+                    'Avatar could not be removed during database reset: '
+                    . basename($avatarFile)
+                );
+            }
+        }
+    }
 
     clearVfnWebSession();
     session_regenerate_id(true);

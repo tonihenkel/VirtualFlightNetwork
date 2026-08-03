@@ -1,7 +1,9 @@
 <?php
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
+startVfnWebSession();
 
 require_once 'execute/config.php';
+require_once 'includes/language_preferences.php';
 require_once 'includes/auth_security.php';
 require_once 'includes/csrf.php';
 require_once 'includes/ban_status.php';
@@ -62,6 +64,7 @@ try {
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
         ]
     );
+    vfnEnsurePreferredLanguageColumn($pdo);
 
     $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '');
     if (
@@ -86,7 +89,8 @@ try {
             is_active,
             is_banned,
             ban_reason,
-            ban_expires_at
+            ban_expires_at,
+            preferred_language
          FROM users
          WHERE username = :username
             OR email = :username
@@ -200,6 +204,28 @@ try {
 
     $_SESSION['web_auth_fingerprint'] =
         hash('sha256', (string)$user['password_hash']);
+
+    $loginLanguage =
+        vfnNormalizeLanguage($user['preferred_language'] ?? '');
+    if ($loginLanguage === '') {
+        $loginLanguage =
+            vfnNormalizeLanguage(
+                $_SESSION['language']
+                ?? $_COOKIE[VFN_LANGUAGE_COOKIE]
+                ?? ''
+            );
+        if ($loginLanguage !== '') {
+            vfnSaveUserLanguage(
+                $pdo,
+                (int)$user['id'],
+                $loginLanguage
+            );
+        }
+    }
+    if ($loginLanguage !== '') {
+        $_SESSION['language'] = $loginLanguage;
+        vfnStoreLanguageCookie($loginLanguage);
+    }
 
     $_SESSION['web_rating_pilot'] =
     (int)$user['rating_pilot'];

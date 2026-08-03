@@ -5,9 +5,9 @@
     Language System
 */
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+require_once __DIR__ . '/session_bootstrap.php';
+require_once __DIR__ . '/language_preferences.php';
+startVfnWebSession();
 
 /*
     Default-Sprache
@@ -47,6 +47,62 @@ if (isset($_GET['lang'])) {
     ) {
         $_SESSION['language'] =
             $requestedLanguage;
+        vfnStoreLanguageCookie($requestedLanguage);
+
+        if (!empty($_SESSION['web_user_id'])) {
+            try {
+                if (!isset($dbHost, $dbName, $dbUser, $dbPass)) {
+                    require __DIR__ . '/../execute/config.php';
+                }
+                $languagePdo = new PDO(
+                    "mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4",
+                    $dbUser,
+                    $dbPass,
+                    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+                );
+                vfnSaveUserLanguage(
+                    $languagePdo,
+                    (int)$_SESSION['web_user_id'],
+                    $requestedLanguage
+                );
+            } catch (Throwable $languageError) {
+                error_log(
+                    'Could not save VFN language preference: '
+                    . $languageError->getMessage()
+                );
+            }
+        }
+    }
+}
+
+if (
+    !isset($_GET['lang'])
+    && empty($_SESSION['language'])
+    && !empty($_SESSION['web_user_id'])
+) {
+    try {
+        if (!isset($dbHost, $dbName, $dbUser, $dbPass)) {
+            require __DIR__ . '/../execute/config.php';
+        }
+        $languagePdo = new PDO(
+            "mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4",
+            $dbUser,
+            $dbPass,
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+        );
+        $accountLanguage = vfnLoadUserLanguage(
+            $languagePdo,
+            (int)$_SESSION['web_user_id']
+        );
+        if ($accountLanguage !== '') {
+            $_SESSION['language'] = $accountLanguage;
+            vfnStoreLanguageCookie($accountLanguage);
+        }
+    } catch (Throwable $languageError) {
+        error_log(
+            'Could not load VFN language preference: '
+            . $languageError->getMessage()
+        );
     }
 }
 
@@ -56,7 +112,15 @@ if (isset($_GET['lang'])) {
 
 $currentLanguage =
     $_SESSION['language']
+    ?? vfnNormalizeLanguage($_COOKIE[VFN_LANGUAGE_COOKIE] ?? '')
     ?? $defaultLanguage;
+
+if ($currentLanguage === '') {
+    $currentLanguage = $defaultLanguage;
+}
+
+$_SESSION['language'] = $currentLanguage;
+vfnStoreLanguageCookie($currentLanguage);
 
 /*
     Sicherheitsprüfung
