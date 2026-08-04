@@ -164,6 +164,9 @@ try {
         }
     }
 
+    // Voice test audio lives in voice-service/test-audio and is deliberately
+    // outside the database-reset scope. Only profile avatars are reset here.
+
     clearVfnWebSession();
     session_regenerate_id(true);
 

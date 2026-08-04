@@ -1105,6 +1105,30 @@ return [
     'admin_voice_placeholder' =>
         'WebSocket-Anbindung fuer den Voice-Service ist fuer diesen Bereich vorbereitet.',
 
+    'admin_voice_test_source_title' => 'Test-Audioquelle (OP-Level 5)',
+    'admin_voice_test_source_text' => 'Speist eine Audiodatei oder einen Internetstream serverseitig in eine Voice-Frequenz ein. UNICOM ist global; andere Frequenzen verwenden die Position des Referenzpiloten.',
+    'admin_voice_test_frequency' => 'Sendefrequenz',
+    'admin_voice_test_source_type' => 'Quelle',
+    'admin_voice_test_stream' => 'Internetstream',
+    'admin_voice_test_upload' => 'Audiodatei hochladen',
+    'admin_voice_test_reference' => 'Referenzpilot / Senderstandort',
+    'admin_voice_test_location_type' => 'Senderstandort verwenden',
+    'admin_voice_test_location_pilot' => 'Online-Pilot',
+    'admin_voice_test_location_airport' => 'Flughafen',
+    'admin_voice_test_airport_icao' => 'Flughafen-ICAO',
+    'admin_voice_test_range' => 'Sendereichweite',
+    'admin_voice_test_stream_url' => 'Stream-URL (AAC, MP3 oder FLAC)',
+    'admin_voice_test_audio_file' => 'Audiodatei (maximal 50 MB)',
+    'admin_voice_test_loop' => 'In Schleife wiedergeben',
+    'admin_voice_test_start' => 'Testquelle starten',
+    'admin_voice_test_stop' => 'Testquelle stoppen',
+    'admin_voice_test_inactive' => 'Keine Testquelle aktiv.',
+    'admin_voice_test_active' => 'Aktiv auf {frequency}: {source} · Standort {location} · {range}',
+    'admin_voice_test_starting' => 'Testquelle wird gestartet ...',
+    'admin_voice_test_invalid' => 'Quelle konnte nicht gestartet werden.',
+    'admin_voice_test_reference_missing' => 'Für diese Frequenz muss ein verbundener Referenzpilot ausgewählt werden.',
+    'admin_voice_test_upload_failed' => 'Die Audiodatei konnte nicht hochgeladen werden.',
+
     'admin_invalid_frequency' =>
         'Ungueltige Frequenz.',
 

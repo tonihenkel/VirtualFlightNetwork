@@ -38,8 +38,11 @@
 #include <memory>
 #include <set>
 #include <vector>
+#include <deque>
 #include <atomic>
 #include <mutex>
+#include <condition_variable>
+#include <chrono>
 #include <thread>
 #include <cstring>
 #include <windows.h>
@@ -1013,6 +1016,11 @@ static std::atomic<bool> gVoiceConnected(false);
 static std::atomic<bool> gVoiceAuthenticated(false);
 static std::atomic<bool> gVoiceStopRequested(false);
 static std::thread gVoiceThread;
+static std::thread gVoicePlaybackThread;
+static std::mutex gVoicePlaybackMutex;
+static std::condition_variable gVoicePlaybackCondition;
+static std::deque<std::vector<unsigned char>> gVoicePlaybackQueue;
+static std::atomic<bool> gVoicePlaybackStopRequested(false);
 static std::mutex gVoiceSocketMutex;
 static HINTERNET gVoiceWebSocket = nullptr;
 static HWAVEIN gVoiceWaveIn = nullptr;
@@ -1252,38 +1260,143 @@ void StopVoiceCapture()
     waveInClose(waveIn);
 }
 
-void PlayVoicePcm(const std::vector<unsigned char>& bytes, int sampleRate)
+std::vector<unsigned char> ResampleVoicePcm(
+    const std::vector<unsigned char>& bytes,
+    int sourceSampleRate,
+    int targetSampleRate
+)
 {
-    if (bytes.empty()) return;
-    if (gVoiceWaveOut == nullptr)
+    if (bytes.size() < sizeof(short) || sourceSampleRate <= 0 ||
+        targetSampleRate <= 0 || sourceSampleRate == targetSampleRate)
     {
-        WAVEFORMATEX format = {};
-        format.wFormatTag = WAVE_FORMAT_PCM;
-        format.nChannels = 1;
-        format.nSamplesPerSec = sampleRate > 0 ? sampleRate : gVoiceSampleRate;
-        format.wBitsPerSample = 16;
-        format.nBlockAlign = 2;
-        format.nAvgBytesPerSec = format.nSamplesPerSec * format.nBlockAlign;
-        if (waveOutOpen(&gVoiceWaveOut, WAVE_MAPPER, &format, 0, 0, CALLBACK_NULL)
-            != MMSYSERR_NOERROR)
+        return bytes;
+    }
+
+    const short* input = reinterpret_cast<const short*>(bytes.data());
+    const size_t inputCount = bytes.size() / sizeof(short);
+    const size_t outputCount = std::max<size_t>(1,
+        static_cast<size_t>(std::llround(
+            static_cast<double>(inputCount) * targetSampleRate / sourceSampleRate)));
+    std::vector<unsigned char> output(outputCount * sizeof(short));
+    short* samples = reinterpret_cast<short*>(output.data());
+    const double step = static_cast<double>(sourceSampleRate) / targetSampleRate;
+    for (size_t index = 0; index < outputCount; ++index)
+    {
+        const double position = index * step;
+        const size_t left = (std::min)(
+            static_cast<size_t>(position), inputCount - 1);
+        const size_t right = (std::min)(left + 1, inputCount - 1);
+        const double fraction = position - left;
+        const double value = input[left] +
+            (input[right] - input[left]) * fraction;
+        samples[index] = static_cast<short>(std::clamp(value, -32768.0, 32767.0));
+    }
+    return output;
+}
+
+void VoicePlaybackWorker()
+{
+    const int outputSampleRate = 48000;
+    WAVEFORMATEX format = {};
+    format.wFormatTag = WAVE_FORMAT_PCM;
+    format.nChannels = 1;
+    format.nSamplesPerSec = outputSampleRate;
+    format.wBitsPerSample = 16;
+    format.nBlockAlign = 2;
+    format.nAvgBytesPerSec = format.nSamplesPerSec * format.nBlockAlign;
+    if (waveOutOpen(&gVoiceWaveOut, WAVE_MAPPER, &format, 0, 0, CALLBACK_NULL)
+        != MMSYSERR_NOERROR)
+    {
+        gVoiceWaveOut = nullptr;
+        return;
+    }
+
+    struct ActiveBuffer
+    {
+        std::vector<unsigned char> bytes;
+        WAVEHDR header = {};
+    };
+    std::deque<std::unique_ptr<ActiveBuffer>> active;
+    bool playbackStarted = false;
+
+    while (!gVoicePlaybackStopRequested.load())
+    {
+        while (!active.empty() && (active.front()->header.dwFlags & WHDR_DONE))
         {
-            gVoiceWaveOut = nullptr;
-            return;
+            waveOutUnprepareHeader(gVoiceWaveOut, &active.front()->header, sizeof(WAVEHDR));
+            active.pop_front();
+        }
+
+        std::vector<unsigned char> bytes;
+        {
+            std::unique_lock<std::mutex> lock(gVoicePlaybackMutex);
+            gVoicePlaybackCondition.wait_for(lock, std::chrono::milliseconds(5), [&]() {
+                return gVoicePlaybackStopRequested.load() ||
+                    (active.size() < 8 && !gVoicePlaybackQueue.empty() &&
+                        (playbackStarted || gVoicePlaybackQueue.size() >= 2));
+            });
+            if (gVoicePlaybackStopRequested.load()) break;
+            if (active.size() < 8 && !gVoicePlaybackQueue.empty() &&
+                (playbackStarted || gVoicePlaybackQueue.size() >= 2))
+            {
+                bytes = std::move(gVoicePlaybackQueue.front());
+                gVoicePlaybackQueue.pop_front();
+                playbackStarted = true;
+            }
+        }
+        if (bytes.empty()) continue;
+
+        std::unique_ptr<ActiveBuffer> buffer(new ActiveBuffer());
+        buffer->bytes = std::move(bytes);
+        buffer->header.lpData = reinterpret_cast<LPSTR>(buffer->bytes.data());
+        buffer->header.dwBufferLength = static_cast<DWORD>(buffer->bytes.size());
+        if (waveOutPrepareHeader(gVoiceWaveOut, &buffer->header, sizeof(WAVEHDR)) == MMSYSERR_NOERROR)
+        {
+            if (waveOutWrite(gVoiceWaveOut, &buffer->header, sizeof(WAVEHDR)) == MMSYSERR_NOERROR)
+                active.push_back(std::move(buffer));
+            else
+                waveOutUnprepareHeader(gVoiceWaveOut, &buffer->header, sizeof(WAVEHDR));
         }
     }
 
-    WAVEHDR header = {};
-    header.lpData = reinterpret_cast<LPSTR>(
-        const_cast<unsigned char*>(bytes.data()));
-    header.dwBufferLength = static_cast<DWORD>(bytes.size());
-    if (waveOutPrepareHeader(gVoiceWaveOut, &header, sizeof(header)) != MMSYSERR_NOERROR)
-        return;
-    if (waveOutWrite(gVoiceWaveOut, &header, sizeof(header)) == MMSYSERR_NOERROR)
+    waveOutReset(gVoiceWaveOut);
+    for (auto& buffer : active)
+        waveOutUnprepareHeader(gVoiceWaveOut, &buffer->header, sizeof(WAVEHDR));
+    waveOutClose(gVoiceWaveOut);
+    gVoiceWaveOut = nullptr;
+}
+
+void StartVoicePlayback()
+{
+    if (gVoicePlaybackThread.joinable()) return;
+    gVoicePlaybackStopRequested = false;
     {
-        while (!(header.dwFlags & WHDR_DONE) && !gVoiceStopRequested.load())
-            Sleep(5);
+        std::lock_guard<std::mutex> lock(gVoicePlaybackMutex);
+        gVoicePlaybackQueue.clear();
     }
-    waveOutUnprepareHeader(gVoiceWaveOut, &header, sizeof(header));
+    gVoicePlaybackThread = std::thread(VoicePlaybackWorker);
+}
+
+void StopVoicePlayback()
+{
+    gVoicePlaybackStopRequested = true;
+    gVoicePlaybackCondition.notify_all();
+    if (gVoicePlaybackThread.joinable()) gVoicePlaybackThread.join();
+    std::lock_guard<std::mutex> lock(gVoicePlaybackMutex);
+    gVoicePlaybackQueue.clear();
+}
+
+void PlayVoicePcm(const std::vector<unsigned char>& bytes, int sampleRate)
+{
+    if (bytes.empty()) return;
+    std::vector<unsigned char> normalized =
+        ResampleVoicePcm(bytes, sampleRate > 0 ? sampleRate : gVoiceSampleRate, 48000);
+    {
+        std::lock_guard<std::mutex> lock(gVoicePlaybackMutex);
+        while (gVoicePlaybackQueue.size() >= 24) gVoicePlaybackQueue.pop_front();
+        gVoicePlaybackQueue.push_back(std::move(normalized));
+    }
+    gVoicePlaybackCondition.notify_one();
 }
 
 void ProcessIncomingVoiceMessage(const std::string& message)
@@ -1425,6 +1538,7 @@ void StartVoiceService()
     if (!gLoggedIn || gAuthToken.empty() || gVoiceRunning.load()) return;
     if (gVoiceThread.joinable()) gVoiceThread.join();
     gVoiceStopRequested = false;
+    StartVoicePlayback();
     if (gVoiceContinuousTransmit && !gSpectatorMode)
     {
         gVoicePttActive = true;
@@ -1469,15 +1583,11 @@ void StopVoiceService(bool waitForThread = true)
     if (waitForThread && gVoiceThread.joinable()) gVoiceThread.join();
     if (!waitForThread)
     {
+        StopVoicePlayback();
         gVoicePttActive = false;
         return;
     }
-    if (gVoiceWaveOut)
-    {
-        waveOutReset(gVoiceWaveOut);
-        waveOutClose(gVoiceWaveOut);
-        gVoiceWaveOut = nullptr;
-    }
+    StopVoicePlayback();
     gVoicePttActive = false;
 }
 
@@ -8812,8 +8922,13 @@ void DrawCompactTab(
         0.88f
     );
 
+    const int estimatedTextWidth =
+        static_cast<int>(label.size()) * 6;
+    const int textLeft =
+        rect.left + (std::max)(6, ((rect.right - rect.left) - estimatedTextWidth) / 2);
+
     DrawText(
-        rect.left + 31,
+        textLeft,
         rect.top - 22,
         label,
         enabled ? 0.88f : 0.34f,
@@ -9581,6 +9696,62 @@ void CreateFrequencyWindow()
     }
 }
 
+bool ConfigureChildWindowForCompactMode(
+    XPLMWindowID window,
+    int width,
+    int height,
+    int offset = 0
+)
+{
+    if (window == nullptr)
+    {
+        return false;
+    }
+
+    const bool compactPoppedOut =
+        gCompactWindow != nullptr &&
+        XPLMWindowIsPoppedOut(gCompactWindow) != 0;
+
+    if (!compactPoppedOut)
+    {
+        if (XPLMWindowIsPoppedOut(window))
+        {
+            XPLMSetWindowPositioningMode(
+                window,
+                xplm_WindowPositionFree,
+                -1
+            );
+        }
+        return false;
+    }
+
+    int compactLeft = 100;
+    int compactTop = 100;
+    int compactRight = 820;
+    int compactBottom = 520;
+    XPLMGetWindowGeometryOS(
+        gCompactWindow,
+        &compactLeft,
+        &compactTop,
+        &compactRight,
+        &compactBottom
+    );
+
+    const int childLeft = compactLeft + 38 + offset;
+    const int childTop = compactTop + 38 + offset;
+
+    XPLMSetWindowIsVisible(window, 1);
+    XPLMSetWindowPositioningMode(window, xplm_WindowPopOut, -1);
+    XPLMSetWindowGeometryOS(
+        window,
+        childLeft,
+        childTop,
+        childLeft + width,
+        childTop + height
+    );
+    return true;
+}
+
 
 void ShowFrequencyWindow(int targetCom)
 {
@@ -9643,13 +9814,16 @@ void ShowFrequencyWindow(int targetCom)
             compactTop - 64;
     }
 
-    XPLMSetWindowGeometry(
-        gFrequencyWindow,
-        windowLeft,
-        windowTop,
-        windowLeft + 320,
-        windowTop - 230
-    );
+    if (!ConfigureChildWindowForCompactMode(gFrequencyWindow, 320, 230, 0))
+    {
+        XPLMSetWindowGeometry(
+            gFrequencyWindow,
+            windowLeft,
+            windowTop,
+            windowLeft + 320,
+            windowTop - 230
+        );
+    }
 
     XPLMSetWindowIsVisible(
         gFrequencyWindow,
@@ -11980,13 +12154,16 @@ void ShowSettingsWindow()
             compactTop - 60;
     }
 
-    XPLMSetWindowGeometry(
-        gSettingsWindow,
-        windowLeft,
-        windowTop,
-        windowLeft + 520,
-        windowTop - 540
-    );
+    if (!ConfigureChildWindowForCompactMode(gSettingsWindow, 520, 600, 18))
+    {
+        XPLMSetWindowGeometry(
+            gSettingsWindow,
+            windowLeft,
+            windowTop,
+            windowLeft + 520,
+            windowTop - 540
+        );
+    }
 
     XPLMSetWindowIsVisible(
         gSettingsWindow,
@@ -12373,13 +12550,16 @@ void ShowAtcWindow()
             compactTop - 28;
     }
 
-    XPLMSetWindowGeometry(
-        gAtcWindow,
-        windowLeft,
-        windowTop,
-        windowLeft + 340,
-        windowTop - 320
-    );
+    if (!ConfigureChildWindowForCompactMode(gAtcWindow, 340, 320, 36))
+    {
+        XPLMSetWindowGeometry(
+            gAtcWindow,
+            windowLeft,
+            windowTop,
+            windowLeft + 340,
+            windowTop - 320
+        );
+    }
 
     XPLMSetWindowIsVisible(
         gAtcWindow,
@@ -12641,6 +12821,14 @@ void ShowPlayersWindow()
 {
     CreatePlayersWindow();
     if (gPlayersWindow == nullptr) return;
+    if (!ConfigureChildWindowForCompactMode(gPlayersWindow, 360, 360, 54) &&
+        gCompactWindow != nullptr)
+    {
+        int left, top, right, bottom;
+        XPLMGetWindowGeometry(gCompactWindow, &left, &top, &right, &bottom);
+        XPLMSetWindowGeometry(gPlayersWindow, left + 180, top - 28,
+            left + 540, top - 388);
+    }
     XPLMSetWindowIsVisible(gPlayersWindow, 1);
     XPLMBringWindowToFront(gPlayersWindow);
 }
@@ -13201,13 +13389,16 @@ void ShowMessagesWindow()
             compactTop - 28;
     }
 
-    XPLMSetWindowGeometry(
-        gMessagesWindow,
-        windowLeft,
-        windowTop,
-        windowLeft + 440,
-        windowTop - 320
-    );
+    if (!ConfigureChildWindowForCompactMode(gMessagesWindow, 440, 320, 72))
+    {
+        XPLMSetWindowGeometry(
+            gMessagesWindow,
+            windowLeft,
+            windowTop,
+            windowLeft + 440,
+            windowTop - 320
+        );
+    }
 
     XPLMSetWindowIsVisible(
         gMessagesWindow,
@@ -13895,13 +14086,16 @@ void ShowDatisWindow()
             compactTop - 28;
     }
 
-    XPLMSetWindowGeometry(
-        gDatisWindow,
-        windowLeft,
-        windowTop,
-        windowLeft + 370,
-        windowTop - 470
-    );
+    if (!ConfigureChildWindowForCompactMode(gDatisWindow, 370, 470, 108))
+    {
+        XPLMSetWindowGeometry(
+            gDatisWindow,
+            windowLeft,
+            windowTop,
+            windowLeft + 370,
+            windowTop - 470
+        );
+    }
 
     XPLMSetWindowIsVisible(
         gDatisWindow,
@@ -16007,6 +16201,12 @@ int CompactHandleMouse(
             }
             else
             {
+                ConfigureChildWindowForCompactMode(
+                    gCustomFlightplanWindow,
+                    760,
+                    615,
+                    90
+                );
                 XPLMSetWindowIsVisible(
                     gCustomFlightplanWindow,
                     1

@@ -3,6 +3,10 @@ require('dotenv').config();
 const http = require('http');
 const https = require('https');
 const fs = require('fs');
+const path = require('path');
+const net = require('net');
+const dns = require('dns').promises;
+const { spawn } = require('child_process');
 const mysql = require('mysql2/promise');
 const WebSocket = require('ws');
 
@@ -24,6 +28,10 @@ const config = {
   },
   unicomFrequency: normalizeFrequency(process.env.UNICOM_FREQUENCY || '122.800'),
   unicomGlobal: String(process.env.UNICOM_GLOBAL || '1') === '1',
+  ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
+  testAudioDirectory: path.resolve(
+    process.env.VOICE_TEST_AUDIO_DIR || path.join(__dirname, 'test-audio')
+  ),
   ranges: {
     gnd: Number(process.env.RANGE_GND_NM || 30),
     twr: Number(process.env.RANGE_TWR_NM || 60),
@@ -35,6 +43,13 @@ const config = {
 
 const pool = mysql.createPool(config.db);
 const clients = new Map();
+let testBroadcast = null;
+// Match the plugin's 2048-sample capture buffers. Tiny 20 ms frames caused
+// older X-Plane clients to spend most of their receive loop synchronously
+// opening/playing JSON-wrapped waveOut packets, producing gaps and backlog.
+const testBroadcastFrameBytes = 2048 * 2;
+
+fs.mkdirSync(config.testAudioDirectory, { recursive: true });
 
 function normalizeFrequency(value) {
   const match = String(value || '').trim().match(/^(\d{3})[.,]?(\d{0,3})$/);
@@ -107,9 +122,13 @@ function send(ws, payload) {
   }
 }
 
-function getFrequencyRangeNm(frequency, station) {
+function getFrequencyRangeNm(frequency, station, overrideRangeNm = null) {
   if (frequency === config.unicomFrequency && config.unicomGlobal) {
     return Infinity;
+  }
+
+  if ([5, 10, 25, 50].includes(Number(overrideRangeNm))) {
+    return Number(overrideRangeNm);
   }
 
   const label = String(station || '').toUpperCase();
@@ -155,7 +174,7 @@ function canReceive(sender, receiver, frequency) {
     return false;
   }
 
-  const rangeNm = getFrequencyRangeNm(frequency, sender.station);
+  const rangeNm = getFrequencyRangeNm(frequency, sender.station, sender.rangeNm);
 
   if (rangeNm === Infinity) {
     return true;
@@ -209,6 +228,195 @@ function forwardAudio(sender, payload) {
   return forwarded;
 }
 
+function broadcastTestStatus(extra = {}) {
+  const status = {
+    type: 'test_source_status',
+    active: Boolean(testBroadcast),
+    frequency: testBroadcast ? testBroadcast.frequency : null,
+    sourceName: testBroadcast ? testBroadcast.sourceName : null,
+    loop: testBroadcast ? testBroadcast.loop : false,
+    startedBy: testBroadcast ? testBroadcast.startedBy : null,
+    locationName: testBroadcast ? testBroadcast.locationName : null,
+    rangeNm: testBroadcast ? testBroadcast.rangeNm : null,
+    ...extra
+  };
+
+  for (const client of clients.values()) {
+    if (client.authenticated && client.opPermission >= 5) {
+      send(client.ws, status);
+    }
+  }
+}
+
+function stopTestBroadcast(reason = 'stopped') {
+  if (!testBroadcast) {
+    broadcastTestStatus({ reason });
+    return;
+  }
+  const current = testBroadcast;
+  testBroadcast = null;
+  if (current.process && !current.process.killed) current.process.kill();
+  broadcastTestStatus({ reason });
+}
+
+function isPrivateAddress(address) {
+  const normalized = String(address || '').replace(/^::ffff:/, '');
+  if (net.isIPv4(normalized)) {
+    const parts = normalized.split('.').map(Number);
+    return parts[0] === 10 || parts[0] === 127 || parts[0] === 0 ||
+      (parts[0] === 169 && parts[1] === 254) ||
+      (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+      (parts[0] === 192 && parts[1] === 168);
+  }
+  if (net.isIPv6(normalized)) {
+    const lower = normalized.toLowerCase();
+    return lower === '::1' || lower === '::' || lower.startsWith('fc') ||
+      lower.startsWith('fd') || lower.startsWith('fe8') ||
+      lower.startsWith('fe9') || lower.startsWith('fea') || lower.startsWith('feb');
+  }
+  return true;
+}
+
+async function validateStreamUrl(value) {
+  let parsed;
+  try { parsed = new URL(String(value || '')); } catch { throw new Error('Invalid stream URL.'); }
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new Error('Only HTTP/HTTPS stream URLs are allowed.');
+  }
+  const records = await dns.lookup(parsed.hostname, { all: true });
+  if (!records.length || records.some((record) => isPrivateAddress(record.address))) {
+    throw new Error('Private or local stream addresses are not allowed.');
+  }
+  return parsed.toString();
+}
+
+function resolveUploadedAudio(fileName) {
+  const safeName = path.basename(String(fileName || ''));
+  if (!/^[a-zA-Z0-9._-]+\.(aac|mp3|flac)$/i.test(safeName)) {
+    throw new Error('Invalid audio file.');
+  }
+  const resolved = path.resolve(config.testAudioDirectory, safeName);
+  if (!resolved.startsWith(config.testAudioDirectory + path.sep) || !fs.existsSync(resolved)) {
+    throw new Error('Audio file not found.');
+  }
+  return resolved;
+}
+
+async function resolveAirport(icao) {
+  const normalized = String(icao || '').trim().toUpperCase();
+  if (!/^[A-Z0-9-]{3,12}$/.test(normalized)) {
+    throw new Error('Invalid airport ICAO.');
+  }
+  const [rows] = await pool.query(
+    `SELECT ident, name, latitude_deg, longitude_deg
+     FROM airports
+     WHERE UPPER(ident) = ? OR UPPER(icao_code) = ? OR UPPER(gps_code) = ?
+     ORDER BY CASE WHEN UPPER(ident) = ? THEN 0 ELSE 1 END
+     LIMIT 1`,
+    [normalized, normalized, normalized, normalized]
+  );
+  const airport = rows[0];
+  if (!airport || !Number.isFinite(Number(airport.latitude_deg)) ||
+      !Number.isFinite(Number(airport.longitude_deg))) {
+    throw new Error('Airport not found.');
+  }
+  return airport;
+}
+
+async function startTestBroadcast(client, payload) {
+  if (client.opPermission < 5) throw new Error('No permission for test source.');
+  const frequency = normalizeFrequency(payload.frequency);
+  if (!frequency) throw new Error('Invalid frequency.');
+
+  let latitude = NaN;
+  let longitude = NaN;
+  let station = '';
+  let rangeNm = null;
+  let locationName = 'UNICOM';
+  if (!(frequency === config.unicomFrequency && config.unicomGlobal)) {
+    if (payload.locationType === 'airport') {
+      const airport = await resolveAirport(payload.airportIcao);
+      rangeNm = Number(payload.rangeNm);
+      if (![5, 10, 25, 50].includes(rangeNm)) throw new Error('Invalid transmitter range.');
+      latitude = Number(airport.latitude_deg);
+      longitude = Number(airport.longitude_deg);
+      station = String(airport.ident || '').toUpperCase();
+      locationName = station;
+    } else {
+      const referenceUserId = Number(payload.referenceUserId || 0);
+      const reference = Array.from(clients.values()).find((item) =>
+        item.authenticated && item.userId === referenceUserId &&
+        Number.isFinite(item.latitude) && Number.isFinite(item.longitude)
+      );
+      if (!reference) throw new Error('A connected reference pilot with position is required.');
+      latitude = reference.latitude;
+      longitude = reference.longitude;
+      station = reference.station;
+      locationName = reference.callsign;
+    }
+  }
+
+  const sourceType = payload.sourceType === 'upload' ? 'upload' : 'stream';
+  const input = sourceType === 'upload'
+    ? resolveUploadedAudio(payload.fileName)
+    : await validateStreamUrl(payload.streamUrl);
+  const loop = payload.loop === true;
+  stopTestBroadcast('replaced');
+
+  const args = ['-hide_banner', '-loglevel', 'warning'];
+  if (sourceType === 'upload' && loop) args.push('-stream_loop', '-1');
+  if (sourceType === 'stream') {
+    args.push('-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5');
+  }
+  args.push('-re', '-i', input, '-vn', '-ac', '1', '-ar', '16000', '-f', 's16le', 'pipe:1');
+
+  const process = spawn(config.ffmpegPath, args, { windowsHide: true });
+  const sender = {
+    id: `test-source-${Date.now()}`,
+    callsign: 'VFN-AUDIO', txCom: 1, com1: frequency, com2: frequency,
+    latitude, longitude, station, rangeNm, audioPacketsForwarded: 0
+  };
+  testBroadcast = {
+    process, sender, frequency, loop,
+    sourceName: sourceType === 'upload' ? path.basename(input) : new URL(input).hostname,
+    locationName, rangeNm,
+    startedBy: client.callsign,
+    uploadedPath: sourceType === 'upload' ? input : null,
+    sequence: 0,
+    buffer: Buffer.alloc(0)
+  };
+  const current = testBroadcast;
+  process.stdout.on('data', (chunk) => {
+    if (testBroadcast !== current) return;
+    current.buffer = Buffer.concat([current.buffer, chunk]);
+    while (current.buffer.length >= testBroadcastFrameBytes) {
+      const frame = current.buffer.subarray(0, testBroadcastFrameBytes);
+      current.buffer = current.buffer.subarray(testBroadcastFrameBytes);
+      forwardAudio(sender, {
+        frequency, codec: 'pcm16', sampleRate: 16000,
+        sequence: ++current.sequence, payload: frame.toString('base64')
+      });
+    }
+  });
+  process.stderr.on('data', (chunk) => console.warn(`FFmpeg test source: ${chunk}`));
+  process.on('error', (error) => {
+    console.error('FFmpeg test source failed:', error);
+    if (testBroadcast === current) {
+      testBroadcast = null;
+      broadcastTestStatus({ reason: 'error', message: error.message });
+    }
+    if (current.uploadedPath) fs.unlink(current.uploadedPath, () => {});
+  });
+  process.on('close', (code) => {
+    if (testBroadcast === current) {
+      testBroadcast = null;
+      broadcastTestStatus({ reason: code === 0 ? 'finished' : 'error' });
+    }
+    if (current.uploadedPath) fs.unlink(current.uploadedPath, () => {});
+  });
+  broadcastTestStatus();
+}
+
 function handleMonitor(client, payload) {
   if (client.opPermission < 1) {
     send(client.ws, {
@@ -247,6 +455,12 @@ const server = createHttpServer((req, res) => {
     res.end(JSON.stringify({
       success: true,
       clients: clients.size,
+      testSource: testBroadcast ? {
+        active: true,
+        frequency: testBroadcast.frequency,
+        sourceName: testBroadcast.sourceName,
+        startedBy: testBroadcast.startedBy
+      } : { active: false },
       connections: Array.from(clients.values()).map((client) => ({
         callsign: client.callsign,
         authenticated: client.authenticated,
@@ -404,6 +618,32 @@ wss.on('connection', (ws) => {
 
       if (payload.type === 'monitor') {
         handleMonitor(client, payload);
+        return;
+      }
+
+      if (payload.type === 'test_source_status') {
+        if (client.opPermission < 5) throw new Error('No permission for test source.');
+        send(client.ws, {
+          type: 'test_source_status', active: Boolean(testBroadcast),
+          frequency: testBroadcast ? testBroadcast.frequency : null,
+          sourceName: testBroadcast ? testBroadcast.sourceName : null,
+          loop: testBroadcast ? testBroadcast.loop : false,
+          startedBy: testBroadcast ? testBroadcast.startedBy : null,
+          locationName: testBroadcast ? testBroadcast.locationName : null,
+          rangeNm: testBroadcast ? testBroadcast.rangeNm : null
+        });
+        return;
+      }
+
+      if (payload.type === 'test_source_start') {
+        try { await startTestBroadcast(client, payload); }
+        catch (error) { send(client.ws, { type: 'test_source_status', active: false, reason: 'error', message: error.message }); }
+        return;
+      }
+
+      if (payload.type === 'test_source_stop') {
+        if (client.opPermission < 5) throw new Error('No permission for test source.');
+        stopTestBroadcast('stopped');
         return;
       }
     }).catch((error) => {

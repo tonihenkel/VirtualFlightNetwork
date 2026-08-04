@@ -23,3 +23,6 @@ voice-service/node_modules/
 
 # Erzeugtes Komplettarchiv; der entpackte Modellordner ist bereits versioniert.
 VFN_Follow_Me_Amarok_Complete.zip
+voice-service/test-audio/*
+!voice-service/test-audio/.gitkeep
+voice-service/vendor/ffmpeg/

@@ -397,6 +397,18 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             accent-color: #118cff;
         }
 
+        .voice-test-source {
+            margin-top: 22px;
+            padding: 18px;
+            border: 1px solid rgba(17, 140, 255, 0.38);
+            border-radius: 7px;
+            background: rgba(4, 17, 29, 0.55);
+        }
+
+        .voice-test-source h3 { margin: 0 0 8px; }
+        .voice-test-source .filter-grid { margin-top: 14px; }
+        .voice-test-source-status { margin: 12px 0 0; color: #9eb9d7; }
+
         .frequency-list {
             display: flex;
             flex-wrap: wrap;
@@ -884,6 +896,29 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                             <span><?php echo htmlspecialchars(t('admin_voice_placeholder')); ?></span>
                         </div>
                     </div>
+
+                    <?php if ($adminOpPermission >= 5): ?>
+                    <section class="voice-test-source">
+                        <h3><?php echo htmlspecialchars(t('admin_voice_test_source_title')); ?></h3>
+                        <p><?php echo htmlspecialchars(t('admin_voice_test_source_text')); ?></p>
+                        <div class="filter-grid">
+                            <label class="filter-field"><?php echo htmlspecialchars(t('admin_voice_test_frequency')); ?><input id="voiceTestFrequency" class="admin-input" type="text" value="122.800" inputmode="decimal"></label>
+                            <label class="filter-field"><?php echo htmlspecialchars(t('admin_voice_test_source_type')); ?><select id="voiceTestSourceType" class="admin-input"><option value="stream"><?php echo htmlspecialchars(t('admin_voice_test_stream')); ?></option><option value="upload"><?php echo htmlspecialchars(t('admin_voice_test_upload')); ?></option></select></label>
+                            <label class="filter-field" id="voiceTestLocationTypeField" hidden><?php echo htmlspecialchars(t('admin_voice_test_location_type')); ?><select id="voiceTestLocationType" class="admin-input"><option value="pilot"><?php echo htmlspecialchars(t('admin_voice_test_location_pilot')); ?></option><option value="airport"><?php echo htmlspecialchars(t('admin_voice_test_location_airport')); ?></option></select></label>
+                            <label class="filter-field" id="voiceTestReferenceField" hidden><?php echo htmlspecialchars(t('admin_voice_test_reference')); ?><select id="voiceTestReferencePilot" class="admin-input"></select></label>
+                            <label class="filter-field" id="voiceTestAirportField" hidden><?php echo htmlspecialchars(t('admin_voice_test_airport_icao')); ?><input id="voiceTestAirportIcao" class="admin-input" type="text" maxlength="12" placeholder="EDDM"></label>
+                            <label class="filter-field" id="voiceTestRangeField" hidden><?php echo htmlspecialchars(t('admin_voice_test_range')); ?><select id="voiceTestRange" class="admin-input"><option value="5">5 NM</option><option value="10">10 NM</option><option value="25" selected>25 NM</option><option value="50">50 NM</option></select></label>
+                        </div>
+                        <label class="filter-field" id="voiceTestStreamField"><?php echo htmlspecialchars(t('admin_voice_test_stream_url')); ?><input id="voiceTestStreamUrl" class="admin-input" type="url" placeholder="https://..."></label>
+                        <label class="filter-field" id="voiceTestUploadField" hidden><?php echo htmlspecialchars(t('admin_voice_test_audio_file')); ?><input id="voiceTestAudioFile" class="admin-input" type="file" accept=".aac,.mp3,.flac,audio/aac,audio/mpeg,audio/flac"></label>
+                        <div class="admin-form-row">
+                            <label class="voice-continuous-option"><input id="voiceTestLoop" type="checkbox"><span><?php echo htmlspecialchars(t('admin_voice_test_loop')); ?></span></label>
+                            <button id="voiceTestStartButton" class="admin-button primary" type="button"><?php echo htmlspecialchars(t('admin_voice_test_start')); ?></button>
+                            <button id="voiceTestStopButton" class="admin-button" type="button"><?php echo htmlspecialchars(t('admin_voice_test_stop')); ?></button>
+                        </div>
+                        <p id="voiceTestStatus" class="voice-test-source-status"><?php echo htmlspecialchars(t('admin_voice_test_inactive')); ?></p>
+                    </section>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -1124,6 +1159,12 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         'voicePushToTalk' => t('admin_voice_push_to_talk'),
         'voiceContinuousStart' => t('admin_voice_continuous_start'),
         'voiceContinuousStop' => t('admin_voice_continuous_stop'),
+        'voiceTestInactive' => t('admin_voice_test_inactive'),
+        'voiceTestActive' => t('admin_voice_test_active'),
+        'voiceTestStarting' => t('admin_voice_test_starting'),
+        'voiceTestInvalid' => t('admin_voice_test_invalid'),
+        'voiceTestReferenceMissing' => t('admin_voice_test_reference_missing'),
+        'voiceTestUploadFailed' => t('admin_voice_test_upload_failed'),
         'databaseResetConfirmDialog' => t('admin_database_reset_confirm_dialog'),
         'databaseResetRunning' => t('admin_database_reset_running'),
         'databaseResetComplete' => t('admin_database_reset_complete'),
@@ -1176,6 +1217,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
     const CAN_MANAGE_MODERATION = <?php echo $adminOpPermission >= 4 ? 'true' : 'false'; ?>;
     const CAN_RESET_DATABASE = <?php echo $adminOpPermission >= 5 ? 'true' : 'false'; ?>;
     const CAN_SEND_ANNOUNCEMENT = <?php echo $adminOpPermission >= 5 ? 'true' : 'false'; ?>;
+    const CAN_CONTROL_VOICE_TEST = <?php echo $adminOpPermission >= 5 ? 'true' : 'false'; ?>;
 
     const CAN_VIEW_ALL_FREQUENCIES =
         <?php echo $canViewAllFrequencies ? 'true' : 'false'; ?>;
@@ -2895,6 +2937,9 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                         frequency,
                         global: false
                     });
+                    if (CAN_CONTROL_VOICE_TEST) {
+                        sendVoiceSocket({type: 'test_source_status'});
+                    }
                     document.getElementById('voiceReceiverStatus').textContent =
                         ADMIN_I18N.voiceConnected;
                     clearTimeout(connectTimeout);
@@ -2918,6 +2963,11 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 }
 
                 if (payload.type === 'rx') {
+                    return;
+                }
+
+                if (payload.type === 'test_source_status' && CAN_CONTROL_VOICE_TEST) {
+                    updateVoiceTestStatus(payload);
                     return;
                 }
 
@@ -3159,6 +3209,118 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             voiceTransmitting
                 ? ADMIN_I18N.voiceContinuousStop
                 : ADMIN_I18N.voiceContinuousStart;
+    }
+
+    function updateVoiceTestStatus(payload)
+    {
+        const status = document.getElementById('voiceTestStatus');
+        if (!status) return;
+        status.textContent = payload.active
+            ? ADMIN_I18N.voiceTestActive
+                .replace('{frequency}', String(payload.frequency || '-'))
+                .replace('{source}', String(payload.sourceName || '-'))
+                .replace('{location}', String(payload.locationName || 'UNICOM'))
+                .replace('{range}', payload.rangeNm ? String(payload.rangeNm) + ' NM' : 'global')
+            : (payload.reason === 'error'
+                ? String(payload.message || ADMIN_I18N.voiceTestInvalid)
+                : ADMIN_I18N.voiceTestInactive);
+    }
+
+    async function loadVoiceTestReferencePilots()
+    {
+        const select = document.getElementById('voiceTestReferencePilot');
+        if (!select) return;
+        const response = await fetch('execute/get_pilots.php');
+        const data = await response.json();
+        const previous = select.value;
+        select.innerHTML = '';
+        (data.pilots || []).forEach(function(pilot) {
+            const option = document.createElement('option');
+            option.value = String(pilot.user_id);
+            option.textContent = String(pilot.callsign || pilot.username || pilot.user_id);
+            select.appendChild(option);
+        });
+        if ([...select.options].some(option => option.value === previous)) select.value = previous;
+    }
+
+    function refreshVoiceTestFields()
+    {
+        if (!CAN_CONTROL_VOICE_TEST) return;
+        const upload = document.getElementById('voiceTestSourceType').value === 'upload';
+        document.getElementById('voiceTestStreamField').hidden = upload;
+        document.getElementById('voiceTestUploadField').hidden = !upload;
+        const regional = normalizeFrequency(document.getElementById('voiceTestFrequency').value) !== '122.800';
+        const airport = regional && document.getElementById('voiceTestLocationType').value === 'airport';
+        document.getElementById('voiceTestLocationTypeField').hidden = !regional;
+        document.getElementById('voiceTestReferenceField').hidden = !regional || airport;
+        document.getElementById('voiceTestAirportField').hidden = !airport;
+        document.getElementById('voiceTestRangeField').hidden = !airport;
+        if (regional && !airport) loadVoiceTestReferencePilots().catch(function() {});
+    }
+
+    async function startVoiceTestSource()
+    {
+        const status = document.getElementById('voiceTestStatus');
+        const frequency = normalizeFrequency(document.getElementById('voiceTestFrequency').value);
+        const sourceType = document.getElementById('voiceTestSourceType').value;
+        if (!frequency) { status.textContent = ADMIN_I18N.invalidFrequency; return; }
+        const locationType = document.getElementById('voiceTestLocationType').value;
+        const referenceUserId = document.getElementById('voiceTestReferencePilot').value;
+        const airportIcao = document.getElementById('voiceTestAirportIcao').value.trim().toUpperCase();
+        if (frequency !== '122.800' && locationType === 'pilot' && !referenceUserId) {
+            status.textContent = ADMIN_I18N.voiceTestReferenceMissing;
+            return;
+        }
+        if (frequency !== '122.800' && locationType === 'airport' && !airportIcao) {
+            status.textContent = ADMIN_I18N.voiceTestInvalid;
+            return;
+        }
+        status.textContent = ADMIN_I18N.voiceTestStarting;
+        const payload = {
+            type: 'test_source_start', frequency, sourceType, locationType,
+            referenceUserId, airportIcao,
+            rangeNm: Number(document.getElementById('voiceTestRange').value),
+            loop: document.getElementById('voiceTestLoop').checked
+        };
+        if (sourceType === 'stream') {
+            payload.streamUrl = document.getElementById('voiceTestStreamUrl').value.trim();
+            if (!payload.streamUrl) { status.textContent = ADMIN_I18N.voiceTestInvalid; return; }
+            localStorage.setItem('vfn_admin_voice_test_stream_url', payload.streamUrl);
+        } else {
+            const file = document.getElementById('voiceTestAudioFile').files[0];
+            if (!file) { status.textContent = ADMIN_I18N.voiceTestInvalid; return; }
+            const form = new FormData();
+            form.set('csrf', ADMIN_CSRF);
+            form.set('audio', file);
+            const response = await fetch('execute/admin_voice_upload.php', {method: 'POST', body: form});
+            const result = await response.json();
+            if (!result.success) throw new Error(ADMIN_I18N.voiceTestUploadFailed);
+            payload.fileName = result.fileName;
+        }
+        await connectVoiceSocket(frequency);
+        sendVoiceSocket(payload);
+    }
+
+    if (CAN_CONTROL_VOICE_TEST) {
+        const voiceTestStreamUrl = document.getElementById('voiceTestStreamUrl');
+        voiceTestStreamUrl.value =
+            localStorage.getItem('vfn_admin_voice_test_stream_url') || '';
+        voiceTestStreamUrl.addEventListener('input', function() {
+            localStorage.setItem('vfn_admin_voice_test_stream_url', this.value.trim());
+        });
+        document.getElementById('voiceTestSourceType').addEventListener('change', refreshVoiceTestFields);
+        document.getElementById('voiceTestFrequency').addEventListener('change', refreshVoiceTestFields);
+        document.getElementById('voiceTestLocationType').addEventListener('change', refreshVoiceTestFields);
+        document.getElementById('voiceTestStartButton').addEventListener('click', function() {
+            startVoiceTestSource().catch(function(error) {
+                document.getElementById('voiceTestStatus').textContent = error.message || ADMIN_I18N.voiceTestInvalid;
+            });
+        });
+        document.getElementById('voiceTestStopButton').addEventListener('click', async function() {
+            await connectVoiceSocket(normalizeFrequency(document.getElementById('voiceTestFrequency').value) || '122.800');
+            sendVoiceSocket({type: 'test_source_stop'});
+        });
+        refreshVoiceTestFields();
     }
 
     document.getElementById('voiceRefreshDevicesButton').addEventListener('click', refreshVoiceDevices);
