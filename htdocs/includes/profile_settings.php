@@ -1,6 +1,7 @@
 <?php
+require_once __DIR__ . '/division_schema.php';
 $settingsDivisions = $pdo
-    ->query("SELECT code, name FROM divisions WHERE is_active = 1 ORDER BY name")
+    ->query("SELECT code, name, join_enabled FROM divisions WHERE is_active = 1 ORDER BY name")
     ->fetchAll(PDO::FETCH_ASSOC);
 
 $twoFactorStmt = $pdo->prepare(
@@ -167,8 +168,8 @@ $settingsMessageType = (string)($_GET['type'] ?? '');
                 <select name="division_code" required>
                     <?php foreach ($settingsDivisions as $item): ?>
                         <?php if (strtoupper($item['code']) !== $divisionCode): ?>
-                            <option value="<?php echo h($item['code']); ?>">
-                                <?php echo h($item['code'] . ' - ' . $item['name']); ?>
+                            <option value="<?php echo h($item['code']); ?>" <?php echo (int)($item['join_enabled'] ?? 1) === 1 ? '' : 'disabled'; ?>>
+                                <?php echo h(divisionFlagEmoji((string)$item['code']) . ' ' . $item['code'] . ' - ' . $item['name'] . ((int)($item['join_enabled'] ?? 1) === 1 ? '' : ' (' . t('division_closed') . ')')); ?>
                             </option>
                         <?php endif; ?>
                     <?php endforeach; ?>

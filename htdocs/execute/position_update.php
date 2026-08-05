@@ -4,6 +4,7 @@ header("Content-Type: application/json; charset=utf-8");
 require_once 'config.php';
 require_once 'aircraft_types.php';
 require_once '../includes/awards_checks.php';
+require_once '../includes/track_maintenance.php';
 
 
 $token = trim($_POST["token"] ?? "");
@@ -87,6 +88,17 @@ $landingLights = $switchValue('landing_lights');
 $beaconLights = $switchValue('beacon_lights');
 $strobeLights = $switchValue('strobe_lights');
 $navLights = $switchValue('nav_lights');
+$slatRatio = $ratioValue('slat_ratio');
+$wingSweepRatio = $ratioValue('wing_sweep_ratio');
+$thrustReverserRatio = $ratioValue('thrust_reverser_ratio');
+$noseWheelAngle = max(
+    -90.0,
+    min(90.0, (float)($_POST['nose_wheel_angle'] ?? 0.0))
+);
+$tireRotationRadSec = max(
+    -1000.0,
+    min(1000.0, (float)($_POST['tire_rotation_rad_sec'] ?? 0.0))
+);
 
 $com1 = $_POST["com1"] ?? 0;
 $com2 = $_POST["com2"] ?? 0;
@@ -96,6 +108,10 @@ $hasCrashed =
     (int)($_POST['has_crashed'] ?? 0);
 
 $transponder = trim($_POST["transponder"] ?? "0000");
+$transponderMode = max(
+    0,
+    min(7, (int)($_POST['transponder_mode'] ?? 0))
+);
 
 if ($transponder === "") {
     $transponder = "0000";
@@ -378,6 +394,12 @@ try {
         ]
     );
 
+    try {
+        vfnRunTrackMaintenance($pdo);
+    } catch (Throwable $maintenanceError) {
+        error_log('Track maintenance failed: ' . $maintenanceError->getMessage());
+    }
+
     $stmt = $pdo->prepare(
         "SELECT
             s.user_id,
@@ -534,11 +556,11 @@ try {
     if (
         (int)($session['is_spectator'] ?? 0) !== 1
         && $aircraft_category === 'groundvehicle'
-        && (int)($session['rating_atc'] ?? 0) < 3
+        && (int)($session['rating_atc'] ?? 0) < 4
         && (int)($session['rating_special'] ?? 0) < 1
     ) {
         $kickReason =
-            'Ground vehicles require at least ATC rank TWR '
+            'Ground vehicles require at least ATC rank PAT '
             . 'or special rank VFN Operations Officer.';
 
         $pdo->beginTransaction();
@@ -669,6 +691,12 @@ try {
             beacon_lights,
             strobe_lights,
             nav_lights,
+            slat_ratio,
+            wing_sweep_ratio,
+            thrust_reverser_ratio,
+            nose_wheel_angle,
+            tire_rotation_rad_sec,
+            transponder_mode,
             com1,
             com2,
             com3,
@@ -706,6 +734,12 @@ try {
             :beacon_lights,
             :strobe_lights,
             :nav_lights,
+            :slat_ratio,
+            :wing_sweep_ratio,
+            :thrust_reverser_ratio,
+            :nose_wheel_angle,
+            :tire_rotation_rad_sec,
+            :transponder_mode,
             :com1,
             :com2,
             :com3,
@@ -741,6 +775,12 @@ try {
             beacon_lights = VALUES(beacon_lights),
             strobe_lights = VALUES(strobe_lights),
             nav_lights = VALUES(nav_lights),
+            slat_ratio = VALUES(slat_ratio),
+            wing_sweep_ratio = VALUES(wing_sweep_ratio),
+            thrust_reverser_ratio = VALUES(thrust_reverser_ratio),
+            nose_wheel_angle = VALUES(nose_wheel_angle),
+            tire_rotation_rad_sec = VALUES(tire_rotation_rad_sec),
+            transponder_mode = VALUES(transponder_mode),
             com1 = VALUES(com1),
             com2 = VALUES(com2),
             com3 = VALUES(com3),
@@ -779,6 +819,12 @@ try {
         "beacon_lights" => $beaconLights,
         "strobe_lights" => $strobeLights,
         "nav_lights" => $navLights,
+        "slat_ratio" => $slatRatio,
+        "wing_sweep_ratio" => $wingSweepRatio,
+        "thrust_reverser_ratio" => $thrustReverserRatio,
+        "nose_wheel_angle" => $noseWheelAngle,
+        "tire_rotation_rad_sec" => $tireRotationRadSec,
+        "transponder_mode" => $transponderMode,
         "com1" => (float)$com1,
         "com2" => (float)$com2,
         "com3" => (float)$com3,

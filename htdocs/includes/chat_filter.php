@@ -2,15 +2,21 @@
 
 function filterChatMessage(string $message, ?PDO $pdo = null): array
 {
+    static $databaseWordCache = [];
+
     $original = mb_substr(trim($message), 0, 255);
     $filtered = $original;
     $words = [];
     $loadedFromDatabase = false;
     if ($pdo instanceof PDO) {
         try {
-            $words = $pdo
-                ->query("SELECT word FROM chat_filter_words ORDER BY CHAR_LENGTH(word) DESC")
-                ->fetchAll(PDO::FETCH_COLUMN);
+            $connectionId = spl_object_id($pdo);
+            if (!array_key_exists($connectionId, $databaseWordCache)) {
+                $databaseWordCache[$connectionId] = $pdo
+                    ->query("SELECT word FROM chat_filter_words ORDER BY CHAR_LENGTH(word) DESC")
+                    ->fetchAll(PDO::FETCH_COLUMN);
+            }
+            $words = $databaseWordCache[$connectionId];
             $loadedFromDatabase = true;
         } catch (Throwable $e) {
             $words = [];
@@ -29,10 +35,9 @@ function filterChatMessage(string $message, ?PDO $pdo = null): array
         if ($word === '') {
             continue;
         }
-        $pattern =
-            '/(?<![\p{L}\p{N}_])'
-            . preg_quote($word, '/')
-            . '(?![\p{L}\p{N}_])/iu';
+        // Also match prohibited terms inside compounds or deliberate
+        // extensions (for example a severe insult with an added prefix).
+        $pattern = '/' . preg_quote($word, '/') . '/iu';
         $filtered = preg_replace_callback(
             $pattern,
             static function (array $match): string {

@@ -94,9 +94,9 @@ try {
             'q' => $query,
             'limit' => 8,
         ])
-        . '&types=waypoint&types=navaid';
+        . '&types=waypoint&types=navaid&types=airway';
     $searchResponse = vfnAiracCachedJson(
-        'search_' . $cycle . '_' . hash('sha256', $query),
+        'search_v2_' . $cycle . '_' . hash('sha256', $query),
         $searchUrl
     );
 
@@ -138,6 +138,21 @@ try {
                 'longitude' => (float)$longitude,
             ];
         }
+    }
+    foreach ((array)($groups['airways'] ?? []) as $item) {
+        $identifier = strtoupper(trim((string)($item['identifier'] ?? '')));
+        if ($identifier === '') {
+            continue;
+        }
+        $results[] = [
+            'kind' => 'airway',
+            'identifier' => $identifier,
+            'name' => $identifier,
+            'type' => (string)($item['type'] ?? ''),
+            'region' => '',
+            'frequency' => '',
+            'frequency_unit' => '',
+        ];
     }
 
     echo json_encode([

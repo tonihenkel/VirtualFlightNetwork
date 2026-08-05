@@ -2,6 +2,11 @@
 
     return [
 
+        'admin_tab_todo' => 'TODO List',
+        'admin_todo_title' => 'VFN Master TODO',
+        'admin_todo_text' => 'Current development status and pending acceptance tests. The file is reloaded directly on every page request.',
+        'admin_todo_unavailable' => 'The TODO file could not be loaded.',
+
         /*
             Navigation
         */
@@ -86,6 +91,24 @@
 
         'feature_routes_text' =>
             'Departure and destination airports are displayed and connected on the map.',
+
+        'feature_multiplayer_title' =>
+            'True Multiplayer Traffic',
+
+        'feature_multiplayer_text' =>
+            'See other pilots as matching X-CSL aircraft with animations, TCAS, contrails and wake turbulence directly in X-Plane.',
+
+        'feature_statistics_title' =>
+            'Network Statistics',
+
+        'feature_statistics_text' =>
+            'Explore top pilots, airports, countries, flight hours, distances and movements across the network.',
+
+        'feature_divisions_title' =>
+            'International Divisions',
+
+        'feature_divisions_text' =>
+            'Dedicated division pages connect members, local staff teams, statistics and individual content.',
 
         /*
             Download
@@ -976,6 +999,12 @@
         'admin_no_messages' =>
             'No messages yet.',
 
+        'admin_chat_translate' => 'Translate',
+        'admin_chat_show_original' => 'Show original',
+        'admin_chat_translation_loading' => 'Translating…',
+        'admin_chat_translation_failed' => 'Translation failed',
+        'admin_chat_automatic_translation' => 'Automatic translation',
+
         'admin_time' =>
             'Time',
 
@@ -1102,6 +1131,70 @@
         'admin_voice_test_location_airport' => 'Airport',
         'admin_voice_test_airport_icao' => 'Airport ICAO',
         'admin_voice_test_range' => 'Transmission range',
+        'admin_voice_monitor_airport' => 'Receiver location (airport ICAO)',
+        'admin_voice_monitor_range' => 'Receiver radius',
+        'admin_voice_monitor_reference_missing' => 'This frequency requires an airport ICAO as receiver location.',
+        'admin_voice_channel_busy' => 'Frequency occupied by {callsign}. Please wait.',
+        'division_admin_title' => 'Division management',
+        'division_admin_intro' => 'Manage division pages, statistics, and staff structures.',
+        'division_overview' => 'Divisions',
+        'division_not_found' => 'Division not found',
+        'division_edit' => 'Edit division page',
+        'division_open_page' => 'Open public page',
+        'division_name' => 'Name',
+        'division_short_name' => 'Short name',
+        'division_language' => 'Primary language',
+        'division_active' => 'Division active',
+        'division_description' => 'Description',
+        'division_page_builder' => 'HTML page builder',
+        'division_html_source' => 'HTML/CSS source',
+        'division_safe_code_hint' => 'You can use extensive HTML and CSS. JavaScript, event attributes, forms, iframes and unsafe CSS declarations are removed when saving; custom CSS is scoped to the division page.',
+        'division_placeholders' => 'Dynamic placeholders',
+        'division_block_stats' => 'Statistics block',
+        'division_block_staff' => 'Staff block',
+        'division_block_members' => 'Members block',
+        'division_save_publish' => 'Save and publish',
+        'division_saved' => 'The division page was saved and published.',
+        'division_create_title' => 'New division',
+        'division_create' => 'Create division',
+        'division_code' => 'Division code',
+        'division_create_invalid' => 'The division code or name is invalid.',
+        'division_create_exists' => 'A division with this code already exists.',
+        'division_join_enabled' => 'Joining enabled',
+        'division_join_open' => 'Joining enabled',
+        'division_join_closed_label' => 'Joining closed',
+        'division_join_opened' => 'Joining this division has been enabled.',
+        'division_join_closed' => 'Joining this division has been disabled.',
+        'division_join_help' => 'Closed divisions remain visible but cannot be selected during registration or a division transfer.',
+        'division_closed' => 'closed',
+        'activity_division_created' => 'Division created',
+        'activity_division_join_opened' => 'Division joining enabled',
+        'activity_division_join_closed' => 'Division joining disabled',
+        'division_delete' => 'Delete division',
+        'division_delete_confirm' => 'Permanently delete this division and its page revisions?',
+        'division_delete_has_members' => 'The division cannot be deleted while users are assigned to it.',
+        'activity_division_deleted' => 'Division deleted',
+        'division_staff_management' => 'Division staff management',
+        'division_staff_user' => 'Username or email',
+        'division_staff_role' => 'Staff role',
+        'division_staff_custom_title' => 'Custom role title (optional)',
+        'division_staff_order' => 'Sort order',
+        'division_staff_can_edit' => 'May edit the division page',
+        'division_staff_add' => 'Save staff member',
+        'division_staff_saved' => 'The division staff member was saved.',
+        'division_staff_removed' => 'The division staff member was removed.',
+        'division_staff_invalid' => 'The user or staff role is invalid.',
+        'division_staff_wrong_division' => 'The user does not belong to this division and cannot be added as its staff member.',
+        'nav_divisions' => 'Divisions',
+        'divisions_title' => 'Divisions',
+        'divisions_intro' => 'Explore the active Virtual Flight Network divisions.',
+        'divisions_members' => 'Members',
+        'divisions_open' => 'Open division',
+        'activity_division_page_updated' => 'Division page updated and published',
+        'activity_division_staff_added' => 'Added to division staff',
+        'activity_division_staff_role_changed' => 'Division staff role changed',
+        'activity_division_staff_removed' => 'Removed from division staff',
+        'remove' => 'Remove',
         'admin_voice_test_stream_url' => 'Stream URL (AAC, MP3, or FLAC)',
         'admin_voice_test_audio_file' => 'Audio file (maximum 50 MB)',
         'admin_voice_test_loop' => 'Play in a loop',
@@ -1139,7 +1232,7 @@
             'Warning: All other users, chats, sessions, positions, flight plans, statistics, activities, filters, and settings will be permanently deleted.',
 
         'admin_database_reset_preserved' =>
-            'Preserved: airports, divisions, and chat_filter_words. Afterwards, admin is recreated with OP-Level 5 and password saturn.',
+            'Preserved: airports, divisions including page content, division_staff, division_content_revisions, and chat_filter_words. Afterwards, admin is recreated with OP-Level 5 and password saturn.',
 
         'admin_database_reset_password' =>
             'Current password',
@@ -1166,7 +1259,7 @@
         'Database reset performed',
 
     'activity_database_reset_details' =>
-        'Airports, divisions, and chat filter words were preserved; the administrator bootstrap account was recreated.',
+        'Airports, divisions, division staff, and chat filter words were preserved; the administrator bootstrap account was recreated.',
 
         'admin_tab_configuration' => 'Configuration',
         'admin_configuration_title' => 'Server Configuration',
@@ -1345,6 +1438,7 @@
     'map_search_type_airports' => 'Airports only',
     'map_search_type_waypoints' => 'Waypoints only',
     'map_search_type_navaids' => 'Navaids only',
+    'map_search_type_airways' => 'Airways only',
     'map_search_type_radars' => 'Radar sectors only',
     'map_search_exact' => 'Exact',
     'map_airport_search_result' => 'Airport',
@@ -1357,6 +1451,10 @@
     'map_navigation_frequency' => 'Frequency',
     'map_navigation_waypoint' => 'Waypoint',
     'map_navigation_navaid' => 'Navaid',
+    'map_navigation_airway' => 'Airway',
+    'map_airway_segments' => 'Waypoints',
+    'map_airway_paths' => 'Separate sections',
+    'map_airway_unavailable' => 'The airway is currently unavailable.',
     'map_navigation_radar' => 'Radar sector',
     'map_follow_pilot' => 'Follow aircraft',
     'map_stop_following' => 'Stop following',
@@ -1477,6 +1575,21 @@
     'flight_not_found' => 'Flight not found',
     'flight_route_map' => 'Flown route',
     'flight_route_unavailable' => 'No track points were retained for this flight.',
+    'flight_analysis_title' => 'Extended flight progress analysis',
+    'flight_analysis_max_altitude' => 'Maximum altitude',
+    'flight_analysis_average_speed' => 'Average speed',
+    'flight_analysis_max_speed' => 'Maximum speed',
+    'flight_analysis_efficiency' => 'Route efficiency',
+    'flight_analysis_max_climb' => 'Maximum climb rate',
+    'flight_analysis_max_descent' => 'Maximum descent rate',
+    'flight_analysis_tracked_distance' => 'Distance calculated from track',
+    'flight_analysis_track_points' => 'Stored track points',
+    'flight_analysis_phases' => 'Flight phases',
+    'flight_analysis_climb' => 'Climb',
+    'flight_analysis_level' => 'Level flight',
+    'flight_analysis_descent' => 'Descent',
+    'flight_analysis_altitude_profile' => 'Altitude profile',
+    'flight_analysis_speed_profile' => 'Speed profile',
     'moderation_center_title' => 'Moderation center',
     'moderation_center_search' => 'Search player, staff member, or reason',
     'moderation_active_bans' => 'Active bans',
@@ -1507,4 +1620,46 @@
     'feature_navigation_text' => 'AIRAC waypoints, navaids, radar sectors, FIR/UIR boundaries, METAR, and worldwide airport search on the live map.',
     'feature_messages_title' => 'Messages and notifications',
     'feature_messages_text' => 'Private conversations between website and simulator plus one center for activities and requests.',
+    'nav_atc_login' => 'Log in as ATC',
+    'atc_client_title' => 'ATC Radar Client',
+    'atc_fullscreen' => 'Fullscreen',
+    'atc_close' => 'Close',
+    'atc_login_required' => 'Login required',
+    'atc_login_required_text' => 'Please log in to the VFN website first.',
+    'atc_access_denied' => 'No ATC authorization',
+    'atc_access_denied_text' => 'Your current ATC rating does not permit an active controller position yet.',
+    'atc_position_selection' => 'Select ATC position',
+    'atc_position_selection_text' => 'The following positions are available according to your ATC rating.',
+    'atc_station_identifier' => 'Airport or FIR identifier',
+    'atc_allowed_positions' => 'Permitted positions',
+    'atc_choose_station_position' => 'Select an identifier and an authorized position.',
+    'atc_continue' => 'Prepare position',
+    'atc_position_ready' => 'Position is prepared for the later connection.',
+    'atc_position_delivery' => 'Delivery',
+    'atc_position_info' => 'Information / AFIS',
+    'atc_position_ground' => 'Ground',
+    'atc_position_tower' => 'Tower',
+    'atc_position_approach' => 'Approach',
+    'atc_position_departure' => 'Departure',
+    'atc_position_center' => 'Center / Radar',
+    'atc_supervision_required' => 'Supervision required',
+    'atc_station_airport' => 'Airport',
+    'atc_station_fir' => 'FIR / radar sector',
+    'atc_station_uir' => 'UIR / upper airspace',
+    'atc_station_no_results' => 'No matching station found.',
+    'atc_station_search_error' => 'Station search is currently unavailable.',
+    'atc_operation_controlled' => 'Controlled airport',
+    'atc_operation_uncontrolled' => 'Uncontrolled airport',
+    'atc_operation_afis_rmz' => 'AFIS airport within an RMZ',
+    'atc_mode_selection' => 'Select operating mode',
+    'atc_mode_selection_text' => 'Would you like to control actively or only observe a position?',
+    'atc_mode_controller' => 'ATC',
+    'atc_mode_controller_text' => 'Active controller position according to your ATC rating.',
+    'atc_mode_controller_denied' => 'Your ATC rating does not permit an active position.',
+    'atc_mode_spectator' => 'Spectator',
+    'atc_mode_spectator_text' => 'Observe without a rating, control rights, or transmit rights.',
+    'atc_spectator_ready' => 'Spectator position active; voice is receive-only.',
+    'atc_setup_window' => 'ATC login and position selection',
+    'atc_window_detach' => 'Open in a separate window',
+    'atc_window_dock' => 'Return to the main window',
 ];

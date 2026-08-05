@@ -2,6 +2,11 @@
 
 return [
 
+    'admin_tab_todo' => 'TODO-Liste',
+    'admin_todo_title' => 'VFN Master-TODO',
+    'admin_todo_text' => 'Aktueller Entwicklungsstand und offene Abnahmetests. Die Datei wird bei jedem Seitenaufruf direkt neu eingelesen.',
+    'admin_todo_unavailable' => 'Die TODO-Datei konnte nicht geladen werden.',
+
     /*
         Navigation
     */
@@ -86,6 +91,24 @@ return [
 
     'feature_routes_text' =>
         'Start- und Zielflughäfen werden auf der Karte angezeigt und verbunden.',
+
+    'feature_multiplayer_title' =>
+        'Echter Multiplayer-Verkehr',
+
+    'feature_multiplayer_text' =>
+        'Sieh andere Piloten als passende X-CSL-Flugzeuge mit Animationen, TCAS, Kondensstreifen und Wake-Turbulence direkt in X-Plane.',
+
+    'feature_statistics_title' =>
+        'Netzwerkstatistiken',
+
+    'feature_statistics_text' =>
+        'Entdecke Top-Piloten, Flughäfen, Länder, Flugstunden, Distanzen und Bewegungen im gesamten Netzwerk.',
+
+    'feature_divisions_title' =>
+        'Internationale Divisionen',
+
+    'feature_divisions_text' =>
+        'Eigene Divisionsseiten verbinden Mitglieder, lokale Staff-Teams, Statistiken und individuelle Inhalte.',
 
     /*
         Download
@@ -991,6 +1014,12 @@ return [
     'admin_no_messages' =>
         'Noch keine Nachrichten.',
 
+    'admin_chat_translate' => 'Übersetzen',
+    'admin_chat_show_original' => 'Original anzeigen',
+    'admin_chat_translation_loading' => 'Wird übersetzt …',
+    'admin_chat_translation_failed' => 'Übersetzung fehlgeschlagen',
+    'admin_chat_automatic_translation' => 'Automatische Übersetzung',
+
     'admin_time' =>
         'Zeit',
 
@@ -1117,6 +1146,70 @@ return [
     'admin_voice_test_location_airport' => 'Flughafen',
     'admin_voice_test_airport_icao' => 'Flughafen-ICAO',
     'admin_voice_test_range' => 'Sendereichweite',
+    'admin_voice_monitor_airport' => 'Empfangsstandort (Flughafen-ICAO)',
+    'admin_voice_monitor_range' => 'Empfangsradius',
+    'admin_voice_monitor_reference_missing' => 'Für diese Frequenz wird ein Flughafen-ICAO als Empfangsstandort benötigt.',
+    'admin_voice_channel_busy' => 'Frequenz belegt durch {callsign}. Bitte warten.',
+    'division_admin_title' => 'Divisionsverwaltung',
+    'division_admin_intro' => 'Divisionsseiten, Kennzahlen und Staff-Struktur verwalten.',
+    'division_overview' => 'Divisionen',
+    'division_not_found' => 'Division nicht gefunden',
+    'division_edit' => 'Divisionsseite bearbeiten',
+    'division_open_page' => 'Öffentliche Seite öffnen',
+    'division_name' => 'Name',
+    'division_short_name' => 'Kurzname',
+    'division_language' => 'Hauptsprache',
+    'division_active' => 'Division aktiv',
+    'division_description' => 'Beschreibung',
+    'division_page_builder' => 'HTML-Baukasten',
+    'division_html_source' => 'HTML/CSS-Code',
+    'division_safe_code_hint' => 'Du kannst umfangreiches HTML und CSS verwenden. JavaScript, Ereignisattribute, Formulare, iFrames und gefährliche CSS-Anweisungen werden beim Speichern entfernt; eigene CSS-Regeln gelten nur innerhalb der Divisionsseite.',
+    'division_placeholders' => 'Dynamische Platzhalter',
+    'division_block_stats' => 'Statistikblock',
+    'division_block_staff' => 'Staffblock',
+    'division_block_members' => 'Mitgliederblock',
+    'division_save_publish' => 'Speichern und veröffentlichen',
+    'division_saved' => 'Die Divisionsseite wurde gespeichert und veröffentlicht.',
+    'division_create_title' => 'Neue Division',
+    'division_create' => 'Division anlegen',
+    'division_code' => 'Divisionscode',
+    'division_create_invalid' => 'Divisionscode oder Name ist ungültig.',
+    'division_create_exists' => 'Eine Division mit diesem Code existiert bereits.',
+    'division_join_enabled' => 'Beitritt geöffnet',
+    'division_join_open' => 'Beitritt geöffnet',
+    'division_join_closed_label' => 'Beitritt geschlossen',
+    'division_join_opened' => 'Der Beitritt zu dieser Division wurde geöffnet.',
+    'division_join_closed' => 'Der Beitritt zu dieser Division wurde geschlossen.',
+    'division_join_help' => 'Geschlossene Divisionen bleiben sichtbar, können bei Registrierung oder Divisionswechsel aber nicht ausgewählt werden.',
+    'division_closed' => 'geschlossen',
+    'activity_division_created' => 'Division angelegt',
+    'activity_division_join_opened' => 'Divisionsbeitritt geöffnet',
+    'activity_division_join_closed' => 'Divisionsbeitritt geschlossen',
+    'division_delete' => 'Division löschen',
+    'division_delete_confirm' => 'Diese Division und ihre Seitenversionen wirklich dauerhaft löschen?',
+    'division_delete_has_members' => 'Die Division kann nicht gelöscht werden, solange ihr Benutzer zugeordnet sind.',
+    'activity_division_deleted' => 'Division gelöscht',
+    'division_staff_management' => 'Divisions-Staffverwaltung',
+    'division_staff_user' => 'Benutzername oder E-Mail',
+    'division_staff_role' => 'Stafffunktion',
+    'division_staff_custom_title' => 'Individueller Funktionstitel (optional)',
+    'division_staff_order' => 'Sortierung',
+    'division_staff_can_edit' => 'Darf die Divisionsseite bearbeiten',
+    'division_staff_add' => 'Staffmitglied speichern',
+    'division_staff_saved' => 'Das Divisions-Staffmitglied wurde gespeichert.',
+    'division_staff_removed' => 'Das Divisions-Staffmitglied wurde entfernt.',
+    'division_staff_invalid' => 'Benutzer oder Stafffunktion ist ungültig.',
+    'division_staff_wrong_division' => 'Der Benutzer gehört nicht zu dieser Division und kann hier nicht als Staff hinzugefügt werden.',
+    'nav_divisions' => 'Divisionen',
+    'divisions_title' => 'Divisionen',
+    'divisions_intro' => 'Entdecke die aktiven Divisionen des Virtual Flight Network.',
+    'divisions_members' => 'Mitglieder',
+    'divisions_open' => 'Division öffnen',
+    'activity_division_page_updated' => 'Divisionsseite aktualisiert und veröffentlicht',
+    'activity_division_staff_added' => 'Als Divisions-Staff hinzugefügt',
+    'activity_division_staff_role_changed' => 'Divisions-Stafffunktion geändert',
+    'activity_division_staff_removed' => 'Aus dem Divisions-Staff entfernt',
+    'remove' => 'Entfernen',
     'admin_voice_test_stream_url' => 'Stream-URL (AAC, MP3 oder FLAC)',
     'admin_voice_test_audio_file' => 'Audiodatei (maximal 50 MB)',
     'admin_voice_test_loop' => 'In Schleife wiedergeben',
@@ -1154,7 +1247,7 @@ return [
         'Achtung: Alle anderen Benutzer, Chats, Sessions, Positionen, Flugpläne, Statistiken, Aktivitäten, Filter und Einstellungen werden unwiderruflich gelöscht.',
 
     'admin_database_reset_preserved' =>
-        'Erhalten bleiben: airports, divisions und chat_filter_words. Danach wird admin mit OP-Level 5 und dem Passwort saturn neu angelegt.',
+        'Erhalten bleiben: airports, divisions inklusive Seiteninhalt, division_staff, division_content_revisions und chat_filter_words. Danach wird admin mit OP-Level 5 und dem Passwort saturn neu angelegt.',
 
     'admin_database_reset_password' =>
         'Aktuelles Passwort',
@@ -1360,6 +1453,7 @@ return [
     'map_search_type_airports' => 'Nur Flughäfen',
     'map_search_type_waypoints' => 'Nur Wegpunkte',
     'map_search_type_navaids' => 'Nur Funknavigationsanlagen',
+    'map_search_type_airways' => 'Nur Luftstraßen',
     'map_search_type_radars' => 'Nur Radarbereiche',
     'map_search_exact' => 'Exakt',
     'map_airport_search_result' => 'Flughafen',
@@ -1372,6 +1466,10 @@ return [
     'map_navigation_frequency' => 'Frequenz',
     'map_navigation_waypoint' => 'Wegpunkt',
     'map_navigation_navaid' => 'Navigationsanlage',
+    'map_navigation_airway' => 'Luftstraße',
+    'map_airway_segments' => 'Wegpunkte',
+    'map_airway_paths' => 'Getrennte Teilstrecken',
+    'map_airway_unavailable' => 'Die Luftstraße konnte derzeit nicht geladen werden.',
     'map_navigation_radar' => 'Radarbereich',
     'map_follow_pilot' => 'Flugzeug folgen',
     'map_stop_following' => 'Folgen beenden',
@@ -1492,6 +1590,21 @@ return [
     'flight_not_found' => 'Flug nicht gefunden',
     'flight_route_map' => 'Geflogene Route',
     'flight_route_unavailable' => 'Für diesen Flug sind keine Trackpunkte gespeichert.',
+    'flight_analysis_title' => 'Erweiterte Flugverlaufsanalyse',
+    'flight_analysis_max_altitude' => 'Maximale Höhe',
+    'flight_analysis_average_speed' => 'Durchschnittliche Geschwindigkeit',
+    'flight_analysis_max_speed' => 'Maximale Geschwindigkeit',
+    'flight_analysis_efficiency' => 'Streckeneffizienz',
+    'flight_analysis_max_climb' => 'Maximale Steigrate',
+    'flight_analysis_max_descent' => 'Maximale Sinkrate',
+    'flight_analysis_tracked_distance' => 'Aus Track berechnete Strecke',
+    'flight_analysis_track_points' => 'Gespeicherte Trackpunkte',
+    'flight_analysis_phases' => 'Flugphasen',
+    'flight_analysis_climb' => 'Steigflug',
+    'flight_analysis_level' => 'Horizontalflug',
+    'flight_analysis_descent' => 'Sinkflug',
+    'flight_analysis_altitude_profile' => 'Höhenprofil',
+    'flight_analysis_speed_profile' => 'Geschwindigkeitsprofil',
     'moderation_center_title' => 'Moderationszentrale',
     'moderation_center_search' => 'Spieler, Staff oder Grund suchen',
     'moderation_active_bans' => 'Aktive Banns',
@@ -1522,4 +1635,46 @@ return [
     'feature_navigation_text' => 'AIRAC-Wegpunkte, Navaids, Radarsektoren, FIR/UIR-Grenzen, METAR und weltweite Flughafensuche direkt auf der Live-Karte.',
     'feature_messages_title' => 'Nachrichten und Benachrichtigungen',
     'feature_messages_text' => 'Private Unterhaltungen zwischen Website und Simulator sowie ein gemeinsames Zentrum für Aktivitäten und Anfragen.',
+    'nav_atc_login' => 'Als ATC einloggen',
+    'atc_client_title' => 'ATC Radar Client',
+    'atc_fullscreen' => 'Vollbild',
+    'atc_close' => 'Schließen',
+    'atc_login_required' => 'Anmeldung erforderlich',
+    'atc_login_required_text' => 'Bitte melde dich zuerst auf der VFN-Website an.',
+    'atc_access_denied' => 'Keine ATC-Berechtigung',
+    'atc_access_denied_text' => 'Dein aktueller ATC-Rang erlaubt noch keine aktive Controller-Position.',
+    'atc_position_selection' => 'ATC-Position auswählen',
+    'atc_position_selection_text' => 'Die folgenden Positionen sind entsprechend deinem ATC-Rang freigegeben.',
+    'atc_station_identifier' => 'Flughafen- oder FIR-Kennung',
+    'atc_allowed_positions' => 'Erlaubte Positionen',
+    'atc_choose_station_position' => 'Wähle eine Kennung und eine freigegebene Position.',
+    'atc_continue' => 'Position vorbereiten',
+    'atc_position_ready' => 'Position ist für die spätere Verbindung vorbereitet.',
+    'atc_position_delivery' => 'Delivery',
+    'atc_position_info' => 'Information / AFIS',
+    'atc_position_ground' => 'Ground',
+    'atc_position_tower' => 'Tower',
+    'atc_position_approach' => 'Approach',
+    'atc_position_departure' => 'Departure',
+    'atc_position_center' => 'Center / Radar',
+    'atc_supervision_required' => 'Nur unter Aufsicht',
+    'atc_station_airport' => 'Flugplatz',
+    'atc_station_fir' => 'FIR / Radarbereich',
+    'atc_station_uir' => 'UIR / oberer Luftraum',
+    'atc_station_no_results' => 'Keine passende Station gefunden.',
+    'atc_station_search_error' => 'Stationssuche momentan nicht verfügbar.',
+    'atc_operation_controlled' => 'Kontrollierter Flugplatz',
+    'atc_operation_uncontrolled' => 'Unkontrollierter Flugplatz',
+    'atc_operation_afis_rmz' => 'AFIS-Flugplatz innerhalb einer RMZ',
+    'atc_mode_selection' => 'Betriebsart auswählen',
+    'atc_mode_selection_text' => 'Möchtest du aktiv kontrollieren oder eine Position nur beobachten?',
+    'atc_mode_controller' => 'ATC',
+    'atc_mode_controller_text' => 'Aktive Controller-Position entsprechend deinem ATC-Rang.',
+    'atc_mode_controller_denied' => 'Für eine aktive Position fehlt dir der erforderliche ATC-Rang.',
+    'atc_mode_spectator' => 'Zuschauer',
+    'atc_mode_spectator_text' => 'Rangfrei beobachten, ohne Kontroll- oder Senderechte.',
+    'atc_spectator_ready' => 'Zuschauerposition aktiv; Voice ist nur für Empfang vorgesehen.',
+    'atc_setup_window' => 'ATC-Anmeldung und Positionswahl',
+    'atc_window_detach' => 'In eigenem Fenster öffnen',
+    'atc_window_dock' => 'Ins Hauptfenster zurückholen',
 ];

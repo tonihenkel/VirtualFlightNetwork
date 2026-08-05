@@ -61,7 +61,14 @@ try {
         $tableStmt->fetchAll(PDO::FETCH_ASSOC)
     );
 
-    $preservedTables = ['airports', 'divisions', 'chat_filter_words', 'users'];
+    $preservedTables = [
+        'airports',
+        'divisions',
+        'division_staff',
+        'division_content_revisions',
+        'chat_filter_words',
+        'users'
+    ];
     $resetTables = array_values(array_filter(
         $allTables,
         static function (string $table) use ($preservedTables): bool {

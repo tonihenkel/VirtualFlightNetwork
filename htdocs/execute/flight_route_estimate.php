@@ -196,6 +196,18 @@ try {
         $distanceNm += routeDistanceNm($points[$index - 1], $points[$index]);
     }
 
+    $directDistanceNm = routeDistanceNm($departurePoint, $arrivalPoint);
+    // Short waypoint identifiers are reused throughout the world. On long
+    // routes an ambiguous AIRAC search result can therefore produce a huge
+    // zig-zag route even though every individual lookup succeeded. Reject a
+    // route whose detour is implausible and use the reliable great-circle
+    // route instead. A 35% margin still permits normal airway/SID/STAR detours.
+    if ($directDistanceNm > 0.0 && $distanceNm > $directDistanceNm * 1.35) {
+        $points = [$departurePoint, $arrivalPoint];
+        $resolvedIdentifiers = [];
+        $distanceNm = $directDistanceNm;
+    }
+
     routeJson([
         'success' => true,
         'mode' => $resolvedIdentifiers ? 'waypoints' : 'direct',

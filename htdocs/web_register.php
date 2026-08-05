@@ -171,6 +171,16 @@ try {
     authRateFail($pdo, 'register_ip', $clientIp, 8, 60, 60);
     authRateFail($pdo, 'register_identifier', $registerIdentifier, 4, 60, 60);
 
+    $divisionStmt = $pdo->prepare(
+        "SELECT 1 FROM divisions
+         WHERE code = :code AND is_active = 1 AND join_enabled = 1
+         LIMIT 1"
+    );
+    $divisionStmt->execute(['code' => $divisionCode]);
+    if (!$divisionStmt->fetchColumn()) {
+        redirectBack('error', 'register_division_invalid');
+    }
+
     $stmt = $pdo->prepare(
         "SELECT id
          FROM users

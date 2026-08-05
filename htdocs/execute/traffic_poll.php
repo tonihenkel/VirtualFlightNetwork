@@ -105,6 +105,13 @@ try {
             p.beacon_lights,
             p.strobe_lights,
             p.nav_lights,
+            p.transponder,
+            p.transponder_mode,
+            p.slat_ratio,
+            p.wing_sweep_ratio,
+            p.thrust_reverser_ratio,
+            p.nose_wheel_angle,
+            p.tire_rotation_rad_sec,
             s.is_spectator,
             u.op_permission,
             fp.departure_airport,
@@ -190,6 +197,13 @@ try {
             number_format((float)$row['distance_nm'], 1, '.', ''),
             (string)((int)$row['is_spectator'] === 1 ? 1 : 0),
             (string)(int)$row['op_permission'],
+            trafficField((string)$row['transponder']),
+            (string)(int)$row['transponder_mode'],
+            number_format((float)$row['slat_ratio'], 3, '.', ''),
+            number_format((float)$row['wing_sweep_ratio'], 3, '.', ''),
+            number_format((float)$row['thrust_reverser_ratio'], 3, '.', ''),
+            number_format((float)$row['nose_wheel_angle'], 2, '.', ''),
+            number_format((float)$row['tire_rotation_rad_sec'], 2, '.', ''),
         ]) . "\n";
     }
 } catch (Throwable $error) {

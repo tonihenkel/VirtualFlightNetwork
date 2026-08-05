@@ -1,0 +1,89 @@
+<style>
+.de-page{--de-gold:#ffcc3d;--de-red:#f04444;--de-ink:#071722;display:grid;gap:28px}
+.de-hero{position:relative;overflow:hidden;padding:clamp(48px,8vw,92px) clamp(22px,6vw,72px);border:1px solid #31566d;border-radius:28px;background:linear-gradient(135deg,#05080b 0%,#111b24 55%,#3a1518 100%);box-shadow:0 24px 70px rgba(0,0,0,.3)}
+.de-hero:after{content:"";position:absolute;right:-80px;bottom:-110px;width:360px;height:360px;border-radius:50%;background:radial-gradient(circle,rgba(255,204,61,.32),rgba(240,68,68,.1) 42%,transparent 70%)}
+.de-eyebrow{display:inline-flex;align-items:center;gap:10px;margin:0 0 18px;color:var(--de-gold);font-size:.82rem;font-weight:800;letter-spacing:.2em;text-transform:uppercase}
+.de-hero h1{position:relative;max-width:820px;margin:0;font-size:clamp(2.7rem,7vw,5.8rem);line-height:.96;letter-spacing:-.055em}
+.de-hero h1 span{color:var(--de-gold)}
+.de-lead{position:relative;max-width:700px;margin:26px 0 0;color:#c7d9e5;font-size:clamp(1.05rem,2vw,1.25rem)}
+.de-actions{position:relative;display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}
+.de-button{display:inline-block;padding:13px 21px;border:1px solid var(--de-gold);border-radius:999px;background:var(--de-gold);color:#17130a;text-decoration:none;font-weight:800;transition:transform .2s ease,box-shadow .2s ease}
+.de-button:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(255,204,61,.2)}
+.de-button-secondary{background:transparent;color:#fff;border-color:#5c7281}
+.de-stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:14px}
+.de-stat{padding:22px;border:1px solid #244d65;border-radius:18px;background:linear-gradient(160deg,#102a3a,#0a1d29);box-shadow:0 14px 34px rgba(0,0,0,.16)}
+.de-stat strong{display:block;color:var(--de-gold);font-size:clamp(1.6rem,4vw,2.35rem);line-height:1.1}
+.de-stat span{display:block;margin-top:8px;color:#93b4c8;font-size:.86rem;text-transform:uppercase;letter-spacing:.08em}
+.de-section{padding:clamp(26px,5vw,48px);border:1px solid #234a61;border-radius:24px;background:#0b202d}
+.de-section-head{display:grid;grid-template-columns:minmax(0,1fr) minmax(220px,.65fr);gap:24px;align-items:end;margin-bottom:28px}
+.de-section h2{margin:0;font-size:clamp(1.8rem,4vw,3rem);line-height:1.05}
+.de-section-intro{margin:0;color:#91b2c6}
+.de-feature-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+.de-feature{padding:24px;border-radius:18px;background:#102b3b;border-top:3px solid var(--de-red)}
+.de-feature:nth-child(2){border-top-color:var(--de-gold)}
+.de-feature:nth-child(3){border-top-color:#42d9ba}
+.de-feature-mark{display:block;margin-bottom:12px;color:var(--de-gold);font-size:.82rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+.de-feature h3{margin:0 0 10px;color:#fff;font-size:1.25rem}
+.de-feature p{margin:0;color:#a9c2d1}
+.de-highlight{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(240px,.75fr);gap:18px}
+.de-highlight-main{padding:34px;border-radius:22px;background:linear-gradient(135deg,#a62129,#451419);color:#fff}
+.de-highlight-main h2{margin:0 0 12px}
+.de-highlight-main p{margin:0;color:#ffe2e2}
+.de-highlight-side{display:flex;flex-direction:column;justify-content:center;padding:30px;border-radius:22px;background:var(--de-gold);color:#1a1609}
+.de-highlight-side strong{font-size:2rem;line-height:1}
+.de-highlight-side span{margin-top:10px}
+.de-staff-wrap,.de-members-wrap{overflow:hidden;border:1px solid #244d65;border-radius:18px;background:#091b26}
+.de-staff-wrap .division-staff-grid{padding:18px}
+.de-members-wrap .division-table{margin:0}
+.de-top-pilot{color:var(--de-gold);font-weight:800}
+@media(max-width:760px){.de-section-head,.de-highlight{grid-template-columns:1fr}.de-hero{border-radius:20px}.de-section{padding:24px 18px}.de-actions{align-items:stretch}.de-button{text-align:center}}
+</style>
+
+<main class="de-page">
+  <header class="de-hero">
+    <p class="de-eyebrow">🇩🇪 %division_code% · Virtual Flight Network</p>
+    <h1>Fliegen verbindet.<br><span>Deutschland hebt ab.</span></h1>
+    <p class="de-lead">Willkommen bei der %division_name%. Von kurzen Feierabendflügen bis zur Langstrecke: Wir verbinden Piloten, gemeinsame Erlebnisse und echten Teamgeist.</p>
+    <nav class="de-actions" aria-label="Division shortcuts">
+      <a class="de-button" href="/map.php">Live-Verkehr entdecken</a>
+      <a class="de-button de-button-secondary" href="/statistics.php">Unsere Statistiken</a>
+      <a class="de-button de-button-secondary" href="/index.php#download">Pilot Client laden</a>
+    </nav>
+  </header>
+
+  <section class="de-stat-grid" aria-label="Division statistics">
+    <article class="de-stat"><strong>%division_member_total%</strong><span>Mitglieder</span></article>
+    <article class="de-stat"><strong>%division_active_pilots%</strong><span>Jetzt online</span></article>
+    <article class="de-stat"><strong>%division_flights_total%</strong><span>Flüge gesamt</span></article>
+    <article class="de-stat"><strong>%division_flight_hours_total%</strong><span>Flugstunden</span></article>
+    <article class="de-stat"><strong>%division_flight_nm_total%</strong><span>Nautische Meilen</span></article>
+    <article class="de-stat"><strong>%division_landings_total%</strong><span>Landungen</span></article>
+  </section>
+
+  <section class="de-section">
+    <header class="de-section-head">
+      <h2>Eine Division.<br>Viele Möglichkeiten.</h2>
+      <p class="de-section-intro">Ob Einsteiger, erfahrener Airline-Pilot oder zukünftiger Lotse – bei uns findet jeder seinen Platz im Netzwerk.</p>
+    </header>
+    <div class="de-feature-grid">
+      <article class="de-feature"><span class="de-feature-mark">Community</span><h3>Gemeinsam statt allein</h3><p>Triff andere Luftfahrtbegeisterte, fliege gemeinsame Routen und werde Teil einer wachsenden deutschsprachigen Community.</p></article>
+      <article class="de-feature"><span class="de-feature-mark">Operations</span><h3>Flugbetrieb mit Tiefe</h3><p>Live-Verkehr, Flugpläne, Voice-Funk, Statistiken und ein persönliches Logbuch machen jeden Flug zu einem echten Netzwerkerlebnis.</p></article>
+      <article class="de-feature"><span class="de-feature-mark">Entwicklung</span><h3>Vom Cadet zum Profi</h3><p>Sammle Flugerfahrung, erreiche neue Ratings und entwickle dich als Pilot oder ATC Schritt für Schritt weiter.</p></article>
+    </div>
+  </section>
+
+  <section class="de-highlight">
+    <article class="de-highlight-main"><h2>Top-Pilot der Division</h2><p><span class="de-top-pilot">%division_top_pilot_name%</span> führt derzeit mit %division_top_pilot_hours% Flugstunden. Vielleicht steht hier bald dein Name.</p></article>
+    <aside class="de-highlight-side"><strong>%division_staff_total%</strong><span>Staff-Mitglieder kümmern sich um Community, Betrieb und Weiterentwicklung.</span></aside>
+  </section>
+
+  <section class="de-section">
+    <header class="de-section-head"><h2>Division Staff</h2><p class="de-section-intro">Die Ansprechpartner hinter der deutschen Division.</p></header>
+    <div class="de-staff-wrap">%division_staff%</div>
+  </section>
+
+  <section class="de-section" id="division-members">
+    <header class="de-section-head"><h2>Unsere Mitglieder</h2><p class="de-section-intro">Piloten und Lotsen, die die deutsche Division mit Leben füllen.</p></header>
+    <div class="de-members-wrap">%division_members%</div>
+  </section>
+</main>

@@ -586,6 +586,24 @@ if ($statusMessage !== '') {
             <p><?php echo htmlspecialchars(t('feature_messages_text')); ?></p>
         </div>
 
+        <div class="feature-card">
+            <div class="feature-icon">&#9992;</div>
+            <h3><?php echo htmlspecialchars(t('feature_multiplayer_title')); ?></h3>
+            <p><?php echo htmlspecialchars(t('feature_multiplayer_text')); ?></p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">&#128200;</div>
+            <h3><?php echo htmlspecialchars(t('feature_statistics_title')); ?></h3>
+            <p><?php echo htmlspecialchars(t('feature_statistics_text')); ?></p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">&#127758;</div>
+            <h3><?php echo htmlspecialchars(t('feature_divisions_title')); ?></h3>
+            <p><?php echo htmlspecialchars(t('feature_divisions_text')); ?></p>
+        </div>
+
     </section>
 
     <section class="download-section" id="download">

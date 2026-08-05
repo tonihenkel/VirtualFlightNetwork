@@ -52,7 +52,9 @@
                                 class="profile-country-flag"
                                 alt="">
 
-                            <?php echo h($divisionName); ?>
+                            <a href="division.php?code=<?php echo urlencode($divisionCode); ?>">
+                                <?php echo h($divisionName); ?>
+                            </a>
                             <?php if ($canShowLiveMapLink): ?>
                                 <br>
                                 <a class="profile-map-link"
@@ -330,7 +332,7 @@
                     <div class="role-grid">
                         <div class="role-item"><strong><?php echo htmlspecialchars(t('profile_mentor')); ?></strong>----</div>
                         <div class="role-item"><strong><?php echo htmlspecialchars(t('profile_examiner')); ?></strong>----</div>
-                        <div class="role-item"><strong><?php echo htmlspecialchars(t('profile_division')); ?></strong><?php echo h($divisionName); ?></div>
+                        <div class="role-item"><strong><?php echo htmlspecialchars(t('profile_division')); ?></strong><a href="division.php?code=<?php echo urlencode($divisionCode); ?>"><img src="images/flags/<?php echo strtolower($divisionCode); ?>.png" class="profile-country-flag" alt=""> <?php echo h($divisionName); ?></a></div>
                         <div class="role-item"><strong><?php echo htmlspecialchars(t('profile_staff_role')); ?></strong><?php echo $specialRating ? h($specialRating['name']) : '----'; ?></div>
                     </div>
                 </div>

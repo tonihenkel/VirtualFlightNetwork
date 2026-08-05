@@ -55,6 +55,25 @@ $adminOpPermission =
 $canViewAllFrequencies =
     $adminOpPermission > 3;
 
+$adminTodoLines = [];
+if ($adminOpPermission >= 5) {
+    $todoPath = __DIR__ . '/VFN_Master_TODO.md';
+    $loadedTodoLines = @file($todoPath, FILE_IGNORE_NEW_LINES);
+    if (is_array($loadedTodoLines)) {
+        $adminTodoLines = $loadedTodoLines;
+    }
+}
+
+function renderAdminTodoInline(string $text): string
+{
+    $escaped = htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+    return preg_replace(
+        '/`([^`]+)`/',
+        '<code>$1</code>',
+        $escaped
+    ) ?? $escaped;
+}
+
 if (empty($_SESSION['admin_csrf'])) {
     $_SESSION['admin_csrf'] = bin2hex(random_bytes(32));
 }
@@ -205,13 +224,14 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
 
         .admin-tabs {
             display: flex;
+            flex-wrap: wrap;
             gap: 1px;
             background: rgba(18, 51, 78, 0.6);
             border-bottom: 1px solid rgba(64, 139, 198, 0.38);
         }
 
         .admin-tab {
-            flex: 1;
+            flex: 1 1 145px;
             min-height: 52px;
             border: 0;
             color: #b9d3ef;
@@ -233,6 +253,62 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
 
         .admin-panel.is-active {
             display: block;
+        }
+
+        .todo-document {
+            display: grid;
+            gap: 7px;
+            max-height: 72vh;
+            overflow: auto;
+            padding-right: 8px;
+        }
+
+        .todo-document h1,
+        .todo-document h2,
+        .todo-document h3,
+        .todo-document h4 {
+            margin: 22px 0 5px;
+            color: #ffffff;
+        }
+
+        .todo-document h1:first-child {
+            margin-top: 0;
+        }
+
+        .todo-line {
+            color: #b9d3ef;
+            line-height: 1.55;
+        }
+
+        .todo-check {
+            display: flex;
+            gap: 9px;
+            align-items: flex-start;
+            padding: 6px 9px;
+            border-radius: 6px;
+            background: rgba(8, 25, 38, 0.72);
+        }
+
+        .todo-check.is-complete {
+            color: #79cfae;
+        }
+
+        .todo-check.is-partial {
+            color: #ffd27b;
+        }
+
+        .todo-marker {
+            flex: 0 0 20px;
+            text-align: center;
+            font-weight: 800;
+            color: #5baeff;
+        }
+
+        .todo-document code {
+            color: #7fd9ff;
+            background: #07131e;
+            padding: 2px 5px;
+            border-radius: 4px;
         }
 
         .admin-grid {
@@ -365,6 +441,28 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             background: #16324c;
             cursor: pointer;
             white-space: nowrap;
+        }
+
+        .chat-translate-button {
+            margin-top: 7px;
+            padding: 5px 9px;
+            min-height: 0;
+            font-size: 12px;
+            line-height: 1.2;
+        }
+
+        .chat-auto-translation {
+            margin-top: 7px;
+            padding: 7px 9px;
+            border-left: 3px solid #29a8ff;
+            color: #bfe3ff;
+            background: rgba(20, 91, 145, 0.18);
+            font-size: 13px;
+            line-height: 1.35;
+        }
+
+        .chat-auto-translation strong {
+            color: #65c7ff;
         }
 
         .admin-button.primary {
@@ -634,6 +732,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             <?php endif; ?>
             <a class="admin-button" href="flightplans.php"><?php echo htmlspecialchars(t('nav_flightplans')); ?></a>
             <a class="admin-button" href="moderation.php"><?php echo htmlspecialchars(t('moderation_center_title')); ?></a>
+            <?php if ($adminOpPermission >= 3): ?><a class="admin-button" href="admin_divisions.php"><?php echo htmlspecialchars(t('division_admin_title')); ?></a><?php endif; ?>
             <?php if ($adminOpPermission >= 5): ?><a class="admin-button" href="system_status.php"><?php echo htmlspecialchars(t('system_status_title')); ?></a><?php endif; ?>
         </p>
 
@@ -674,6 +773,9 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                     </button>
                     <button class="admin-tab" type="button" data-tab="database-reset">
                         <?php echo htmlspecialchars(t('admin_tab_database_reset')); ?>
+                    </button>
+                    <button class="admin-tab" type="button" data-tab="todo">
+                        <?php echo htmlspecialchars(t('admin_tab_todo')); ?>
                     </button>
                 <?php endif; ?>
             </div>
@@ -831,6 +933,23 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                         <button class="admin-button" type="button" id="voiceDisconnectButton">
                             <?php echo htmlspecialchars(t('admin_voice_disconnect')); ?>
                         </button>
+                    </div>
+
+                    <div class="admin-form-row" id="voiceMonitorLocationRow">
+                        <label class="admin-device-select">
+                            <span><?php echo htmlspecialchars(t('admin_voice_monitor_airport')); ?></span>
+                            <input id="voiceMonitorAirportIcao" class="admin-input"
+                                   type="text" maxlength="12" placeholder="EDDM">
+                        </label>
+                        <label class="admin-device-select">
+                            <span><?php echo htmlspecialchars(t('admin_voice_monitor_range')); ?></span>
+                            <select id="voiceMonitorRange" class="admin-input">
+                                <option value="5">5 NM</option>
+                                <option value="10">10 NM</option>
+                                <option value="25" selected>25 NM</option>
+                                <option value="50">50 NM</option>
+                            </select>
+                        </label>
                     </div>
 
                     <div class="admin-form-row">
@@ -1108,6 +1227,53 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                         <p id="databaseResetStatus"></p>
                     </div>
                 </div>
+
+                <div class="admin-panel" id="admin-panel-todo">
+                    <div class="admin-box">
+                        <h2><?php echo htmlspecialchars(t('admin_todo_title')); ?></h2>
+                        <p><?php echo htmlspecialchars(t('admin_todo_text')); ?></p>
+                        <?php if ($adminTodoLines === []): ?>
+                            <div class="notice">
+                                <?php echo htmlspecialchars(t('admin_todo_unavailable')); ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="todo-document">
+                                <?php foreach ($adminTodoLines as $todoLine): ?>
+                                    <?php
+                                    $trimmedTodoLine = trim($todoLine);
+                                    if ($trimmedTodoLine === '' || $trimmedTodoLine === '---') {
+                                        continue;
+                                    }
+                                    if (preg_match('/^(#{1,4})\s+(.+)$/', $trimmedTodoLine, $headingMatch)) {
+                                        $headingLevel = min(4, strlen($headingMatch[1]));
+                                        echo '<h' . $headingLevel . '>'
+                                            . renderAdminTodoInline($headingMatch[2])
+                                            . '</h' . $headingLevel . '>';
+                                        continue;
+                                    }
+                                    if (preg_match('/^(\s*)-\s+\[([xX -])\]\s+(.+)$/', $todoLine, $checkMatch)) {
+                                        $indent = min(5, intdiv(strlen($checkMatch[1]), 2));
+                                        $state = strtolower($checkMatch[2]);
+                                        $stateClass = $state === 'x'
+                                            ? ' is-complete'
+                                            : ($state === '-' ? ' is-partial' : '');
+                                        $marker = $state === 'x' ? '✓' : ($state === '-' ? '◐' : '□');
+                                        echo '<div class="todo-check' . $stateClass . '" style="margin-left:'
+                                            . ($indent * 18) . 'px"><span class="todo-marker">'
+                                            . $marker . '</span><span>'
+                                            . renderAdminTodoInline($checkMatch[3])
+                                            . '</span></div>';
+                                        continue;
+                                    }
+                                    echo '<div class="todo-line">'
+                                        . renderAdminTodoInline($trimmedTodoLine)
+                                        . '</div>';
+                                    ?>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
             <?php endif; ?>
         </section>
     <?php endif; ?>
@@ -1156,6 +1322,8 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         'voiceConnectionFailed' => t('admin_voice_connection_failed'),
         'voiceReceiving' => t('admin_voice_receiving'),
         'voiceAuthMissing' => t('admin_voice_auth_missing'),
+        'voiceChannelBusy' => t('admin_voice_channel_busy'),
+        'voiceMonitorReferenceMissing' => t('admin_voice_monitor_reference_missing'),
         'voicePushToTalk' => t('admin_voice_push_to_talk'),
         'voiceContinuousStart' => t('admin_voice_continuous_start'),
         'voiceContinuousStop' => t('admin_voice_continuous_stop'),
@@ -1176,7 +1344,12 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         'configurationInvalid' => t('admin_configuration_invalid'),
         'configurationLoading' => t('admin_configuration_loading'),
         'configurationTrue' => t('admin_configuration_true'),
-        'configurationFalse' => t('admin_configuration_false')
+        'configurationFalse' => t('admin_configuration_false'),
+        'translate' => t('admin_chat_translate'),
+        'showOriginal' => t('admin_chat_show_original'),
+        'translationLoading' => t('admin_chat_translation_loading'),
+        'translationFailed' => t('admin_chat_translation_failed'),
+        'automaticTranslation' => t('admin_chat_automatic_translation')
     ], JSON_UNESCAPED_UNICODE); ?>;
     const CONFIGURATION_LABELS = <?php echo json_encode([
         'categories' => [
@@ -1213,6 +1386,10 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         ]
     ], JSON_UNESCAPED_UNICODE); ?>;
     const ADMIN_CSRF = <?php echo json_encode((string)$_SESSION['admin_csrf']); ?>;
+    const ADMIN_LANGUAGE = <?php echo json_encode(
+        in_array(($_SESSION['language'] ?? 'en'), ['de', 'en'], true)
+            ? $_SESSION['language'] : 'en'
+    ); ?>;
     const CAN_MANAGE_CHAT_FILTER = <?php echo $adminOpPermission >= 4 ? 'true' : 'false'; ?>;
     const CAN_MANAGE_MODERATION = <?php echo $adminOpPermission >= 4 ? 'true' : 'false'; ?>;
     const CAN_RESET_DATABASE = <?php echo $adminOpPermission >= 5 ? 'true' : 'false'; ?>;
@@ -1376,13 +1553,95 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 '<td class="frequency">' + escapeHtml(message.frequency) + '</td>' +
                 '<td class="sender">' + sender + '</td>' +
                 '<td>' + escapeHtml(message.type) + '</td>' +
-                '<td class="' + typeClass + '">' +
+                '<td class="' + typeClass + '"><span class="chat-message-text">' +
                 (
                     message.was_filtered
                         ? highlightFilteredChatText(message.original_text, message.text)
                         : escapeHtml(message.text)
                 ) +
+                '</span><br><button type="button" class="admin-button chat-translate-button">' +
+                escapeHtml(ADMIN_I18N.translate) + '</button>' +
                 '</td>';
+
+            const translateButton = row.querySelector('.chat-translate-button');
+            const messageText = row.querySelector('.chat-message-text');
+            const originalMarkup = messageText.innerHTML;
+            let translatedText = '';
+            let translationPromise = null;
+            const sourceText = String(message.original_text || message.text || '');
+
+            function loadTranslation() {
+                if (translationPromise !== null) {
+                    return translationPromise;
+                }
+                const body = new URLSearchParams();
+                body.set('csrf', ADMIN_CSRF);
+                body.set('target', ADMIN_LANGUAGE);
+                body.set('text', sourceText);
+                translationPromise = fetch('execute/admin_chat_translate.php', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},
+                    body: body.toString()
+                }).then(async function(response) {
+                    const data = await response.json();
+                    if (!response.ok || !data.success) {
+                        throw new Error(data.message || 'translation_failed');
+                    }
+                    translatedText = String(data.translated_text || '');
+                    return data;
+                });
+                return translationPromise;
+            }
+
+            // Automatically translate clearly foreign scripts. Latin-script
+            // messages retain the manual control to avoid translating every
+            // historic row and exhausting the external service quota.
+            if (/[\u0370-\u052f\u0600-\u06ff\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/u.test(sourceText)) {
+                loadTranslation().then(function() {
+                    if (translatedText === '' || translatedText.localeCompare(sourceText, undefined, {sensitivity:'base'}) === 0) {
+                        return;
+                    }
+                    const automatic = document.createElement('div');
+                    automatic.className = 'chat-auto-translation';
+                    const label = document.createElement('strong');
+                    label.textContent = ADMIN_I18N.automaticTranslation + ': ';
+                    automatic.appendChild(label);
+                    automatic.appendChild(document.createTextNode(translatedText));
+                    messageText.parentNode.insertBefore(automatic, translateButton);
+                }).catch(function() {
+                    // Keep the original message usable if translation is offline.
+                });
+            }
+
+            translateButton.addEventListener('click', async function() {
+                if (translateButton.dataset.translated === '1') {
+                    messageText.innerHTML = originalMarkup;
+                    translateButton.dataset.translated = '0';
+                    translateButton.textContent = ADMIN_I18N.translate;
+                    return;
+                }
+                if (translatedText !== '') {
+                    messageText.textContent = translatedText;
+                    translateButton.dataset.translated = '1';
+                    translateButton.textContent = ADMIN_I18N.showOriginal;
+                    return;
+                }
+                translateButton.disabled = true;
+                translateButton.textContent = ADMIN_I18N.translationLoading;
+                try {
+                    await loadTranslation();
+                    messageText.textContent = translatedText;
+                    translateButton.dataset.translated = '1';
+                    translateButton.textContent = ADMIN_I18N.showOriginal;
+                } catch (error) {
+                    translateButton.textContent = ADMIN_I18N.translationFailed;
+                    setTimeout(function() {
+                        translateButton.textContent = ADMIN_I18N.translate;
+                    }, 2500);
+                } finally {
+                    translateButton.disabled = false;
+                }
+            });
 
             rows.insertBefore(row, rows.firstChild);
         });
@@ -1516,10 +1775,11 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         (data.divisions || []).forEach(function(division) {
             const option = document.createElement('option');
             option.value = division.code;
-            option.textContent =
+            option.textContent = divisionFlagEmoji(division.code) + ' ' + (
                 division.name && division.name !== division.code
                     ? division.code + ' - ' + division.name
-                    : division.code;
+                    : division.code
+            );
             divisionSelect.appendChild(option);
         });
 
@@ -1593,7 +1853,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                     encodeURIComponent(player.id) + '">' + escapeHtml(displayName) + '</a></td>' +
                     '<td>' + escapeHtml(player.email || '-') + '</td>' +
                     '<td>' + escapeHtml(player.country || '-') + '</td>' +
-                    '<td>' + escapeHtml(division) + '</td>' +
+                    '<td>' + divisionFlagHtml(player.division) + escapeHtml(division) + '</td>' +
                     '<td>' + ranks.split('<br>').map(escapeHtml).join('<br>') + '</td>' +
                     '<td>' + escapeHtml(player.op_permission) + '</td>' +
                     '<td><span class="player-status ' + (player.active ? 'active' : '') + '">' +
@@ -1678,8 +1938,8 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                     '<td><a class="player-profile-link" href="profile.php?id=' +
                     encodeURIComponent(item.user_id) + '">' + escapeHtml(name) + '</a></td>' +
                     '<td>' + escapeHtml(item.email) + '</td>' +
-                    '<td>' + escapeHtml(item.current_division) + '</td>' +
-                    '<td class="frequency">' + escapeHtml(item.requested_division) + '</td>' +
+                    '<td>' + divisionFlagHtml(item.current_division) + escapeHtml(item.current_division) + '</td>' +
+                    '<td class="frequency">' + divisionFlagHtml(item.requested_division) + escapeHtml(item.requested_division) + '</td>' +
                     '<td>' + escapeHtml(item.reason) + '</td>' +
                     '<td>' + escapeHtml(item.created_at) + '</td>' +
                     '<td><button class="admin-button primary" data-transfer-action="approve" data-transfer-id="' +
@@ -1951,6 +2211,28 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#039;');
+    }
+
+    function divisionFlagHtml(code)
+    {
+        const normalized = String(code || '').trim().toLowerCase();
+        if (!/^[a-z0-9-]{2,10}$/.test(normalized)) {
+            return '';
+        }
+        return '<img src="images/flags/' + encodeURIComponent(normalized)
+            + '.png" alt="" style="width:25px;max-height:18px;object-fit:cover;vertical-align:-4px;margin-right:6px">';
+    }
+
+    function divisionFlagEmoji(code)
+    {
+        const normalized = String(code || '').trim().toUpperCase();
+        if (!/^[A-Z]{2}$/.test(normalized)) {
+            return '🏳';
+        }
+        return String.fromCodePoint(
+            0x1F1E6 + normalized.charCodeAt(0) - 65,
+            0x1F1E6 + normalized.charCodeAt(1) - 65
+        );
     }
 
     function highlightFilteredChatText(original, filtered)
@@ -2843,6 +3125,29 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         return true;
     }
 
+    function getVoiceMonitorPayload(frequency)
+    {
+        const isGlobalUnicom = frequency === '122.800';
+        return {
+            type: 'monitor',
+            frequency,
+            global: isGlobalUnicom,
+            airportIcao: isGlobalUnicom
+                ? ''
+                : document.getElementById('voiceMonitorAirportIcao').value.trim().toUpperCase(),
+            rangeNm: Number(document.getElementById('voiceMonitorRange').value)
+        };
+    }
+
+    function refreshVoiceMonitorLocationFields()
+    {
+        const frequency = normalizeFrequency(
+            document.getElementById('voiceFrequencyInput').value
+        ) || voiceCurrentFrequency;
+        document.getElementById('voiceMonitorLocationRow').hidden =
+            frequency === '122.800';
+    }
+
     function connectVoiceSocket(frequency)
     {
         if (voiceConnectPromise) {
@@ -2880,11 +3185,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             }
 
             if (voiceSocket && voiceConnected) {
-                sendVoiceSocket({
-                    type: 'monitor',
-                    frequency,
-                    global: false
-                });
+                sendVoiceSocket(getVoiceMonitorPayload(frequency));
                 finish();
                 return;
             }
@@ -2932,11 +3233,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
 
                 if (payload.type === 'hello' && payload.success) {
                     voiceConnected = true;
-                    sendVoiceSocket({
-                        type: 'monitor',
-                        frequency,
-                        global: false
-                    });
+                    sendVoiceSocket(getVoiceMonitorPayload(frequency));
                     if (CAN_CONTROL_VOICE_TEST) {
                         sendVoiceSocket({type: 'test_source_status'});
                     }
@@ -2963,6 +3260,19 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 }
 
                 if (payload.type === 'rx') {
+                    return;
+                }
+
+                if (payload.type === 'tx' && payload.busy) {
+                    voiceTransmitting = false;
+                    document.getElementById('voiceTransmitButton')
+                        .classList.remove('is-transmitting');
+                    updateVoiceTransmitButton();
+                    stopVoiceInputMonitor();
+                    document.getElementById('voiceReceiverStatus').textContent =
+                        ADMIN_I18N.voiceChannelBusy.replace(
+                            '{callsign}', String(payload.from || 'RADIO')
+                        );
                     return;
                 }
 
@@ -3333,6 +3643,11 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             alert(ADMIN_I18N.invalidFrequency);
             return;
         }
+        if (frequency !== '122.800' &&
+            !document.getElementById('voiceMonitorAirportIcao').value.trim()) {
+            alert(ADMIN_I18N.voiceMonitorReferenceMissing);
+            return;
+        }
 
         voiceCurrentFrequency =
             frequency;
@@ -3544,6 +3859,25 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 .catch(function() {});
         }, 350);
     }
+
+
+    const voiceMonitorAirportIcao = document.getElementById('voiceMonitorAirportIcao');
+    const voiceMonitorRange = document.getElementById('voiceMonitorRange');
+    voiceMonitorAirportIcao.value =
+        localStorage.getItem('vfn_admin_voice_monitor_airport') || '';
+    voiceMonitorRange.value =
+        localStorage.getItem('vfn_admin_voice_monitor_range') || '25';
+    voiceMonitorAirportIcao.addEventListener('input', function() {
+        this.value = this.value.toUpperCase();
+        localStorage.setItem('vfn_admin_voice_monitor_airport', this.value.trim());
+    });
+    voiceMonitorRange.addEventListener('change', function() {
+        localStorage.setItem('vfn_admin_voice_monitor_range', this.value);
+    });
+    document.getElementById('voiceFrequencyInput').addEventListener(
+        'input', refreshVoiceMonitorLocationFields
+    );
+    refreshVoiceMonitorLocationFields();
 </script>
 <?php endif; ?>
 </body>

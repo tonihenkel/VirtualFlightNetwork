@@ -23,8 +23,10 @@ try
     $stmt = $pdo->query(
         "SELECT
             code,
-            name
+            name,
+            join_enabled
          FROM divisions
+         WHERE is_active = 1
          ORDER BY name"
     );
 
@@ -35,6 +37,14 @@ try
 }
 catch (Exception $e)
 {
+}
+
+$firstOpenDivision = null;
+foreach ($divisions as $divisionOption) {
+    if ((int)($divisionOption['join_enabled'] ?? 1) === 1) {
+        $firstOpenDivision = $divisionOption;
+        break;
+    }
 }
 
 ?>
@@ -189,17 +199,17 @@ catch (Exception $e)
                 <input type="hidden"
                     name="division_code"
                     id="division_code"
-                    value="<?php echo htmlspecialchars($divisions[0]['code'] ?? ''); ?>"
+                    value="<?php echo htmlspecialchars($firstOpenDivision['code'] ?? ''); ?>"
                     required>
 
                 <div class="vfn-dropdown-selected">
 
                     <img
-                        src="images/flags/<?php echo strtolower($divisions[0]['code']); ?>.png"
+                        src="images/flags/<?php echo strtolower($firstOpenDivision['code'] ?? ''); ?>.png"
                         class="country-flag"
                         alt=""> <?php
                     echo htmlspecialchars(
-                        $divisions[0]['name']
+                        $firstOpenDivision['name']
                         ?? 'Select Division'
                     );
                     ?>
@@ -211,13 +221,14 @@ catch (Exception $e)
                     <?php foreach ($divisions as $division): ?>
 
                         <div
-                            class="vfn-dropdown-item"
+                            class="vfn-dropdown-item<?php echo (int)($division['join_enabled'] ?? 1) === 1 ? '' : ' disabled'; ?>"
+                            data-disabled="<?php echo (int)($division['join_enabled'] ?? 1) === 1 ? '0' : '1'; ?>"
                             data-value="<?php echo htmlspecialchars($division['code']); ?>">
 
                             <img
                                 src="images/flags/<?php echo strtolower($division['code']); ?>.png"
                                 class="country-flag"
-                                alt=""> <?php echo htmlspecialchars($division['name']); ?>
+                                alt=""> <?php echo htmlspecialchars($division['name']); ?><?php if ((int)($division['join_enabled'] ?? 1) !== 1): ?> (<?php echo htmlspecialchars(t('division_closed')); ?>)<?php endif; ?>
 
                         </div>
 
@@ -532,6 +543,15 @@ catch (Exception $e)
     cursor: pointer;
 }
 
+.vfn-dropdown-item.disabled {
+    opacity: .48;
+    cursor: not-allowed;
+}
+
+.vfn-dropdown-item.disabled:hover {
+    background: transparent;
+}
+
 .country-flag {
     width: 20px;
     height: 14px;
@@ -656,6 +676,10 @@ document
                         function(event)
                         {
                             event.stopPropagation();
+
+                            if (item.dataset.disabled === '1') {
+                                return;
+                            }
 
                             selected.innerHTML =
                                 item.innerHTML;

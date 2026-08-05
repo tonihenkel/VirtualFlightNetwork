@@ -1,6 +1,6 @@
 # Virtual Flight Network (VFN) – Master-TODO
 
-Letzte Prüfung: 02.08.2026
+Letzte Prüfung: 05.08.2026
 
 ## Status
 
@@ -170,9 +170,18 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
   - [ ] Weltweite reale CTR-, CTA- und TMA-Lufträume aus einer zulässigen Quelle importieren
   - [ ] Eigenes GeoJSON-Format und Admin-Import für operative VFN-Untersektoren bereitstellen
   - [ ] FIR/ACC-, APP- und weitere Sektorebenen mit Höhenband und Bezeichnung unterscheiden
-- [ ] Airways mit allen Segmenten auf der Karte darstellen
+- [x] Airways mit allen Segmenten auf der Karte darstellen
+  - [x] Airways über die AIRAC-Suche als eigenen Ergebnistyp finden
+  - [x] Alle verfügbaren Fixes und zusammenhängenden Teilstrecken einer ausgewählten Airway darstellen
+  - [x] Gleichnamige Airways verschiedener Weltregionen ohne falsche interkontinentale Verbindung trennen
+  - [x] Airway-Details serverseitig zwischenspeichern und Wegpunkte auf der Karte beschriften
 - [x] Direkt verlinkbare Kartenansicht über stabile Benutzer-ID
-- [-] Automatische Bereinigung veralteter Positionen und Tracks
+- [x] Automatische Bereinigung veralteter Positionen und Tracks
+  - [x] Veraltete Live-Positionen nur bei inaktiver oder ebenfalls veralteter Sitzung entfernen
+  - [x] Verwaiste Trackpunkte ohne zugehörigen Flug nach sieben Tagen löschen
+  - [x] Abgeschlossene Tracks nach 30 beziehungsweise 180 Tagen verlustarm verdichten
+  - [x] Sehr alte Tracks abgebrochener Flüge nach 180 Tagen entfernen
+  - [x] Täglichen, konkurrenzsicheren Wartungslauf mit Systemstatus-Protokollierung einbauen
 - [x] Eigene Airport-Traffic-Seiten
   - [x] Stammdaten, Kartenposition und aktuelles METAR
   - [x] Sichtbarer Live-Verkehr sowie letzte abgeschlossene Flüge
@@ -180,7 +189,11 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
   - [x] Top-Routen, Flugzeugtypen und Piloten
   - [x] Verlinkung aus Karte, Flugbuch, Flugplänen und Statistik
 - [x] Netzwerkstatistikseite mit Top Airports, Piloten-Herkunftsländern und Movement-Ländern
-- [ ] Erweiterte Flugverlaufsanalyse
+- [x] Erweiterte Flugverlaufsanalyse
+  - [x] Höhen- und Geschwindigkeitsprofil auf der Flugdetailseite darstellen
+  - [x] Maximale Höhe, Durchschnitts-/Maximalgeschwindigkeit und Trackdistanz berechnen
+  - [x] Maximale Steig-/Sinkrate und Zeitanteile der Flugphasen auswerten
+  - [x] Streckeneffizienz aus direkter Distanz und tatsächlich geflogenem Track berechnen
 - [x] Zeitraumabhängige Traffic-Heatmap direkt in `map.php`
 - [x] Langfristiges Flugbuch mit einzelnen aktiven, abgeschlossenen und abgebrochenen Flügen
 
@@ -304,6 +317,7 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Divisionen direkt aus MySQL
 - [x] Verlinkung zum Spielerprofil
 - [x] Letzten Admin-Reiter nach F5 wiederherstellen
+- [x] Master-TODO als sicher gerenderter OP-Level-5-Reiter im Admin Panel anzeigen
 - [x] OP-Level-5-Datenbank-Reset mit Passwort- und Textbestätigung
   - [x] `airports`, `divisions` und `chat_filter_words` erhalten
   - [x] Bootstrap-Account `admin` mit OP-Level 5 für den Wiederzugang neu anlegen
@@ -337,8 +351,13 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
   - [x] Bis zu 100 Flugzeuge innerhalb von 30 NM über den Traffic-Endpunkt bereitstellen
   - [x] Grundlegender Laufzeittest mit zwei verbundenen Simulatoren unter X-Plane 11 und 12
   - [x] X-CSL-Modell- und Livery-Test mit zwei verbundenen Simulatoren
-  - [x] Fahrwerk, Klappen, Taxi-, Landes-, Beacon-, Strobe- und Navigationslichter übertragen
-  - [ ] Abschließender Zwei-Simulator-Test der letzten Änderungen verschoben: Fahrwerk, Klappen, Lichter, 30-NM-Liste, Kamera-Follow, Kontextmoderation, Spectator-Sichtbarkeit und wechselnde Labels prüfen
+  - [x] Fahrwerk, Klappen, Vorflügel, Stör-/Bremsklappen und Steuerflächen übertragen
+  - [x] Schub, Schubumkehr, Triebwerks-/Propellerdrehung, Bugradlenkung und Raddrehung übertragen
+  - [x] Taxi-, Beacon-, Strobe- und Navigationslichter übertragen
+  - [x] Touchdown-Animation und Schwenkflügelzustand übertragen
+  - [x] TCAS-Ziele mit Callsign, ICAO-Typ, Squawk und Transponderstatus über XPMP2 bereitstellen
+  - [x] Automatische Jet-Kondensstreifen zwischen 25.000 und 45.000 ft einschließlich mehrerer Triebwerksstreifen
+  - [x] Dynamische Wake-Turbulence-Daten für X-Plane 12; kompatibler Betrieb ohne Wake-Datenrefs unter X-Plane 11
 - [-] Aircraft Visibility
   - [x] Nur aktive Positionen der letzten 10 Sekunden
   - [x] Unsichtbare Staff-Sitzungen bleiben für OP 0 und OP 1 verborgen
@@ -367,6 +386,76 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
   - [x] Fehlgeschlagene Polls behalten vorhandene Flugzeuge
   - [x] Nicht mehr gelieferte Flugzeuge werden nach drei erfolgreichen Polls entfernt
   - [ ] Telemetrie und sichtbare Diagnose fuer Traffic-Verbindungsfehler
+
+## Verbindlicher Zwei-Simulator-Abnahmetest (XP11 + XP12)
+
+### Vorbereitung und Verbindung
+
+- [ ] Auf beiden Simulatoren dieselbe aktuelle VFN-XPL und dasselbe X-CSL-Paket installieren
+- [ ] X-Plane 11.55r2 und X-Plane 12.1.3-r2 jeweils einmal als Sender und Empfänger verwenden
+- [ ] Gegenseitige Darstellung nach Login sowie Entfernung nach Logout/Verbindungsabbruch prüfen
+- [ ] Wechsel des Flugzeugtyps im laufenden Betrieb und erneutes Model-Matching prüfen
+- [ ] Passende ICAO-Modelle/Liveries sowie ähnliches Modell und B738-Fallback bei unbekanntem Typ prüfen
+- [ ] Ruhige Interpolation beim Rollen, Start, Steigflug, Kurvenflug, Sinkflug und Aufsetzen beobachten
+- [ ] Verhalten bei kurzzeitigem API-/Traffic-Ausfall und anschließender Wiederverbindung prüfen
+
+### Sichtbare Flugzeugzustände
+
+- [ ] Fahrwerk vollständig ein-/ausfahren; insbesondere A380/A388 und weitere komplexe Add-ons prüfen
+- [ ] Klappen und Vorflügel stufenweise ein-/ausfahren
+- [ ] Störklappen, Speedbrakes und Ground Spoiler prüfen
+- [ ] Schubumkehr nach der Landung und anschließendes Einfahren prüfen
+- [ ] Querruder, Höhenruder und Seitenruder in beide Richtungen prüfen
+- [ ] Bugradlenkung, rollende Räder sowie weiterhin drehende Propeller/Triebwerke prüfen
+- [ ] Taxi-, Positions-, Beacon- und Strobe-Lichter einzeln schalten und auf dem Gegensimulator prüfen
+- [ ] Touchdown-Animation nur beim tatsächlichen Aufsetzen prüfen
+- [ ] Schwenkflügel mit einem geeigneten Flugzeugtyp prüfen
+- [ ] Sicherstellen, dass das unterdrückte CSL-Landelicht keinen extremen Bloom im Flügel-/Fahrwerksbereich mehr erzeugt
+
+### TCAS, Kondensstreifen und Wake
+
+- [ ] Transponder OFF/STBY: Flugzeug erscheint nicht als aktives TCAS-Ziel
+- [ ] Transponder ON: Ziel erscheint mit richtigem Callsign, Flugzeugtyp und Squawk im TCAS
+- [ ] Transpondercode und Modus während der Verbindung ändern und Aktualisierung kontrollieren
+- [ ] TCAS mit einem weiteren installierten Traffic-Plugin testen; verständliche Meldung bei belegter TCAS-Kontrolle prüfen
+- [ ] Jet unter 25.000 ft ohne und zwischen 25.000–45.000 ft mit Kondensstreifen prüfen
+- [ ] Mehrstrahliges Flugzeug auf plausible Anzahl/Position der Kondensstreifen prüfen
+- [ ] Propellerflugzeug darf keine Jet-Kondensstreifen erhalten
+- [ ] Wake-Turbulence hinter Light-, Medium-, Heavy- und Super-Flugzeugen in X-Plane 12 prüfen
+- [ ] X-Plane 11 muss trotz fehlender Wake-Datenrefs stabil bleiben
+
+### Spielerliste, Sichtbarkeit und Kamera
+
+- [x] 30-NM-Spielerliste, laufende Distanz, Entfernen außerhalb der Reichweite und Rückkehr aus dem Kamera-Follow geprüft
+- [ ] Wechselnde Labels: Callsign, ICAO-Typ, Route und Entfernung prüfen
+- [ ] Kamera-Follow starten/stoppen sowie Zoom per Mausrad und Orbit mit rechter Maustaste prüfen
+- [ ] Spectator bleibt unsichtbar und darf nur für Staff ab OP-Level 1 in der Liste erscheinen
+- [ ] Unsichtbar-Modus und OP-Hierarchie mit OP 0, OP 1, OP 2 und höher prüfen
+- [ ] Option „Unsichtbare Spieler ausblenden“ in Plugin und Karte prüfen
+- [ ] PM für normale Spieler sowie Verwarnung, Kick und Bann über das Kontextmenü mit Staff-Konto prüfen
+
+### Chat und Sitzungszustand
+
+- [ ] Plugin-zu-Plugin-Chat in beide Richtungen: beim Sender und Empfänger jeweils genau eine Nachricht
+- [ ] Frequenzwechsel: keine alten Nachrichten/Awards erneut als neue Nachrichten ausgeben
+- [ ] Staff-Nachricht aus dem Webmonitor auf UNICOM und einer anderen Frequenz im Plugin empfangen
+- [ ] Globale Announcement-Nachricht im Plugin empfangen
+- [ ] Private Nachricht zwischen Plugin und Web-Postfach in beide Richtungen prüfen
+- [ ] Umlaute/UTF-8 und Schimpfwortmaskierung im Plugin prüfen
+- [ ] Spam-Kick und sofortigen Wechsel zurück zum Loginfenster ohne einminütige Verzögerung prüfen
+
+### Voice
+
+- [ ] Plugin-zu-Plugin-Audio in beide Richtungen auf derselben aktiven COM-Frequenz prüfen
+- [ ] COM1/COM2-Umschaltung und getrennte PTT-Zuordnung prüfen
+- [ ] PTT, Dauersenden und TX/RX-Pegel auf beiden Geräten prüfen
+- [ ] Ohne PTT/Dauersenden darf trotz Mikrofonpegel kein Audio übertragen werden
+- [ ] Browser Voice Monitor ↔ Plugin in beide Richtungen prüfen
+- [ ] UNICOM global sowie normale Frequenz innerhalb und außerhalb der eingestellten Reichweite prüfen
+- [ ] Gleiche Frequenz an zwei weit entfernten Referenzorten muss getrennt funktionieren
+- [ ] Kanalbelegung: innerhalb derselben Funkzelle darf nur ein Sender gleichzeitig senden
+- [ ] Spectator darf Voice empfangen, aber nicht senden
+- [ ] Mehrminütigen Betrieb auf Aussetzer, Verzögerung, Kratzen und erforderliches F5/Neuverbinden prüfen
 
 # 12. Statistiksystem
 
@@ -473,7 +562,7 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [ ] CI-Build und Syntaxprüfungen über GitHub Actions
 - [ ] Staging-Umgebung vor Änderungen an Produktion
 - [ ] Changelog und Release-Prozess
-- [x] Startseite um Voice, Chat, Flugbuch, Flugpläne und D-ATIS erweitert
+- [x] Startseite um Voice, Chat, Flugbuch, Flugpläne, D-ATIS, Multiplayer/TCAS, Statistiken und Divisionen erweitert
 
 # 16. Zukunft
 

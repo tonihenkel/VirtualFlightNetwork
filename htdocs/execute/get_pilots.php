@@ -93,6 +93,7 @@ try {
             p.last_update,
             u.country_code,
             u.division_code,
+            d.name AS division_name,
 
             s.is_invisible,
             s.is_spectator,
@@ -125,6 +126,9 @@ try {
 
          INNER JOIN users u
             ON u.id = s.user_id
+
+         LEFT JOIN divisions d
+            ON d.code = u.division_code
 
          LEFT JOIN pilot_flightplans fp
             ON fp.session_token = p.session_token

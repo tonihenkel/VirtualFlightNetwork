@@ -146,7 +146,9 @@ function updateClientState(client, payload) {
   client.com2 = normalizeFrequency(payload.com2) || client.com2;
   client.txCom = Number(payload.txCom || client.txCom) === 2 ? 2 : 1;
   if (typeof payload.ptt === 'boolean') {
-    client.ptt = client.spectator ? false : payload.ptt;
+    // Starting a transmission must pass the channel-occupancy check below.
+    // State packets may release PTT, but must never bypass that arbitration.
+    if (client.spectator || payload.ptt === false) client.ptt = false;
   }
 
   const lat = Number(payload.latitude);
@@ -166,8 +168,17 @@ function canReceive(sender, receiver, frequency) {
   }
 
   if (receiver.monitor) {
-    return receiver.opPermission >= 1 &&
-      (receiver.monitorFrequency === frequency || receiver.monitorGlobal);
+    if (receiver.opPermission < 1 ||
+        (receiver.monitorFrequency !== frequency && !receiver.monitorGlobal)) {
+      return false;
+    }
+    if (receiver.monitorGlobal) return true;
+    return distanceNm(
+      sender.latitude,
+      sender.longitude,
+      receiver.monitorLatitude,
+      receiver.monitorLongitude
+    ) <= receiver.monitorRangeNm;
   }
 
   if (receiver.com1 !== frequency && receiver.com2 !== frequency) {
@@ -186,6 +197,68 @@ function canReceive(sender, receiver, frequency) {
     receiver.latitude,
     receiver.longitude
   ) <= rangeNm;
+}
+
+function transmittingFrequency(client, requestedFrequency = null) {
+  return normalizeFrequency(requestedFrequency) ||
+    (client.txCom === 2 ? client.com2 : client.com1);
+}
+
+function transmissionRegionsOverlap(first, second, frequency) {
+  if (!first || !second) return false;
+  if (frequency === config.unicomFrequency && config.unicomGlobal) return true;
+
+  const firstRange = getFrequencyRangeNm(frequency, first.station, first.rangeNm);
+  const secondRange = getFrequencyRangeNm(frequency, second.station, second.rangeNm);
+  if (firstRange === Infinity || secondRange === Infinity) return true;
+
+  const separation = distanceNm(
+    first.latitude, first.longitude, second.latitude, second.longitude
+  );
+  // Two transmitters share a channel whenever their radio coverage areas
+  // overlap. Same frequencies may still be used simultaneously in distant
+  // regions, e.g. Berlin and Tokyo.
+  return separation <= firstRange + secondRange;
+}
+
+function findBlockingTransmitter(client, frequency) {
+  for (const other of clients.values()) {
+    if (other.id === client.id || !other.authenticated || !other.ptt) continue;
+    if (transmittingFrequency(other) !== frequency) continue;
+    if (transmissionRegionsOverlap(client, other, frequency)) return other;
+  }
+  if (testBroadcast && testBroadcast.frequency === frequency &&
+      transmissionRegionsOverlap(client, testBroadcast.sender, frequency)) {
+    return testBroadcast.sender;
+  }
+  return null;
+}
+
+function requestTransmission(client, payload) {
+  client.txCom = Number(payload.txCom || client.txCom) === 2 ? 2 : 1;
+  const frequency = transmittingFrequency(client, payload.frequency);
+  if (client.spectator || !frequency) {
+    client.ptt = false;
+    send(client.ws, { type: 'tx', active: false, receiveOnly: client.spectator });
+    return false;
+  }
+  const blocker = findBlockingTransmitter(client, frequency);
+  if (blocker) {
+    client.ptt = false;
+    const now = Date.now();
+    if (!client.lastBusyNoticeAt || now - client.lastBusyNoticeAt >= 1000) {
+      client.lastBusyNoticeAt = now;
+      send(client.ws, {
+        type: 'tx', active: false, busy: true, frequency,
+        from: blocker.callsign || 'RADIO'
+      });
+    }
+    return false;
+  }
+  client.ptt = true;
+  client.lastPttAt = new Date().toISOString();
+  send(client.ws, { type: 'tx', active: true, frequency });
+  return true;
 }
 
 function forwardAudio(sender, payload) {
@@ -376,6 +449,10 @@ async function startTestBroadcast(client, payload) {
     callsign: 'VFN-AUDIO', txCom: 1, com1: frequency, com2: frequency,
     latitude, longitude, station, rangeNm, audioPacketsForwarded: 0
   };
+  const blocker = findBlockingTransmitter(sender, frequency);
+  if (blocker) {
+    throw new Error(`Frequency is currently occupied by ${blocker.callsign || 'another station'}.`);
+  }
   testBroadcast = {
     process, sender, frequency, loop,
     sourceName: sourceType === 'upload' ? path.basename(input) : new URL(input).hostname,
@@ -417,7 +494,7 @@ async function startTestBroadcast(client, payload) {
   broadcastTestStatus();
 }
 
-function handleMonitor(client, payload) {
+async function handleMonitor(client, payload) {
   if (client.opPermission < 1) {
     send(client.ws, {
       type: 'error',
@@ -427,14 +504,41 @@ function handleMonitor(client, payload) {
   }
 
   client.monitor = true;
-  client.monitorGlobal = payload.global === true;
   client.monitorFrequency = normalizeFrequency(payload.frequency);
+  if (!client.monitorFrequency) {
+    throw new Error('Invalid monitor frequency.');
+  }
+  client.monitorGlobal = client.monitorFrequency === config.unicomFrequency &&
+    config.unicomGlobal;
+  client.monitorLatitude = NaN;
+  client.monitorLongitude = NaN;
+  client.monitorRangeNm = null;
+  client.monitorLocationName = client.monitorGlobal ? 'UNICOM' : '';
+  if (!client.monitorGlobal) {
+    const airport = await resolveAirport(payload.airportIcao);
+    const rangeNm = Number(payload.rangeNm);
+    if (![5, 10, 25, 50].includes(rangeNm)) {
+      throw new Error('Invalid monitor range.');
+    }
+    client.monitorLatitude = Number(airport.latitude_deg);
+    client.monitorLongitude = Number(airport.longitude_deg);
+    client.monitorRangeNm = rangeNm;
+    client.monitorLocationName = String(airport.ident || '').toUpperCase();
+    // A staff transmission from the browser originates at the configured
+    // receiver site and participates in the same regional channel lock.
+    client.latitude = client.monitorLatitude;
+    client.longitude = client.monitorLongitude;
+    client.station = client.monitorLocationName;
+    client.rangeNm = rangeNm;
+  }
 
   send(client.ws, {
     type: 'monitor',
     success: true,
     frequency: client.monitorFrequency,
-    global: client.monitorGlobal
+    global: client.monitorGlobal,
+    airportIcao: client.monitorLocationName,
+    rangeNm: client.monitorRangeNm
   });
 }
 
@@ -471,6 +575,8 @@ const server = createHttpServer((req, res) => {
         monitor: client.monitor,
         monitorFrequency: client.monitorFrequency,
         monitorGlobal: client.monitorGlobal,
+        monitorLocationName: client.monitorLocationName,
+        monitorRangeNm: client.monitorRangeNm,
         audioPacketsReceived: client.audioPacketsReceived,
         audioPacketsForwarded: client.audioPacketsForwarded,
         lastAudioAt: client.lastAudioAt,
@@ -510,11 +616,16 @@ wss.on('connection', (ws) => {
     monitor: false,
     monitorFrequency: null,
     monitorGlobal: false,
+    monitorLatitude: NaN,
+    monitorLongitude: NaN,
+    monitorRangeNm: null,
+    monitorLocationName: '',
     messageQueue: Promise.resolve(),
     audioPacketsReceived: 0,
     audioPacketsForwarded: 0,
     lastAudioAt: null,
-    lastPttAt: null
+    lastPttAt: null,
+    lastBusyNoticeAt: null
   };
 
   clients.set(id, client);
@@ -577,14 +688,12 @@ wss.on('connection', (ws) => {
       }
 
       if (payload.type === 'ptt') {
-        client.ptt = client.spectator ? false : payload.active === true;
-        client.lastPttAt = new Date().toISOString();
-        client.txCom = Number(payload.txCom || client.txCom) === 2 ? 2 : 1;
-        send(ws, {
-          type: 'tx',
-          active: client.ptt,
-          frequency: normalizeFrequency(payload.frequency) || (client.txCom === 2 ? client.com2 : client.com1)
-        });
+        if (payload.active === true) requestTransmission(client, payload);
+        else {
+          client.ptt = false;
+          client.lastPttAt = new Date().toISOString();
+          send(ws, { type: 'tx', active: false, frequency: transmittingFrequency(client, payload.frequency) });
+        }
         return;
       }
 
@@ -601,14 +710,9 @@ wss.on('connection', (ws) => {
         client.audioPacketsReceived += 1;
         client.lastAudioAt = new Date().toISOString();
 
-        // Every plugin audio frame carries its current PTT state as well.
-        // This makes transmission recover automatically if a standalone PTT
-        // control packet was lost during connect/reconnect.
-        if (payload.ptt === true) {
-          client.ptt = true;
-          client.txCom =
-            Number(payload.txCom || client.txCom) === 2 ? 2 : 1;
-        }
+        // Recover a lost PTT control packet, but never bypass channel locking.
+        if (payload.ptt === true && !client.ptt &&
+            !requestTransmission(client, payload)) return;
 
         if (client.ptt) {
           forwardAudio(client, payload);
@@ -617,7 +721,7 @@ wss.on('connection', (ws) => {
       }
 
       if (payload.type === 'monitor') {
-        handleMonitor(client, payload);
+        await handleMonitor(client, payload);
         return;
       }
 

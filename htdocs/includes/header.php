@@ -463,6 +463,10 @@ if (isset($_SESSION['web_user_id'])) {
             <?php echo htmlspecialchars(t('nav_statistics')); ?>
         </a>
 
+        <a href="divisions.php">
+            <?php echo htmlspecialchars(t('nav_divisions')); ?>
+        </a>
+
         <a href="index.php#download">
             <?php echo htmlspecialchars(t('nav_download')); ?>
         </a>
@@ -477,6 +481,10 @@ if (isset($_SESSION['web_user_id'])) {
                 <?php echo htmlspecialchars(t('nav_messages')); ?>
                 <?php if ($unreadPrivateMessageCount > 0): ?><span class="header-notification-dot"></span><?php endif; ?>
             </a>
+
+            <button type="button" onclick="openAtcClient()">
+                <?php echo htmlspecialchars(t('nav_atc_login')); ?>
+            </button>
 
             <a href="notifications.php" title="<?php echo htmlspecialchars(t('nav_notifications')); ?>">
                 🔔
@@ -591,6 +599,47 @@ if (isset($_SESSION['web_user_id'])) {
             .getElementById('languageMenu')
             .classList
             .toggle('open');
+    }
+
+    function openAtcClient()
+    {
+        const width = Math.max(1024, window.screen.availWidth || 1400);
+        const height = Math.max(700, window.screen.availHeight || 900);
+        let activeAtc = null;
+        try {
+            activeAtc = JSON.parse(localStorage.getItem('vfn-atc-client-active') || 'null');
+        } catch (error) {
+            activeAtc = null;
+        }
+        if (activeAtc && Date.now() - Number(activeAtc.timestamp || 0) < 15000) {
+            try {
+                localStorage.setItem('vfn-atc-focus-request', String(Date.now()));
+                if (typeof BroadcastChannel !== 'undefined') {
+                    const channel = new BroadcastChannel('vfn-atc-client');
+                    channel.postMessage({type: 'focus'});
+                    channel.close();
+                }
+                const existingWindow = window.open('', 'vfnAtcRadarClient');
+                if (existingWindow) existingWindow.focus();
+            } catch (error) {
+                // The browser may restrict focusing an existing popup.
+            }
+            return;
+        }
+        const radarWindow = window.open(
+            'atc.php',
+            'vfnAtcRadarClient',
+            'popup=yes,width=' + width + ',height=' + height + ',left=0,top=0,resizable=yes,scrollbars=no'
+        );
+        if (radarWindow) {
+            radarWindow.focus();
+            try {
+                radarWindow.moveTo(0, 0);
+                radarWindow.resizeTo(width, height);
+            } catch (error) {
+                // Window placement is controlled by the browser.
+            }
+        }
     }
 
     document.addEventListener(

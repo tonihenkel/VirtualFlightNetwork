@@ -122,7 +122,7 @@ try {
         $division = strtoupper(trim((string)($_POST['division_code'] ?? '')));
         $reason = trim((string)($_POST['reason'] ?? ''));
         $valid = $pdo->prepare(
-            "SELECT code FROM divisions WHERE code = :code AND is_active = 1 LIMIT 1"
+            "SELECT code FROM divisions WHERE code = :code AND is_active = 1 AND join_enabled = 1 LIMIT 1"
         );
         $valid->execute(['code' => $division]);
         if (

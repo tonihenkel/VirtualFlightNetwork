@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/includes/division_schema.php';
 require_once __DIR__ . '/execute/admin_auth.php';
 require_once __DIR__ . '/includes/language.php';
 require_once __DIR__ . '/includes/csrf.php';
@@ -204,7 +205,7 @@ body{margin:0;background:#07141f;color:#d7e8ff;font-family:Arial,sans-serif}.she
 <label><?php echo h(t('register_email')); ?><input type="email" name="email" value="<?php echo h((string)$target['email']); ?>" required></label>
 <label><?php echo h(t('register_realname')); ?><input name="real_name" value="<?php echo h((string)$target['real_name']); ?>" required></label>
 <label><?php echo h(t('register_country')); ?><select name="country_code"><?php foreach($countries as $code=>$name): ?><option value="<?php echo h($code); ?>" <?php echo $code===$target['country_code']?'selected':''; ?>><?php echo h($code.' - '.$name); ?></option><?php endforeach; ?></select></label>
-<label><?php echo h(t('profile_division')); ?><select name="division_code"><?php foreach($divisions as $d): ?><option value="<?php echo h($d['code']); ?>" <?php echo $d['code']===$target['division_code']?'selected':''; ?>><?php echo h($d['code'].' - '.$d['name']); ?></option><?php endforeach; ?></select></label>
+<label><?php echo h(t('profile_division')); ?><select name="division_code"><?php foreach($divisions as $d): ?><option value="<?php echo h($d['code']); ?>" <?php echo $d['code']===$target['division_code']?'selected':''; ?>><?php echo h(divisionFlagEmoji((string)$d['code']).' '.$d['code'].' - '.$d['name']); ?></option><?php endforeach; ?></select></label>
 <label><?php echo h(t('profile_pilot_rating')); ?><input type="number" min="0" max="9" name="rating_pilot" value="<?php echo (int)$target['rating_pilot']; ?>"></label>
 <label><?php echo h(t('profile_atc_rating')); ?><input type="number" min="0" max="9" name="rating_atc" value="<?php echo (int)$target['rating_atc']; ?>"></label>
 <label><?php echo h(t('admin_user_special_rating')); ?><input type="number" min="0" max="5" name="rating_special" value="<?php echo (int)$target['rating_special']; ?>" <?php echo (int)$adminUser['op_permission']<5?'disabled':''; ?>></label>

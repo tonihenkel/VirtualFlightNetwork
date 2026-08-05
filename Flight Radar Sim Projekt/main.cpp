@@ -76,6 +76,7 @@ static std::string gCurrentLanguage = "en";
 static std::string gConfiguredLanguage = "";
 
 static std::map<std::string, std::string> gText;
+const char* T(const std::string& key);
 
 static bool gDebugEnabled = false;
 static ULONG_PTR gGdiplusToken = 0;
@@ -340,6 +341,13 @@ public:
         bool beaconLights,
         bool strobeLights,
         bool navLights,
+        int transponderCode,
+        int transponderMode,
+        float slatRatio,
+        float wingSweepRatio,
+        float thrustReverserRatio,
+        float noseWheelAngle,
+        float tireRotationRadSec,
         const std::string& aircraftIcao,
         const std::string& departureAirport,
         const std::string& arrivalAirport,
@@ -415,7 +423,27 @@ public:
         targetSpeedbrakeRatio =
             std::clamp(speedbrakeRatio, 0.0f, 1.0f);
         targetThrustRatio = std::clamp(thrustRatio, 0.0f, 1.0f);
-        targetEngineRpm = (std::max)(0.0f, engineRpm);
+        const float reportedEngineRpm = (std::max)(0.0f, engineRpm);
+        if (reportedEngineRpm >= 50.0f)
+        {
+            targetEngineRpm = reportedEngineRpm;
+            lastPositiveEngineRpm = reportedEngineRpm;
+            lastPositiveEngineRpmAt = receivedAt;
+        }
+        else if (
+            lastPositiveEngineRpm >= 50.0f
+            && receivedAt - lastPositiveEngineRpmAt <= 8.0f
+        )
+        {
+            // Several aircraft briefly report zero RPM while their engine
+            // arrays are being updated. Bridge those isolated network samples
+            // so remote propellers do not stop and restart on the taxiway.
+            targetEngineRpm = lastPositiveEngineRpm;
+        }
+        else
+        {
+            targetEngineRpm = reportedEngineRpm;
+        }
         targetYokePitchRatio =
             std::clamp(yokePitchRatio, -1.0f, 1.0f);
         targetYokeRollRatio =
@@ -427,6 +455,47 @@ public:
         targetBeaconLights = beaconLights;
         targetStrobeLights = strobeLights;
         targetNavLights = navLights;
+        targetSlatRatio = std::clamp(slatRatio, 0.0f, 1.0f);
+        targetWingSweepRatio = std::clamp(wingSweepRatio, 0.0f, 1.0f);
+        targetThrustReverserRatio =
+            std::clamp(thrustReverserRatio, 0.0f, 1.0f);
+        targetNoseWheelAngle =
+            std::clamp(noseWheelAngle, -90.0f, 90.0f);
+        targetTireRotationRadSec =
+            std::clamp(tireRotationRadSec, -1000.0f, 1000.0f);
+        acRadar.code = (std::max)(0, transponderCode);
+        if (transponderMode <= 0)
+        {
+            acRadar.mode = xpmpTransponderMode_Off;
+        }
+        else if (transponderMode == 1)
+        {
+            acRadar.mode = xpmpTransponderMode_Standby;
+        }
+        else
+        {
+            // VFN's ON mode includes altitude reporting and therefore maps to
+            // Mode C for X-Plane's TCAS target datarefs.
+            acRadar.mode = xpmpTransponderMode_ModeC;
+        }
+        strncpy_s(
+            acInfoTexts.tailNum,
+            sizeof(acInfoTexts.tailNum),
+            displayCallsign.c_str(),
+            _TRUNCATE
+        );
+        strncpy_s(
+            acInfoTexts.icaoAcType,
+            sizeof(acInfoTexts.icaoAcType),
+            displayAircraftIcao.c_str(),
+            _TRUNCATE
+        );
+        strncpy_s(
+            acInfoTexts.flightNum,
+            sizeof(acInfoTexts.flightNum),
+            displayCallsign.c_str(),
+            _TRUNCATE
+        );
         targetReceivedAt = receivedAt;
         missedPolls = 0;
     }
@@ -519,12 +588,19 @@ public:
         currentRoll +=
             (targetRoll - currentRoll) * static_cast<float>(factor);
 
+        const bool touchDown =
+            hasRenderedGroundState
+            && targetOnGround
+            && !lastRenderedOnGround;
         SetLocation(
             currentLatitude,
             currentLongitude,
             currentAltitudeFeet,
-            targetOnGround
+            targetOnGround,
+            touchDown ? 1.0f : NAN
         );
+        lastRenderedOnGround = targetOnGround;
+        hasRenderedGroundState = true;
         SetHeading(currentHeading);
         SetPitch(currentPitch);
         SetRoll(currentRoll);
@@ -564,8 +640,32 @@ public:
         SetThrustRatio(
             smoothRatio(GetThrustRatio(), targetThrustRatio)
         );
-        SetEngineRotRpm(targetEngineRpm);
-        SetPropRotRpm(targetEngineRpm);
+        SetSlatRatio(
+            smoothRatio(GetSlatRatio(), targetSlatRatio)
+        );
+        SetWingSweepRatio(
+            smoothRatio(GetWingSweepRatio(), targetWingSweepRatio)
+        );
+        SetThrustReversRatio(
+            smoothRatio(
+                GetThrustReversRatio(),
+                targetThrustReverserRatio
+            )
+        );
+        SetReversDeployRatio(
+            smoothRatio(
+                GetReversDeployRatio(),
+                targetThrustReverserRatio
+            )
+        );
+        SetNoseWheelAngle(targetNoseWheelAngle);
+        SetTireRotRad(targetTireRotationRadSec);
+        currentEngineRpm = smoothRatio(
+            currentEngineRpm,
+            targetEngineRpm
+        );
+        SetEngineRotRpm(currentEngineRpm);
+        SetPropRotRpm(currentEngineRpm);
         SetYokePitchRatio(targetYokePitchRatio);
         SetYokeRollRatio(targetYokeRollRatio);
         SetYokeHeadingRatio(targetYokeHeadingRatio);
@@ -619,6 +719,44 @@ public:
         return true;
     }
 
+    float GetAoA() const override
+    {
+        const double horizontalFeetPerSecond =
+            (std::max)(0.0f, targetAirspeed) * 1.6878098571;
+        const double verticalFeetPerSecond =
+            static_cast<double>(targetVerticalSpeed) / 60.0;
+        const double flightPathAngle =
+            horizontalFeetPerSecond > 1.0
+                ? std::atan2(
+                    verticalFeetPerSecond,
+                    horizontalFeetPerSecond
+                ) * 180.0 / 3.14159265358979323846
+                : 0.0;
+
+        return std::clamp(
+            currentPitch - static_cast<float>(flightPathAngle),
+            -12.0f,
+            24.0f
+        );
+    }
+
+    float GetLift() const override
+    {
+        if (targetOnGround || targetAirspeed < 35.0f)
+        {
+            return 0.0f;
+        }
+
+        // Blend wake in during take-off and out during landing instead of
+        // reporting full weight-generated lift while nearly stationary.
+        const float airborneLiftFactor = std::clamp(
+            (targetAirspeed - 35.0f) / 65.0f,
+            0.0f,
+            1.0f
+        );
+        return GetMass() * XPMP2::G_EARTH * airborneLiftFactor;
+    }
+
 private:
     bool hasPosition = false;
     double currentLatitude = 0.0;
@@ -647,6 +785,9 @@ private:
     float targetSpeedbrakeRatio = 0.0f;
     float targetThrustRatio = 0.0f;
     float targetEngineRpm = 0.0f;
+    float currentEngineRpm = 0.0f;
+    float lastPositiveEngineRpm = 0.0f;
+    float lastPositiveEngineRpmAt = -1000.0f;
     float targetYokePitchRatio = 0.0f;
     float targetYokeRollRatio = 0.0f;
     float targetYokeHeadingRatio = 0.0f;
@@ -655,6 +796,13 @@ private:
     bool targetBeaconLights = false;
     bool targetStrobeLights = false;
     bool targetNavLights = false;
+    float targetSlatRatio = 0.0f;
+    float targetWingSweepRatio = 0.0f;
+    float targetThrustReverserRatio = 0.0f;
+    float targetNoseWheelAngle = 0.0f;
+    float targetTireRotationRadSec = 0.0f;
+    bool hasRenderedGroundState = false;
+    bool lastRenderedOnGround = false;
     std::string displayCallsign = "----";
     std::string displayAircraftIcao = "----";
     std::string displayDepartureAirport = "ZZZZ";
@@ -677,6 +825,15 @@ struct NearbyPlayerEntry
 };
 static std::vector<NearbyPlayerEntry> gNearbyPlayers;
 static int gFollowedTrafficUserId = 0;
+static double gFollowCameraDistance = 85.0;
+static double gFollowCameraElevation = 16.0;
+static double gFollowCameraYawOffset = 0.0;
+static std::atomic<int> gFollowCameraWheelDelta(0);
+static std::atomic<int> gFollowCameraDragX(0);
+static std::atomic<int> gFollowCameraDragY(0);
+static std::atomic<bool> gFollowCameraDragging(false);
+static POINT gFollowCameraLastMouse = { 0, 0 };
+static HHOOK gFollowCameraMouseHook = nullptr;
 static float gTrafficPollElapsed = 0.0f;
 static std::atomic<bool> gTrafficPollInProgress(false);
 static std::atomic<bool> gTrafficPollResultReady(false);
@@ -780,6 +937,13 @@ struct ChatLine
     std::string type;
     std::string text;
 };
+
+void AddChatLine(const ChatLine& line, bool notify);
+std::string ReplaceAll(
+    std::string value,
+    const std::string& search,
+    const std::string& replacement
+);
 
 static std::vector<ChatLine> gChatLines;
 static std::string gChatInputText = "";
@@ -967,6 +1131,11 @@ static XPLMDataRef gLandingLights = nullptr;
 static XPLMDataRef gBeaconLights = nullptr;
 static XPLMDataRef gStrobeLights = nullptr;
 static XPLMDataRef gNavLights = nullptr;
+static XPLMDataRef gSlatRatio = nullptr;
+static XPLMDataRef gWingSweepRatio = nullptr;
+static XPLMDataRef gThrustReverserRatio = nullptr;
+static XPLMDataRef gNoseWheelAngle = nullptr;
+static XPLMDataRef gTireRotationRadSec = nullptr;
 
 static XPLMDataRef gCom1 = nullptr;
 static XPLMDataRef gCom2 = nullptr;
@@ -1416,6 +1585,23 @@ void ProcessIncomingVoiceMessage(const std::string& message)
                 GetVoiceFrequency(gVoiceTransmitCom) + "\"}"
             );
         }
+        return;
+    }
+    if (type == "tx" &&
+        message.find("\"busy\":true") != std::string::npos)
+    {
+        gVoicePttActive = false;
+        gVoiceInputPeakLevel = 0.0f;
+        std::string busyText = T("voice.channel_busy");
+        busyText = ReplaceAll(
+            busyText,
+            "{callsign}",
+            ExtractJsonStringValue(message, "from")
+        );
+        AddChatLine(
+            { 0, "", "", "SYSTEM", "warning", busyText },
+            false
+        );
         return;
     }
     if (type != "audio") return;
@@ -2176,6 +2362,7 @@ void LoadInternalEnglishLanguage()
     gText["settings.voice_output"] = "Output device";
     gText["settings.voice_default_device"] = "System default";
     gText["settings.voice_level"] = "Voice level";
+    gText["voice.channel_busy"] = "Frequency occupied by {callsign}. Please wait.";
     gText["messages.title"] = "Messages";
     gText["messages.inbox"] = "Inbox";
     gText["messages.sent"] = "Sent";
@@ -2365,6 +2552,7 @@ void ApplyInternalGermanLanguageFallbacks()
     gText["settings.voice_output"] = "Ausgabegeraet";
     gText["settings.voice_default_device"] = "Systemstandard";
     gText["settings.voice_level"] = "Sprachpegel";
+    gText["voice.channel_busy"] = "Frequenz durch {callsign} belegt. Bitte warten.";
     gText["messages.title"] = "Nachrichten";
     gText["messages.inbox"] = "Eingang";
     gText["messages.sent"] = "Gesendet";
@@ -2476,6 +2664,7 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "settings.voice_output=Output device\n";
             enFile << "settings.voice_default_device=System default\n";
             enFile << "settings.voice_level=Voice level\n";
+            enFile << "voice.channel_busy=Frequency occupied by {callsign}. Please wait.\n";
             enFile << "messages.title=Messages\n";
             enFile << "messages.inbox=Inbox\n";
             enFile << "messages.sent=Sent\n";
@@ -2650,6 +2839,7 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "settings.voice_output=Ausgabegeraet\n";
             deFile << "settings.voice_default_device=Systemstandard\n";
             deFile << "settings.voice_level=Sprachpegel\n";
+            deFile << "voice.channel_busy=Frequenz durch {callsign} belegt. Bitte warten.\n";
             deFile << "messages.title=Nachrichten\n";
             deFile << "messages.inbox=Eingang\n";
             deFile << "messages.sent=Gesendet\n";
@@ -4527,6 +4717,76 @@ void ClearMultiplayerTraffic()
     gTrafficAircraft.clear();
 }
 
+bool IsXPlaneForegroundWindow()
+{
+    DWORD foregroundProcessId = 0;
+    GetWindowThreadProcessId(GetForegroundWindow(), &foregroundProcessId);
+    return foregroundProcessId == GetCurrentProcessId();
+}
+
+LRESULT CALLBACK FollowCameraMouseHook(
+    int code,
+    WPARAM message,
+    LPARAM parameter
+)
+{
+    if (code >= 0 && gFollowedTrafficUserId != 0 &&
+        IsXPlaneForegroundWindow())
+    {
+        const auto* mouse = reinterpret_cast<const MSLLHOOKSTRUCT*>(parameter);
+        if (message == WM_MOUSEWHEEL)
+        {
+            gFollowCameraWheelDelta.fetch_add(
+                GET_WHEEL_DELTA_WPARAM(mouse->mouseData) / WHEEL_DELTA
+            );
+        }
+        else if (message == WM_RBUTTONDOWN)
+        {
+            gFollowCameraLastMouse = mouse->pt;
+            gFollowCameraDragging = true;
+        }
+        else if (message == WM_RBUTTONUP)
+        {
+            gFollowCameraDragging = false;
+        }
+        else if (message == WM_MOUSEMOVE && gFollowCameraDragging.load())
+        {
+            gFollowCameraDragX.fetch_add(mouse->pt.x - gFollowCameraLastMouse.x);
+            gFollowCameraDragY.fetch_add(mouse->pt.y - gFollowCameraLastMouse.y);
+            gFollowCameraLastMouse = mouse->pt;
+        }
+    }
+    return CallNextHookEx(gFollowCameraMouseHook, code, message, parameter);
+}
+
+void StartFollowCameraMouseControl()
+{
+    if (gFollowCameraMouseHook != nullptr) return;
+    HMODULE module = nullptr;
+    GetModuleHandleExW(
+        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+            GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+        reinterpret_cast<LPCWSTR>(&FollowCameraMouseHook),
+        &module
+    );
+    gFollowCameraMouseHook = SetWindowsHookExW(
+        WH_MOUSE_LL,
+        FollowCameraMouseHook,
+        module,
+        0
+    );
+}
+
+void StopFollowCameraMouseControl()
+{
+    gFollowCameraDragging = false;
+    if (gFollowCameraMouseHook != nullptr)
+    {
+        UnhookWindowsHookEx(gFollowCameraMouseHook);
+        gFollowCameraMouseHook = nullptr;
+    }
+}
+
 
 int FollowTrafficCamera(
     XPLMCameraPosition_t* camera,
@@ -4572,13 +4832,39 @@ int FollowTrafficCamera(
         &targetZ
     );
 
+    const int wheelSteps = gFollowCameraWheelDelta.exchange(0);
+    if (wheelSteps != 0)
+    {
+        gFollowCameraDistance *= std::pow(0.86, wheelSteps);
+        gFollowCameraDistance =
+            std::clamp(gFollowCameraDistance, 12.0, 500.0);
+    }
+    gFollowCameraYawOffset +=
+        static_cast<double>(gFollowCameraDragX.exchange(0)) * 0.28;
+    gFollowCameraElevation +=
+        static_cast<double>(gFollowCameraDragY.exchange(0)) * 0.18;
+    gFollowCameraElevation =
+        std::clamp(gFollowCameraElevation, 3.0, 75.0);
+
+    const double orbitHeading =
+        static_cast<double>(heading) + gFollowCameraYawOffset;
     const double headingRadians =
-        static_cast<double>(heading) * 3.14159265358979323846 / 180.0;
-    camera->x = static_cast<float>(targetX - std::sin(headingRadians) * 85.0);
-    camera->y = static_cast<float>(targetY + 24.0);
-    camera->z = static_cast<float>(targetZ + std::cos(headingRadians) * 85.0);
-    camera->pitch = -10.0f;
-    camera->heading = heading;
+        orbitHeading * 3.14159265358979323846 / 180.0;
+    const double elevationRadians =
+        gFollowCameraElevation * 3.14159265358979323846 / 180.0;
+    const double horizontalDistance =
+        gFollowCameraDistance * std::cos(elevationRadians);
+    camera->x = static_cast<float>(
+        targetX - std::sin(headingRadians) * horizontalDistance
+    );
+    camera->y = static_cast<float>(
+        targetY + std::sin(elevationRadians) * gFollowCameraDistance
+    );
+    camera->z = static_cast<float>(
+        targetZ + std::cos(headingRadians) * horizontalDistance
+    );
+    camera->pitch = static_cast<float>(-gFollowCameraElevation);
+    camera->heading = static_cast<float>(orbitHeading);
     camera->roll = 0.0f;
     camera->zoom = 1.0f;
     return 1;
@@ -4590,6 +4876,7 @@ void ToggleFollowTrafficPlayer(int userId)
     if (gFollowedTrafficUserId == userId)
     {
         gFollowedTrafficUserId = 0;
+        StopFollowCameraMouseControl();
         XPLMDontControlCamera();
         return;
     }
@@ -4598,6 +4885,10 @@ void ToggleFollowTrafficPlayer(int userId)
         return;
     }
     gFollowedTrafficUserId = userId;
+    gFollowCameraDistance = 85.0;
+    gFollowCameraElevation = 16.0;
+    gFollowCameraYawOffset = 0.0;
+    StartFollowCameraMouseControl();
     XPLMControlCamera(
         xplm_ControlCameraUntilViewChanges,
         FollowTrafficCamera,
@@ -4712,6 +5003,13 @@ void ProcessTrafficPollResult()
                 fields.size() > 22 && fields[22] == "1",
                 fields.size() > 23 && fields[23] == "1",
                 fields.size() > 24 && fields[24] == "1",
+                fields.size() > 31 ? std::stoi(fields[31]) : 0,
+                fields.size() > 32 ? std::stoi(fields[32]) : 0,
+                fields.size() > 33 ? std::stof(fields[33]) : 0.0f,
+                fields.size() > 34 ? std::stof(fields[34]) : 0.0f,
+                fields.size() > 35 ? std::stof(fields[35]) : 0.0f,
+                fields.size() > 36 ? std::stof(fields[36]) : 0.0f,
+                fields.size() > 37 ? std::stof(fields[37]) : 0.0f,
                 fields.size() > 25 ? fields[25] : fields[2],
                 fields.size() > 26 ? fields[26] : "ZZZZ",
                 fields.size() > 27 ? fields[27] : "ZZZZ",
@@ -4960,6 +5258,27 @@ bool InitializeMultiplayer()
                 return 1;
             }
 
+            if (section && key &&
+                std::strcmp(section, XPMP_CFG_SEC_PLANES) == 0)
+            {
+                if (std::strcmp(key, XPMP_CFG_ITM_CONTR_MIN_ALT) == 0)
+                {
+                    return 25000;
+                }
+                if (std::strcmp(key, XPMP_CFG_ITM_CONTR_MAX_ALT) == 0)
+                {
+                    return 45000;
+                }
+                if (std::strcmp(key, XPMP_CFG_ITM_CONTR_LIFE) == 0)
+                {
+                    return 30;
+                }
+                if (std::strcmp(key, XPMP_CFG_ITM_CONTR_MULTI) == 0)
+                {
+                    return 1;
+                }
+            }
+
             return defaultValue;
         };
 
@@ -5030,6 +5349,22 @@ bool InitializeMultiplayer()
             );
             XPLMDebugString(modelLog);
         }
+    }
+
+    const char* tcasResult = XPMPMultiplayerEnable();
+    if (tcasResult && tcasResult[0] != '\0')
+    {
+        XPLMDebugString(
+            "VFN Multiplayer: TCAS control unavailable: "
+        );
+        XPLMDebugString(tcasResult);
+        XPLMDebugString("\n");
+    }
+    else
+    {
+        XPLMDebugString(
+            "VFN Multiplayer: TCAS targets enabled.\n"
+        );
     }
 
     gMultiplayerInitialized = true;
@@ -6831,6 +7166,101 @@ float ReadDataRefArrayMaximum(
 }
 
 
+float ReadDataRefArrayFirst(
+    XPLMDataRef dataRef,
+    float fallback = 0.0f
+)
+{
+    if (!dataRef)
+    {
+        return fallback;
+    }
+
+    float value = fallback;
+    return XPLMGetDatavf(dataRef, &value, 0, 1) > 0
+        ? value
+        : fallback;
+}
+
+
+float ReadDataRefArrayAbsoluteMaximum(
+    XPLMDataRef dataRef,
+    float fallback = 0.0f
+)
+{
+    if (!dataRef)
+    {
+        return fallback;
+    }
+
+    float values[16] = {};
+    const int count = XPLMGetDatavf(dataRef, values, 0, 16);
+    float selected = fallback;
+    for (int index = 0; index < count; ++index)
+    {
+        if (std::abs(values[index]) > std::abs(selected))
+        {
+            selected = values[index];
+        }
+    }
+    return selected;
+}
+
+
+float ReadPrimaryGearDeployRatio(
+    XPLMDataRef deployRatioDataRef,
+    XPLMDataRef gearHandleDataRef,
+    bool onGround
+)
+{
+    const float handleFallback =
+        gearHandleDataRef
+            ? (XPLMGetDatai(gearHandleDataRef) != 0 ? 1.0f : 0.0f)
+            : (onGround ? 1.0f : 0.0f);
+
+    if (!deployRatioDataRef)
+    {
+        return handleFallback;
+    }
+
+    // X-Plane exposes ten deploy-ratio slots. Add-ons often leave unused
+    // slots permanently at 1.0, so neither the maximum of the complete
+    // array nor the cockpit handle is a reliable indication of the visible
+    // gear state. The first three slots are the primary nose/main gear on
+    // fixed-wing aircraft (including multi-bogie types such as the A380).
+    // Averaging them also preserves a smooth transition while retracting.
+    float primaryGearRatios[3] = {};
+    const int count =
+        XPLMGetDatavf(
+            deployRatioDataRef,
+            primaryGearRatios,
+            0,
+            3
+        );
+
+    if (count <= 0)
+    {
+        return handleFallback;
+    }
+
+    float total = 0.0f;
+    for (int index = 0; index < count; ++index)
+    {
+        total += std::clamp(
+            primaryGearRatios[index],
+            0.0f,
+            1.0f
+        );
+    }
+
+    return std::clamp(
+        total / static_cast<float>(count),
+        0.0f,
+        1.0f
+    );
+}
+
+
 bool ReadDataRefSwitch(
     XPLMDataRef dataRef
 )
@@ -6958,25 +7388,33 @@ void SendPositionUpdate()
             ? GetAiDestinationICAO()
             : "";
 
-    // Some aircraft expose unused entries in deploy_ratio as permanently
-    // deployed. Taking the maximum of the entire array then keeps remote gear
-    // down forever. The cockpit gear handle is the reliable cross-aircraft
-    // command state; the remote model still animates smoothly towards it.
     const float gearRatio =
-        gGearHandleDown
-            ? (XPLMGetDatai(gGearHandleDown) != 0 ? 1.0f : 0.0f)
-            : std::clamp(
-                ReadDataRefArrayMaximum(
-                    gGearDeployRatio,
-                    onGround ? 1.0f : 0.0f
-                ),
-                0.0f,
-                1.0f
-            );
+        ReadPrimaryGearDeployRatio(
+            gGearDeployRatio,
+            gGearHandleDown,
+            onGround != 0
+        );
     const float flapRatio =
         ReadDataRefRatio(gFlapRatio);
     const float speedbrakeRatio =
         ReadDataRefRatio(gSpeedbrakeRatio);
+    const float slatRatio = ReadDataRefRatio(gSlatRatio);
+    const float wingSweepRatio = ReadDataRefRatio(gWingSweepRatio);
+    const float thrustReverserRatio = std::clamp(
+        ReadDataRefArrayMaximum(gThrustReverserRatio),
+        0.0f,
+        1.0f
+    );
+    const float noseWheelAngle = std::clamp(
+        ReadDataRefArrayFirst(gNoseWheelAngle),
+        -90.0f,
+        90.0f
+    );
+    const float tireRotationRadSec = std::clamp(
+        ReadDataRefArrayAbsoluteMaximum(gTireRotationRadSec),
+        -1000.0f,
+        1000.0f
+    );
     const float thrustRatio =
         std::clamp(
             ReadDataRefArrayMaximum(gThrottleRatio),
@@ -7024,6 +7462,8 @@ void SendPositionUpdate()
 
     int transponder =
         gTransponder ? XPLMGetDatai(gTransponder) : 0;
+    int transponderMode =
+        gTransponderMode ? XPLMGetDatai(gTransponderMode) : 0;
 
     int hasCrashed = 0;
 
@@ -7064,10 +7504,16 @@ void SendPositionUpdate()
         "&beacon_lights=" + UrlEncode(IntToString(ReadDataRefSwitch(gBeaconLights) ? 1 : 0)) +
         "&strobe_lights=" + UrlEncode(IntToString(ReadDataRefSwitch(gStrobeLights) ? 1 : 0)) +
         "&nav_lights=" + UrlEncode(IntToString(ReadDataRefSwitch(gNavLights) ? 1 : 0)) +
+        "&slat_ratio=" + UrlEncode(FloatToString(slatRatio)) +
+        "&wing_sweep_ratio=" + UrlEncode(FloatToString(wingSweepRatio)) +
+        "&thrust_reverser_ratio=" + UrlEncode(FloatToString(thrustReverserRatio)) +
+        "&nose_wheel_angle=" + UrlEncode(FloatToString(noseWheelAngle)) +
+        "&tire_rotation_rad_sec=" + UrlEncode(FloatToString(tireRotationRadSec)) +
         "&com1=" + UrlEncode(FormatComFrequency(com1)) +
         "&com2=" + UrlEncode(FormatComFrequency(com2)) +
         "&com3=" + UrlEncode(FormatComFrequency(com3)) +
         "&transponder=" + UrlEncode(IntToString(transponder)) +
+        "&transponder_mode=" + UrlEncode(IntToString(transponderMode)) +
         "&fuel_remaining_percent=" + UrlEncode(FloatToString(fuelRemainingPercent)) +
         "&night_flight_seconds=" + UrlEncode(IntToString(gNightFlightSeconds)) +
         "&total_flight_seconds=" + UrlEncode(IntToString(gTotalFlightSeconds)) +
@@ -8726,6 +9172,13 @@ CustomRect GetCompactTabRect(int left, int top, int index)
     int tabWidth = 98;
     int tabLeft =
         left + 12 + (index * (tabWidth + 8));
+
+    // The translated settings label needs extra room on older systems with
+    // Windows display scaling. Keep its left edge aligned with the old grid.
+    if (index == 5)
+    {
+        tabWidth = 126;
+    }
 
     return { tabLeft, top - 322, tabLeft + tabWidth, top - 358 };
 }
@@ -12104,10 +12557,10 @@ void CreateSettingsWindow()
 
         XPLMSetWindowResizingLimits(
             gSettingsWindow,
-            520,
-            600,
-            520,
-            600
+            500,
+            460,
+            620,
+            700
         );
     }
 }
@@ -12154,14 +12607,30 @@ void ShowSettingsWindow()
             compactTop - 60;
     }
 
-    if (!ConfigureChildWindowForCompactMode(gSettingsWindow, 520, 600, 18))
+    RECT workArea = {};
+    int settingsHeight = 600;
+    if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0))
+    {
+        settingsHeight = std::clamp(
+            static_cast<int>(workArea.bottom - workArea.top) - 90,
+            460,
+            600
+        );
+    }
+
+    if (!ConfigureChildWindowForCompactMode(
+            gSettingsWindow,
+            520,
+            settingsHeight,
+            18
+        ))
     {
         XPLMSetWindowGeometry(
             gSettingsWindow,
             windowLeft,
             windowTop,
             windowLeft + 520,
-            windowTop - 540
+            windowTop - settingsHeight
         );
     }
 
@@ -19409,6 +19878,31 @@ PLUGIN_API int XPluginStart(
             "sim/cockpit2/switches/navigation_lights_on"
         );
 
+    gSlatRatio =
+        XPLMFindDataRef(
+            "sim/flightmodel2/controls/slat1_deploy_ratio"
+        );
+
+    gWingSweepRatio =
+        XPLMFindDataRef(
+            "sim/cockpit2/controls/wing_sweep_ratio"
+        );
+
+    gThrustReverserRatio =
+        XPLMFindDataRef(
+            "sim/flightmodel2/engines/thrust_reverser_deploy_ratio"
+        );
+
+    gNoseWheelAngle =
+        XPLMFindDataRef(
+            "sim/flightmodel2/gear/tire_steer_actual_deg"
+        );
+
+    gTireRotationRadSec =
+        XPLMFindDataRef(
+            "sim/flightmodel2/gear/tire_rotation_speed_rad_sec"
+        );
+
     gOnGround =
         XPLMFindDataRef(
             "sim/flightmodel/failures/onground_any"
@@ -19628,6 +20122,7 @@ PLUGIN_API int XPluginStart(
 
 PLUGIN_API void XPluginStop(void)
 {
+    StopFollowCameraMouseControl();
     StopVoiceService();
     ShutdownMultiplayer();
 

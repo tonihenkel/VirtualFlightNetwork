@@ -49,7 +49,7 @@ try {
 
     $params = [];
     $where = [
-        'frequency IS NOT NULL'
+        'm.frequency IS NOT NULL'
     ];
 
     $search =
@@ -67,36 +67,39 @@ try {
 
     if ($search !== '') {
         $where[] =
-            '(message_text LIKE :search
-              OR original_message_text LIKE :search
-              OR sender_callsign LIKE :search)';
+            '(m.message_text LIKE :search
+              OR m.original_message_text LIKE :search
+              OR m.sender_callsign LIKE :search)';
         $params['search'] =
             '%' . mb_substr($search, 0, 120) . '%';
     }
 
     if ($userFilter !== '') {
         $where[] =
-            'sender_callsign LIKE :user_filter';
+            '(m.sender_callsign LIKE :user_filter
+              OR u.username LIKE :user_filter
+              OR u.email LIKE :user_filter
+              OR u.real_name LIKE :user_filter)';
         $params['user_filter'] =
-            '%' . mb_substr($userFilter, 0, 60) . '%';
+            '%' . mb_substr($userFilter, 0, 190) . '%';
     }
 
     if ($typeFilter !== '') {
         $where[] =
-            'message_type = :type_filter';
+            'm.message_type = :type_filter';
         $params['type_filter'] =
             mb_substr($typeFilter, 0, 40);
     }
 
     if ($frequencyFilter !== null) {
-        $where[] = 'frequency = :frequency_filter';
+        $where[] = 'm.frequency = :frequency_filter';
         $params['frequency_filter'] = $frequencyFilter;
     }
 
     if ($dateFrom !== '') {
         $timestamp = strtotime($dateFrom);
         if ($timestamp !== false) {
-            $where[] = 'created_at >= :date_from';
+            $where[] = 'm.created_at >= :date_from';
             $params['date_from'] = date('Y-m-d H:i:s', $timestamp);
         }
     }
@@ -104,14 +107,14 @@ try {
     if ($dateTo !== '') {
         $timestamp = strtotime($dateTo);
         if ($timestamp !== false) {
-            $where[] = 'created_at <= :date_to';
+            $where[] = 'm.created_at <= :date_to';
             $params['date_to'] = date('Y-m-d H:i:s', $timestamp);
         }
     }
 
     if ($sinceId > 0) {
         $where[] =
-            'id > :since_id';
+            'm.id > :since_id';
         $params['since_id'] =
             $sinceId;
     }
@@ -131,7 +134,7 @@ try {
         }
 
         $where[] =
-            'frequency IN (' . implode(',', $placeholders) . ')';
+            'm.frequency IN (' . implode(',', $placeholders) . ')';
     }
 
     $order =
@@ -142,7 +145,10 @@ try {
     $total = 0;
     if ($sinceId <= 0) {
         $countStmt = $pdo->prepare(
-            "SELECT COUNT(*) FROM chat_messages WHERE " . implode(' AND ', $where)
+            "SELECT COUNT(*)
+             FROM chat_messages m
+             LEFT JOIN users u ON u.id = m.sender_user_id
+             WHERE " . implode(' AND ', $where)
         );
         $countStmt->execute($params);
         $total = (int)$countStmt->fetchColumn();
@@ -151,18 +157,19 @@ try {
     $offset = $sinceId > 0 ? 0 : (($page - 1) * $perPage);
     $stmt = $pdo->prepare(
         "SELECT
-            id,
-            frequency,
-            sender_user_id,
-            sender_callsign,
-            message_type,
-            message_text,
-            original_message_text,
-            was_filtered,
-            created_at
-         FROM chat_messages
+            m.id,
+            m.frequency,
+            m.sender_user_id,
+            m.sender_callsign,
+            m.message_type,
+            m.message_text,
+            m.original_message_text,
+            m.was_filtered,
+            m.created_at
+         FROM chat_messages m
+         LEFT JOIN users u ON u.id = m.sender_user_id
          WHERE " . implode(' AND ', $where) . "
-         ORDER BY id $order
+         ORDER BY m.id $order
          LIMIT $limit OFFSET $offset"
     );
 
@@ -175,6 +182,22 @@ try {
         $messages =
             array_reverse($messages);
     }
+
+    // Apply the current filter list when monitoring historic messages too.
+    // This makes newly added filter terms visible without rewriting history.
+    foreach ($messages as &$message) {
+        $sourceText = trim((string)($message['original_message_text'] ?? ''));
+        if ($sourceText === '') {
+            $sourceText = (string)$message['message_text'];
+        }
+        $currentFilter = filterChatMessage($sourceText, $pdo);
+        if ($currentFilter['was_filtered']) {
+            $message['original_message_text'] = $currentFilter['original'];
+            $message['message_text'] = $currentFilter['filtered'];
+            $message['was_filtered'] = 1;
+        }
+    }
+    unset($message);
 
     echo json_encode([
         'success' => true,
