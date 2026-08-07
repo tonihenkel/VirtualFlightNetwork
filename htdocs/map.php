@@ -97,7 +97,7 @@ if (!isset($showRatings)) {
 
             min-width: 220px;
         }
-        #mapLegend{position:absolute;left:14px;bottom:28px;z-index:900;background:rgba(5,20,31,.9);border:1px solid #285475;border-radius:6px;padding:10px 12px;color:#cde4f7;font-size:12px;display:grid;gap:5px}.legend-swatch{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:7px;vertical-align:-2px}.legend-aircraft{background:#168cff}.legend-airport{background:#20b8ff}.legend-nav{background:#8f54ff}.legend-fir{background:rgba(22,140,255,.25);border:1px solid #37a5ff}
+        #mapLegend{position:absolute;left:14px;bottom:28px;z-index:900;background:rgba(5,20,31,.9);border:1px solid #285475;border-radius:6px;padding:10px 12px;color:#cde4f7;font-size:12px;display:grid;gap:5px}.legend-swatch{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:7px;vertical-align:-2px}.legend-aircraft{background:#168cff}.legend-airport{background:#20b8ff}.legend-nav{background:#8f54ff}.legend-fir{background:rgba(22,140,255,.25);border:1px solid #37a5ff}.legend-atc{background:#ff8a16;border:2px solid #fff3c4}.atc-airport-stack{position:relative;width:110px;height:110px;transform:scale(var(--atc-symbol-scale,.25));transform-origin:50% 50%;filter:drop-shadow(0 2px 3px rgba(0,0,0,.5));pointer-events:auto}.atc-position-symbol{position:absolute;left:50%;top:50%;display:block;transform:translate(-50%,-50%);font-size:0}.atc-position-symbol.dep{z-index:1;width:104px;height:104px;border:3px solid #5430b9;border-radius:50%;background:rgba(112,75,210,.18)}.atc-position-symbol.app{z-index:2;width:86px;height:86px;border:3px solid #172d89;border-radius:50%;background:rgba(70,102,207,.31)}.atc-position-symbol.twr{z-index:3;width:66px;height:66px;border:2px solid #ff3535;border-radius:50%;background:rgba(255,67,67,.31)}.atc-position-symbol.gnd,.atc-position-symbol.del{z-index:4;width:82px;height:82px;background:#232323;clip-path:polygon(50% 0,58% 39%,100% 50%,58% 61%,50% 100%,42% 61%,0 50%,42% 39%)}.atc-position-symbol.gnd:after,.atc-position-symbol.del:after{content:"";position:absolute;inset:2px;background:#fff27a;clip-path:inherit}.atc-position-symbol.del{transform:translate(-50%,-50%) rotate(45deg)}.atc-position-symbol.del:after{background:#f2bd65}.atc-position-symbol.info{z-index:5;width:13px;height:13px;border:2px solid #17256c;border-radius:50%;background:#8797d8}.atc-airport-stack:after{content:"";position:absolute;z-index:6;left:50%;top:50%;width:9px;height:9px;transform:translate(-50%,-50%);border:2px solid #17256c;border-radius:50%;background:#8797d8}.atc-map-tooltip{font-size:12px;line-height:1.45}.atc-map-tooltip strong{color:#1737a6}.atc-fir-label{background:#c65c00;border:2px solid #fff3c4;color:#fff;font-weight:bold;border-radius:4px;padding:3px 6px;box-shadow:0 2px 8px rgba(0,0,0,.7)}
 
         #mapDirectory {
             position: absolute;
@@ -297,7 +297,8 @@ if (!isset($showRatings)) {
 
         #pilotInfoPanel,
         #airportTrafficPanel,
-        #navigationPointPanel {
+        #navigationPointPanel,
+        #atcInfoPanel {
             position: absolute;
 
             top: 82px;
@@ -327,6 +328,15 @@ if (!isset($showRatings)) {
             transform: translateX(0);
         }
         #navigationPointPanel.open { transform:translateX(0); }
+        #atcInfoPanel.open { transform:translateX(0); }
+
+        .atc-info-list { position:relative; z-index:3; display:grid; gap:9px; }
+        .atc-info-card { background:#fff; border:1px solid #d5deeb; border-left:5px solid #ff8318; border-radius:7px; padding:11px 12px; color:#182536; }
+        .atc-info-card strong { color:#1737a6; font-size:15px; }
+        .atc-info-card .atc-position-code { float:right; color:#c65c00; font-weight:bold; }
+        button.atc-info-card { display:block; width:100%; text-align:left; font:inherit; cursor:pointer; }
+        button.atc-info-card:hover, button.atc-info-card:focus-visible { border-color:#2477d4; border-left-color:#ff8318; background:#f2f7ff; outline:none; }
+        .atc-info-meta { margin-top:5px; color:#536579; font-size:12px; line-height:1.45; }
 
         #airportTrafficPanel .panel-route {
             grid-template-columns: 1fr;
@@ -687,7 +697,7 @@ if (!isset($showRatings)) {
 @media (max-width: 760px) {
     #mapDirectory { top: 135px; right: 8px; width: min(300px, calc(100% - 16px)); }
     #mapDirectory:not(.collapsed) { max-height: 48vh; }
-    #pilotInfoPanel, #airportTrafficPanel, #navigationPointPanel { top: 122px; width: min(360px, 100%); height: calc(100vh - 122px); }
+    #pilotInfoPanel, #airportTrafficPanel, #navigationPointPanel, #atcInfoPanel { top: 122px; width: min(360px, 100%); height: calc(100vh - 122px); }
     #statusBox { top: 135px; left: 8px; min-width: 0; }
 }
 </style>
@@ -767,6 +777,7 @@ if ($statusMessage !== '') {
                 <option value="navaid"><?php echo htmlspecialchars(t('map_search_type_navaids')); ?></option>
                 <option value="airway"><?php echo htmlspecialchars(t('map_search_type_airways')); ?></option>
                 <option value="radar"><?php echo htmlspecialchars(t('map_search_type_radars')); ?></option>
+                <option value="atc"><?php echo htmlspecialchars(t('map_search_type_atc')); ?></option>
             </select>
             <label>
                 <input id="mapSearchExact" type="checkbox">
@@ -1030,8 +1041,8 @@ if ($statusMessage !== '') {
             <div id="airportPanelName">
                 <?php echo htmlspecialchars(t("map_unknown_airport")); ?>
             </div>
-            <div class="panel-airport-name">
-                <?php echo htmlspecialchars(t("map_airport_traffic")); ?>
+            <div class="panel-airport-name" id="airportPanelKind">
+                <?php echo htmlspecialchars(t("map_airport_information")); ?>
             </div>
         </div>
     </div>
@@ -1080,6 +1091,34 @@ if ($statusMessage !== '') {
         </div>
 
         <div id="airportTrafficList" class="airport-traffic-list"></div>
+
+        <div class="panel-card">
+            <div class="panel-card-title"><?php echo htmlspecialchars(t('map_atc_online')); ?></div>
+            <div id="airportAtcList" class="atc-info-list"></div>
+        </div>
+    </div>
+</div>
+
+<div id="atcInfoPanel">
+    <div class="panel-header">
+        <span id="atcInfoIdentifier">ATC</span>
+        <span class="panel-close" onclick="closeAtcInfoPanel()">×</span>
+    </div>
+    <div class="panel-route">
+        <div>
+            <div id="atcInfoName"><?php echo htmlspecialchars(t('map_atc_online')); ?></div>
+            <div class="panel-airport-name" id="atcInfoKind">----</div>
+        </div>
+    </div>
+    <div class="panel-content">
+        <button type="button" class="panel-action" id="atcAirportBackButton"
+            onclick="openAtcAirportDetails()" style="display:none">
+            <?php echo htmlspecialchars(t('map_open_airport_information')); ?>
+        </button>
+        <div class="panel-card">
+            <div class="panel-card-title"><?php echo htmlspecialchars(t('map_atc_positions')); ?></div>
+            <div id="atcInfoList" class="atc-info-list"></div>
+        </div>
     </div>
 </div>
 
@@ -1118,7 +1157,7 @@ if ($statusMessage !== '') {
 </div>
 
 <div id="map"></div>
-<div id="mapLegend"><strong><?php echo htmlspecialchars(t('map_legend')); ?></strong><span><i class="legend-swatch legend-aircraft"></i><?php echo htmlspecialchars(t('map_legend_aircraft')); ?></span><span><i class="legend-swatch legend-airport"></i><?php echo htmlspecialchars(t('map_legend_airports')); ?></span><span><i class="legend-swatch legend-nav"></i><?php echo htmlspecialchars(t('map_legend_navigation')); ?></span><span><i class="legend-swatch legend-fir"></i><?php echo htmlspecialchars(t('map_legend_fir')); ?></span></div>
+<div id="mapLegend"><strong><?php echo htmlspecialchars(t('map_legend')); ?></strong><span><i class="legend-swatch legend-aircraft"></i><?php echo htmlspecialchars(t('map_legend_aircraft')); ?></span><span><i class="legend-swatch legend-airport"></i><?php echo htmlspecialchars(t('map_legend_airports')); ?></span><span><i class="legend-swatch legend-nav"></i><?php echo htmlspecialchars(t('map_legend_navigation')); ?></span><span><i class="legend-swatch legend-fir"></i><?php echo htmlspecialchars(t('map_legend_fir')); ?></span><span><i class="legend-swatch legend-atc"></i>ATC</span></div>
 
 <?php require_once 'includes/auth_modals.php'; ?>
 
@@ -1147,6 +1186,20 @@ if ($statusMessage !== '') {
             [
                 "loading_pilots" => t("map_loading_pilots"),
                 "active_pilots" => t("map_active_pilots"),
+                "active_atc" => t("map_active_atc"),
+                "atc_online" => t("map_atc_online"),
+                "atc_positions" => t("map_atc_positions"),
+                "atc_none" => t("map_atc_none"),
+                "atc_controller" => t("map_atc_controller"),
+                "atc_frequency" => t("map_atc_frequency"),
+                "atc_radar_sector" => t("map_atc_radar_sector"),
+                "atc_information" => t("map_atc_information"),
+                "airport_information" => t("map_airport_information"),
+                "atis_information" => t("map_atis_information"),
+                "atis_runway" => t("map_atis_runway"),
+                "atis_active" => t("map_atis_active"),
+                "atis_preparing" => t("map_atis_preparing"),
+                "atis_unavailable" => t("map_atis_unavailable"),
                 "invisible_pilots" => t("map_invisible_pilots"),
                 "last_update" => t("map_last_update"),
                 "connection_error" => t("map_connection_error"),
@@ -1258,6 +1311,15 @@ if ($statusMessage !== '') {
         }
     ).addTo(map);
 
+    function updateAtcSymbolScale()
+    {
+        const zoom = map.getZoom();
+        const scale = Math.max(0.16, Math.min(1, 0.16 + (zoom - 4) * 0.09));
+        map.getContainer().style.setProperty('--atc-symbol-scale', scale.toFixed(2));
+    }
+    updateAtcSymbolScale();
+    map.on('zoomend', updateAtcSymbolScale);
+
     const statusBox =
         document.getElementById('statusBox');
 
@@ -1268,6 +1330,8 @@ if ($statusMessage !== '') {
         document.getElementById('airportTrafficPanel');
     const navigationPointPanel =
         document.getElementById('navigationPointPanel');
+    const atcInfoPanel =
+        document.getElementById('atcInfoPanel');
 
     const pilotMarkers = {};
 
@@ -1283,11 +1347,21 @@ if ($statusMessage !== '') {
     const airportMarkers = {};
 
     const trafficAirportMarkers = {};
+    const atcAirportMarkers = {};
+    const atisAirportMarkers = {};
+    const atcTraconLayers = {};
+    const atcFirLayers = {};
+    let atcPositionLoadInProgress = false;
+    let activeAtcCount = 0;
+    let latestAtcPositions = [];
+    let latestAtisAirports = [];
+    let selectedAtcStationCode = null;
 
     let airportTrafficData = {};
     const searchedAirports = {};
     let airportSearchResults = [];
     let navigationSearchResults = [];
+    let atcSearchResults = [];
     let currentAiracCycle = '';
     let airportSearchTimer = null;
     const airportMetarCache = {};
@@ -1311,6 +1385,10 @@ if ($statusMessage !== '') {
     let firBoundaryLayer = null;
     let firBoundaryLoading = null;
     let firDatasetLoading = null;
+    let traconDatasetLoading = null;
+    let traconAttributionAdded = false;
+    const sectorBoundaryCache = {};
+    let sectorAttributionAdded = false;
 
     let selectedAirportCode = null;
     let selectedAirportMarker = null;
@@ -1396,6 +1474,618 @@ if ($statusMessage !== '') {
             });
         }
         return firDatasetLoading;
+    }
+
+    function loadTraconDataset()
+    {
+        if (!traconDatasetLoading) {
+            traconDatasetLoading = fetch('execute/tracon_boundaries.php')
+                .then(response => {
+                    if (!response.ok) throw new Error('TRACON data unavailable');
+                    return response.json();
+                }).then(data => {
+                    if (!traconAttributionAdded) {
+                        map.attributionControl.addAttribution(
+                            '<a href="https://github.com/vatsimnetwork/'
+                            + 'simaware-tracon-project" target="_blank"'
+                            + ' rel="noopener">SimAware TRACON data</a>'
+                            + ' (CC BY-SA 4.0)'
+                        );
+                        traconAttributionAdded = true;
+                    }
+                    return data;
+                }).catch(error => {
+                    traconDatasetLoading = null;
+                    throw error;
+                });
+        }
+        return traconDatasetLoading;
+    }
+
+    function loadSectorBoundary(station)
+    {
+        const key = String(station || '').toUpperCase().replace(/-/g, '_');
+        if (!key) return Promise.resolve(null);
+        if (!sectorBoundaryCache[key]) {
+            sectorBoundaryCache[key] = fetch(
+                'execute/sector_boundaries.php?station=' + encodeURIComponent(key)
+            ).then(response => {
+                if (response.status === 404) return null;
+                if (!response.ok) throw new Error('Sector boundary unavailable');
+                return response.json();
+            }).then(data => {
+                if (data && !sectorAttributionAdded) {
+                    map.attributionControl.addAttribution(
+                        '<a href="https://github.com/lennycolton/'
+                        + 'vatglasses-data" target="_blank" rel="noopener">'
+                        + 'VATGlasses sector data</a> (CC BY-NC-SA 4.0)'
+                    );
+                    sectorAttributionAdded = true;
+                }
+                return data;
+            }).catch(error => {
+                delete sectorBoundaryCache[key];
+                console.error(error);
+                return null;
+            });
+        }
+        return sectorBoundaryCache[key];
+    }
+
+    function atcPositionTooltip(position)
+    {
+        return '<div class="atc-map-tooltip"><strong>'
+            + escapeHtml(position.callsign || '') + '</strong><br>'
+            + escapeHtml(position.controller_name || '')
+            + (position.frequency ? '<br>' + escapeHtml(position.frequency) + ' MHz' : '')
+            + '</div>';
+    }
+
+    function renderAtcInfoCards(positions, clickable = false, includeAtis = true)
+    {
+        if (!positions.length) {
+            return '<div class="airport-traffic-empty">'
+                + escapeHtml(MAP_TEXT.atc_none) + '</div>';
+        }
+        const positionCards = positions.map(position => {
+            const tag = clickable ? 'button' : 'div';
+            const attributes = clickable
+                ? ' type="button" data-airport-atc-station="'
+                    + escapeHtml(position.station_code || '')
+                    + '" onclick="event.stopPropagation(); openAirportAtcDetails(this.dataset.airportAtcStation)"'
+                : '';
+            return '<' + tag + ' class="atc-info-card"' + attributes + '>'
+            + '<span class="atc-position-code">'
+            + escapeHtml(position.position_code || '') + '</span>'
+            + '<strong>' + escapeHtml(position.callsign || '') + '</strong>'
+            + '<div class="atc-info-meta">'
+            + escapeHtml(MAP_TEXT.atc_controller) + ': '
+            + escapeHtml(position.controller_name || '–')
+            + (position.frequency ? '<br>' + escapeHtml(MAP_TEXT.atc_frequency)
+                + ': ' + escapeHtml(position.frequency) + ' MHz' : '')
+            + '</div></' + tag + '>';
+        }).join('');
+        const airportPosition = positions.find(position =>
+            String(position.position_code || '').toUpperCase() !== 'CTR');
+        const atisFrequency = String(airportPosition?.atis_frequency || '');
+        if (!includeAtis || !airportPosition || !atisFrequency) return positionCards;
+        const station = String(airportPosition.station_code || '').toUpperCase();
+        const tag = clickable ? 'button' : 'div';
+        const attributes = clickable
+            ? ' type="button" data-airport-atc-station="' + escapeHtml(station)
+                + '" onclick="event.stopPropagation(); openAirportAtcDetails(this.dataset.airportAtcStation)"'
+            : '';
+        return positionCards + '<' + tag + ' class="atc-info-card"' + attributes + '>'
+            + '<span class="atc-position-code">ATIS</span>'
+            + '<strong>' + escapeHtml(station + '_ATIS') + '</strong>'
+            + '<div class="atc-info-meta">'
+            + escapeHtml(MAP_TEXT.atc_controller) + ': '
+            + escapeHtml(airportPosition.controller_name || '–')
+            + '<br>' + escapeHtml(MAP_TEXT.atc_frequency) + ': '
+            + escapeHtml(atisFrequency) + ' MHz'
+            + '<br>' + escapeHtml(MAP_TEXT.atis_information) + ': '
+            + escapeHtml(airportPosition.atis_info_letter || '–')
+            + (airportPosition.atis_active_runway
+                ? '<br>' + escapeHtml(MAP_TEXT.atis_runway) + ': '
+                    + escapeHtml(airportPosition.atis_active_runway) : '')
+            + '<br>' + escapeHtml(
+                Number(airportPosition.atis_active)
+                    ? MAP_TEXT.atis_active : MAP_TEXT.atis_preparing
+            )
+            + '</div></' + tag + '>';
+    }
+
+    function closeAtcInfoPanel()
+    {
+        selectedAtcStationCode = null;
+        atcInfoPanel.classList.remove('open');
+    }
+
+    function openAtcInfoPanel(positions, identifier, name, kind)
+    {
+        closeAirportTrafficPanel();
+        closeNavigationPointPanel();
+        pilotInfoPanel.classList.remove('open');
+        document.getElementById('atcInfoIdentifier').innerText = identifier || 'ATC';
+        selectedAtcStationCode = String(identifier || '').toUpperCase();
+        document.getElementById('atcInfoName').innerText = name || MAP_TEXT.atc_online;
+        document.getElementById('atcInfoKind').innerText =
+            String(identifier || 'ATC') + ' ' + MAP_TEXT.atc_information;
+        document.getElementById('atcInfoList').innerHTML = renderAtcInfoCards(positions);
+        document.getElementById('atcAirportBackButton').style.display =
+            positions.some(position =>
+                String(position.position_code || '').toUpperCase() !== 'CTR')
+                ? 'block' : 'none';
+        atcInfoPanel.classList.add('open');
+    }
+
+    async function openAtcAirportDetails()
+    {
+        const station = selectedAtcStationCode;
+        if (!station) return;
+        if (!airportTrafficData[station]?.info) {
+            try {
+                const response = await fetch(
+                    'execute/airport_lookup.php?q=' + encodeURIComponent(station)
+                );
+                const data = await response.json();
+                const airport = (data.airports || []).find(entry =>
+                    String(entry.code || '').toUpperCase() === station);
+                if (!airport) return;
+                searchedAirports[station] = airport;
+                ensureAirportTrafficBucket(airportTrafficData, station, airport);
+                updateAirportTrafficMarkers();
+            } catch (error) {
+                console.error(error);
+                return;
+            }
+        }
+        const airport = airportTrafficData[station]?.info;
+        const coordinates = airport ? getAirportLatLng(airport) : null;
+        if (coordinates) map.setView(coordinates, 11, {animate:true});
+        openAirportTrafficPanel(station);
+    }
+
+    function refreshOpenAtcInfoPanel()
+    {
+        if (!selectedAtcStationCode || !atcInfoPanel.classList.contains('open')) return;
+        const positions = latestAtcPositions.filter(position =>
+            String(position.station_code || '').toUpperCase() === selectedAtcStationCode);
+        if (!positions.length) {
+            closeAtcInfoPanel();
+            return;
+        }
+        document.getElementById('atcInfoList').innerHTML = renderAtcInfoCards(positions);
+    }
+
+    function pointInSectorRing(longitude, latitude, ring)
+    {
+        let inside = false;
+        for (let index = 0, previous = ring.length - 1; index < ring.length; previous = index++) {
+            const currentPoint = ring[index] || [];
+            const previousPoint = ring[previous] || [];
+            const currentX = Number(currentPoint[0]);
+            const currentY = Number(currentPoint[1]);
+            const previousX = Number(previousPoint[0]);
+            const previousY = Number(previousPoint[1]);
+            const crosses = ((currentY > latitude) !== (previousY > latitude))
+                && (longitude < (previousX - currentX) * (latitude - currentY)
+                    / ((previousY - currentY) || Number.EPSILON) + currentX);
+            if (crosses) inside = !inside;
+        }
+        return inside;
+    }
+
+    function pointInSectorPolygon(longitude, latitude, polygon)
+    {
+        if (!Array.isArray(polygon) || !polygon.length
+            || !pointInSectorRing(longitude, latitude, polygon[0])) return false;
+        return !polygon.slice(1).some(hole =>
+            pointInSectorRing(longitude, latitude, hole));
+    }
+
+    function pointInSectorFeature(longitude, latitude, feature)
+    {
+        if (!feature) return false;
+        if (feature.type === 'FeatureCollection') {
+            return (feature.features || []).some(item =>
+                pointInSectorFeature(longitude, latitude, item));
+        }
+        if (feature.type === 'Feature') {
+            return pointInSectorFeature(longitude, latitude, feature.geometry);
+        }
+        if (feature.type === 'Polygon') {
+            return pointInSectorPolygon(longitude, latitude, feature.coordinates || []);
+        }
+        if (feature.type === 'MultiPolygon') {
+            return (feature.coordinates || []).some(polygon =>
+                pointInSectorPolygon(longitude, latitude, polygon));
+        }
+        return false;
+    }
+
+    function radarPositionsCoveringAirport(airport)
+    {
+        const coordinates = getAirportLatLng(airport);
+        if (!coordinates) return [];
+        const latitude = coordinates[0];
+        const longitude = coordinates[1];
+        const covered = [];
+        [...Object.values(atcTraconLayers), ...Object.values(atcFirLayers)]
+            .forEach(layer => {
+                if (!pointInSectorFeature(longitude, latitude, layer.__vfnCoverageFeature)) return;
+                (layer.__vfnCoveragePositions || []).forEach(position => {
+                    if (!covered.some(item => item.callsign === position.callsign)) {
+                        covered.push(position);
+                    }
+                });
+            });
+        return covered;
+    }
+
+    function updateSelectedAirportAtc()
+    {
+        const list = document.getElementById('airportAtcList');
+        if (!list || !selectedAirportCode) return;
+        const positions = latestAtcPositions.filter(position =>
+            String(position.station_code || '').toUpperCase() === selectedAirportCode
+            && String(position.position_code || '').toUpperCase() !== 'CTR');
+        const atis = latestAtisAirports.find(entry =>
+            String(entry.airport_icao || '').toUpperCase() === selectedAirportCode);
+        const controllers = Array.isArray(atis?.controllers) ? atis.controllers : [];
+        controllers.forEach(controller => {
+            if (!positions.some(position => position.callsign === controller.callsign)) {
+                positions.push(controller);
+            }
+        });
+        const airport = airportTrafficData[selectedAirportCode]?.info
+            || searchedAirports[selectedAirportCode];
+        radarPositionsCoveringAirport(airport).forEach(controller => {
+            if (!positions.some(position => position.callsign === controller.callsign)) {
+                positions.push(controller);
+            }
+        });
+        let html = positions.length ? renderAtcInfoCards(positions, true, false) : '';
+        if (atis) {
+            html += '<div class="atc-info-card"><span class="atc-position-code">ATIS</span>'
+                + '<strong>' + escapeHtml(selectedAirportCode + '_ATIS') + '</strong>'
+                + '<div class="atc-info-meta">' + escapeHtml(MAP_TEXT.atc_frequency) + ': '
+                + escapeHtml(atis.frequency || '–') + ' MHz<br>'
+                + escapeHtml(MAP_TEXT.atis_information) + ': '
+                + escapeHtml(atis.info_letter || '–')
+                + (atis.active_runway ? '<br>' + escapeHtml(MAP_TEXT.atis_runway) + ': '
+                    + escapeHtml(atis.active_runway) : '')
+                + '<br>' + escapeHtml(Number(atis.is_active ?? atis.active)
+                    ? MAP_TEXT.atis_active : MAP_TEXT.atis_unavailable) + '</div></div>';
+        }
+        list.innerHTML = html || '<div class="airport-traffic-empty">'
+            + escapeHtml(MAP_TEXT.atc_none) + '</div>';
+    }
+
+    async function openAtisAirport(icao)
+    {
+        const code = String(icao || '').toUpperCase();
+        if (!airportTrafficData[code]?.info) {
+            try {
+                const response = await fetch('execute/airport_lookup.php?q=' + encodeURIComponent(code));
+                const data = await response.json();
+                const airport = (data.airports || []).find(entry =>
+                    String(entry.code || entry.ident || '').toUpperCase() === code);
+                if (!airport) return;
+                searchedAirports[code] = airport;
+                ensureAirportTrafficBucket(airportTrafficData, code, airport);
+                updateAirportTrafficMarkers();
+            } catch (error) { console.error(error); return; }
+        }
+        openAirportTrafficPanel(code);
+    }
+
+    function renderAtisAirportMarkers(airports)
+    {
+        if (!map.getPane('atisAirportPane')) {
+            const pane = map.createPane('atisAirportPane');
+            pane.style.zIndex = '770'; pane.style.pointerEvents = 'auto';
+        }
+        const active = {};
+        airports.forEach(atis => {
+            const code = String(atis.airport_icao || '').toUpperCase();
+            const latitude = Number(atis.latitude), longitude = Number(atis.longitude);
+            if (!code || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+            const tooltip = '<strong>' + escapeHtml(code + ' ATIS') + '</strong><br>'
+                + escapeHtml(atis.frequency || '') + ' MHz · '
+                + escapeHtml(atis.info_letter || '–') + '<br>'
+                + escapeHtml(Number(atis.is_active ?? atis.active)
+                    ? MAP_TEXT.atis_active : MAP_TEXT.atis_unavailable);
+            const radarCovered = Array.isArray(atis.controllers) && atis.controllers.length > 0;
+            if (!radarCovered) return;
+            active[code] = true;
+            if (!atisAirportMarkers[code]) {
+                atisAirportMarkers[code] = L.circleMarker([latitude, longitude], {
+                    pane:'atisAirportPane', radius:4,
+                    color:'#ffffff', weight:2,
+                    fillColor:Number(atis.is_active ?? atis.active) ? '#20cfff' : '#102b3a',
+                    fillOpacity:1
+                }).addTo(map).on('click', () => openAtisAirport(code));
+            } else {
+                atisAirportMarkers[code].setLatLng([latitude, longitude]);
+                atisAirportMarkers[code].setRadius(4);
+                atisAirportMarkers[code].setStyle({
+                    color:'#ffffff',
+                    fillColor:Number(atis.is_active ?? atis.active) ? '#20cfff' : '#102b3a',
+                    fillOpacity:1
+                });
+            }
+            atisAirportMarkers[code].bindTooltip(tooltip, {direction:'top'});
+        });
+        Object.keys(atisAirportMarkers).forEach(code => {
+            if (active[code]) return;
+            map.removeLayer(atisAirportMarkers[code]); delete atisAirportMarkers[code];
+        });
+    }
+
+    function openAirportAtcDetails(stationCode)
+    {
+        const station = String(stationCode || '').toUpperCase();
+        const positions = latestAtcPositions.filter(position =>
+            String(position.station_code || '').toUpperCase() === station);
+        if (!positions.length) return;
+        openAtcInfoPanel(
+            positions,
+            station,
+            positions[0].airport_name || station,
+            MAP_TEXT.atc_positions
+        );
+    }
+
+    function renderAtcAirportPositions(positions)
+    {
+        if (!map.getPane('atcAirportPane')) {
+            const pane = map.createPane('atcAirportPane');
+            pane.style.zIndex = '760';
+            pane.style.pointerEvents = 'auto';
+        }
+        const grouped = {};
+        positions.forEach(position => {
+            if (!Number.isFinite(Number(position.latitude))
+                || !Number.isFinite(Number(position.longitude))) return;
+            const key = String(position.station_code || '').toUpperCase();
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(position);
+        });
+        Object.keys(atcAirportMarkers).forEach(key => {
+            if (grouped[key]) return;
+            map.removeLayer(atcAirportMarkers[key]);
+            delete atcAirportMarkers[key];
+        });
+        Object.keys(grouped).forEach(key => {
+            const items = grouped[key];
+            const symbols = [];
+            items.forEach(item => {
+                const symbol = String(item.position_code || '').toLowerCase();
+                if (!symbols.includes(symbol)) symbols.push(symbol);
+            });
+            const symbolOrder = {dep:1,app:2,twr:3,gnd:4,del:5,info:6};
+            symbols.sort((left,right) => (symbolOrder[left]||9)-(symbolOrder[right]||9));
+            const html = '<div class="atc-airport-stack">'
+                + symbols.map(symbol => '<span class="atc-position-symbol '
+                    + escapeHtml(symbol) + '"></span>').join('')
+                + '</div>';
+            const tooltip = items.map(atcPositionTooltip).join('<hr>');
+            const latLng = [Number(items[0].latitude), Number(items[0].longitude)];
+            const icon = L.divIcon({className:'',html:html,iconSize:[110,110],iconAnchor:[55,55]});
+            if (!atcAirportMarkers[key]) {
+                atcAirportMarkers[key] = L.marker(latLng,{
+                    icon:icon,
+                    pane:'atcAirportPane',
+                    zIndexOffset:5000,
+                    riseOnHover:true
+                })
+                    .bindTooltip(tooltip,{direction:'top',offset:[0,-18]})
+                    .addTo(map);
+            } else {
+                atcAirportMarkers[key].setLatLng(latLng).setIcon(icon)
+                    .setTooltipContent(tooltip);
+            }
+            atcAirportMarkers[key].off('click').on('click',event => {
+                if (event?.originalEvent) L.DomEvent.stopPropagation(event.originalEvent);
+                openAtcInfoPanel(
+                    items, key, items[0].airport_name || key, MAP_TEXT.atc_positions
+                );
+            });
+        });
+    }
+
+    async function renderAtcTraconPositions(positions)
+    {
+        const approachPositions = positions.filter(position =>
+            ['APP','DEP'].includes(String(position.position_code || '').toUpperCase()));
+        if (!approachPositions.length) {
+            Object.keys(atcTraconLayers).forEach(key => {
+                map.removeLayer(atcTraconLayers[key]);
+                delete atcTraconLayers[key];
+            });
+            return;
+        }
+        let dataset;
+        try {
+            dataset = await loadTraconDataset();
+        } catch (error) {
+            console.error(error);
+            return;
+        }
+        if (!map.getPane('atcActiveTraconPane')) {
+            const pane = map.createPane('atcActiveTraconPane');
+            pane.style.zIndex = '475';
+            pane.style.pointerEvents = 'auto';
+        }
+        const matched = {};
+        approachPositions.forEach(position => {
+            const station = String(position.station_code || '').toUpperCase();
+            const positionCode = String(position.position_code || '').toUpperCase();
+            const feature = (dataset.features || []).find(candidate => {
+                const properties = candidate?.properties || {};
+                const prefixes = Array.isArray(properties.prefix)
+                    ? properties.prefix : [properties.prefix];
+                const suffix = String(properties.suffix || 'APP').toUpperCase();
+                return prefixes.some(prefix => String(prefix || '').toUpperCase() === station)
+                    && suffix === positionCode;
+            });
+            if (!feature) return;
+            const key = String(feature.properties?.id || station).toUpperCase()
+                + ':' + positionCode;
+            if (!matched[key]) matched[key] = {feature:feature,positions:[]};
+            matched[key].positions.push(position);
+        });
+        Object.keys(atcTraconLayers).forEach(key => {
+            if (matched[key]) return;
+            map.removeLayer(atcTraconLayers[key]);
+            delete atcTraconLayers[key];
+        });
+        Object.keys(matched).forEach(key => {
+            const entry = matched[key];
+            const tooltip = entry.positions.map(atcPositionTooltip).join('<hr>');
+            const isDeparture = key.endsWith(':DEP');
+            const style = {
+                color: isDeparture ? '#8d63ff' : '#3449a8',
+                weight: 3,
+                opacity: .9,
+                fillColor: isDeparture ? '#9470ff' : '#536ac7',
+                fillOpacity: .13,
+                dashArray: isDeparture ? '8 5' : null
+            };
+            if (!atcTraconLayers[key]) {
+                atcTraconLayers[key] = L.geoJSON(entry.feature,{
+                    pane:'atcActiveTraconPane', style:style
+                }).bindTooltip(tooltip,{sticky:true,className:'atc-fir-label'}).addTo(map);
+            } else {
+                atcTraconLayers[key].setStyle(style).setTooltipContent(tooltip);
+            }
+            atcTraconLayers[key].__vfnCoverageFeature = entry.feature;
+            atcTraconLayers[key].__vfnCoveragePositions = entry.positions;
+            atcTraconLayers[key].off('click').on('click',() => {
+                const first = entry.positions[0] || {};
+                openAtcInfoPanel(
+                    entry.positions,
+                    String(first.station_code || ''),
+                    first.airport_name || first.station_code || key,
+                    MAP_TEXT.atc_positions
+                );
+            });
+        });
+    }
+
+    async function renderAtcFirPositions(positions)
+    {
+        const grouped = {};
+        positions.forEach(position => {
+            const key = String(position.station_code || '').toUpperCase();
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(position);
+        });
+        Object.keys(atcFirLayers).forEach(key => {
+            if (grouped[key]) return;
+            map.removeLayer(atcFirLayers[key]);
+            delete atcFirLayers[key];
+        });
+        if (!Object.keys(grouped).length) return;
+        const dataset = await loadFirDataset();
+        if (!map.getPane('atcActiveFirPane')) {
+            const pane = map.createPane('atcActiveFirPane');
+            pane.style.zIndex = '485';
+            pane.style.pointerEvents = 'auto';
+        }
+        const exactSectorResults = await Promise.all(Object.keys(grouped).map(
+            key => loadSectorBoundary(key)
+        ));
+        const activeSectors = Object.keys(grouped).map((key, keyIndex) => {
+            const fallbackCode = String(
+                grouped[key][0]?.radar_boundary_code || ''
+            ).toUpperCase();
+            const detailed = exactSectorResults[keyIndex];
+            let exact = Boolean(detailed?.geojson?.features?.length);
+            let feature = exact ? detailed.geojson : null;
+            if (!feature) {
+                feature = (dataset.data.features || []).find(item =>
+                    String(item?.properties?.id || '').toUpperCase() === key);
+                exact = Boolean(feature);
+            }
+            if (!feature && fallbackCode) {
+                exact = false;
+                feature = (dataset.data.features || []).find(item =>
+                    String(item?.properties?.id || '').toUpperCase() === fallbackCode);
+            }
+            const featureAreas = feature?.type === 'FeatureCollection'
+                ? feature.features.map(featureExtentArea)
+                : [featureExtentArea(feature)];
+            return feature ? {
+                key:key, feature:feature, exact:exact,
+                area:Math.max(0, ...featureAreas)
+            } : null;
+        }).filter(Boolean).sort((left,right) => right.area-left.area);
+        activeSectors.forEach((sector,index) => {
+            const key = sector.key;
+            const feature = sector.feature;
+            const tooltip = grouped[key].map(atcPositionTooltip).join('<hr>')
+                + (sector.exact ? '' : '<hr><em>Approximate FIR fallback – exact sector geometry unavailable</em>');
+            const isSubSector = activeSectors.some(other =>
+                other.area > sector.area
+                && (key.indexOf(other.key + '-') === 0
+                    || key.indexOf(other.key + '_') === 0));
+            const sectorStyle = {
+                color: sector.exact ? (isSubSector ? '#ffad32' : '#ff8318') : '#a97945',
+                weight: isSubSector ? 6 : 5,
+                opacity: 1,
+                fillColor: isSubSector ? '#ffb13b' : '#ff9a2e',
+                fillOpacity: sector.exact ? (isSubSector ? .28 : .12) : .035,
+                dashArray: sector.exact ? (isSubSector ? '7 5' : '13 7') : '3 9'
+            };
+            if (!atcFirLayers[key]) {
+                atcFirLayers[key] = L.geoJSON(feature,{
+                    pane:'atcActiveFirPane',
+                    style:sectorStyle
+                }).bindTooltip(tooltip,{sticky:true,className:'atc-fir-label'}).addTo(map);
+            } else {
+                atcFirLayers[key].setStyle(sectorStyle).setTooltipContent(tooltip);
+            }
+            atcFirLayers[key].__vfnCoverageFeature = feature;
+            atcFirLayers[key].__vfnCoveragePositions = grouped[key];
+            atcFirLayers[key].off('click').on('click',() => openAtcInfoPanel(
+                grouped[key], key, key, MAP_TEXT.atc_radar_sector
+            ));
+            // Rendering from the largest parent to the smallest child ensures
+            // that a staffed sub-sector owns hover/click interaction inside
+            // its boundaries instead of the parent FIR swallowing it.
+            atcFirLayers[key].bringToFront();
+        });
+    }
+
+    async function loadAtcPositions()
+    {
+        if (atcPositionLoadInProgress) return;
+        atcPositionLoadInProgress = true;
+        try {
+            const response = await fetch('execute/get_atc_positions.php?time=' + Date.now());
+            const data = await response.json();
+            if (!response.ok || !data.success) throw new Error(data.message || 'ATC unavailable');
+            const positions = Array.isArray(data.positions) ? data.positions : [];
+            activeAtcCount = Number(data.count ?? positions.length ?? 0);
+            latestAtcPositions = positions;
+            latestAtisAirports = Array.isArray(data.atis_airports) ? data.atis_airports : [];
+            renderAtisAirportMarkers(latestAtisAirports);
+            refreshOpenAtcInfoPanel();
+            const airportPositions = positions.filter(position =>
+                !['CTR'].includes(String(position.position_code || '').toUpperCase()));
+            const radarPositions = positions.filter(position =>
+                String(position.position_code || '').toUpperCase() === 'CTR');
+            renderAtcAirportPositions(airportPositions);
+            await renderAtcTraconPositions(airportPositions);
+            await renderAtcFirPositions(radarPositions);
+            updateSelectedAirportAtc();
+        } catch (error) {
+            console.error(error);
+        } finally {
+            atcPositionLoadInProgress = false;
+        }
     }
 
     async function loadFirBoundaries()
@@ -2338,6 +3028,14 @@ if ($statusMessage !== '') {
                     String(value || '').toLocaleLowerCase() === query
                 );
         });
+        const visibleAtc = latestAtcPositions.filter(function(position) {
+            if (searchType !== 'all' && searchType !== 'atc') return false;
+            const values = [
+                position.callsign, position.station_code, position.position_code,
+                position.controller_name, position.airport_name, position.frequency
+            ].map(value => String(value || '').toLocaleLowerCase());
+            return exactOnly ? values.includes(query) : values.join(' ').includes(query);
+        });
         const airportHtml = visibleAirports.map(function(airport) {
             return '<button type="button" class="pilot-directory-item airport-result"'
                 + ' data-airport-code="' + escapeHtml(airport.code) + '">'
@@ -2369,16 +3067,31 @@ if ($statusMessage !== '') {
                     ? ' · ' + escapeHtml(point.name) : '')
                 + '</div></button>';
         }).join('');
+        const atcHtml = visibleAtc.map(function(position) {
+            const index = latestAtcPositions.indexOf(position);
+            return '<button type="button" class="pilot-directory-item"'
+                + ' data-atc-index="' + index + '">'
+                + '<div class="pilot-directory-callsign">ATC '
+                + escapeHtml(position.callsign || position.station_code || '') + '</div>'
+                + '<div class="pilot-directory-meta">'
+                + escapeHtml([
+                    position.controller_name,
+                    position.position_code,
+                    position.frequency ? position.frequency + ' MHz' : ''
+                ].filter(Boolean).join(' · '))
+                + '</div></button>';
+        }).join('');
         if (
             pilots.length === 0
             && visibleAirports.length === 0
             && visibleNavigation.length === 0
+            && visibleAtc.length === 0
         ) {
             list.innerHTML = '<div class="pilot-directory-meta">'
                 + escapeHtml(MAP_TEXT.no_pilots_found) + '</div>';
             return;
         }
-        list.innerHTML = airportHtml + navigationHtml + pilots.map(function(pilot) {
+        list.innerHTML = atcHtml + airportHtml + navigationHtml + pilots.map(function(pilot) {
             const flightplan = getFlightplan(pilot);
             const active = selectedCallsign === pilot.callsign ? ' active' : '';
             const following = followedUserId === Number(pilot.user_id) ? ' · ◉' : '';
@@ -2433,6 +3146,7 @@ if ($statusMessage !== '') {
         if (query.trim().length < 2) {
             airportSearchResults = [];
             navigationSearchResults = [];
+            atcSearchResults = [];
             renderPilotDirectory();
             return;
         }
@@ -2493,11 +3207,13 @@ if ($statusMessage !== '') {
                 });
             }
             navigationSearchResults = airacResults.concat(radarResults);
+            atcSearchResults = latestAtcPositions.slice();
             currentAiracCycle =
                 airacData.success ? (airacData.cycle || '') : '';
         } catch (error) {
             airportSearchResults = [];
             navigationSearchResults = [];
+            atcSearchResults = [];
         }
         renderPilotDirectory();
     }
@@ -2549,6 +3265,31 @@ if ($statusMessage !== '') {
         });
     }
     document.getElementById('pilotDirectoryList').addEventListener('click', function(event) {
+        const atcItem = event.target.closest('[data-atc-index]');
+        if (atcItem) {
+            const position = latestAtcPositions[Number(atcItem.dataset.atcIndex)];
+            if (position) {
+                const station = String(position.station_code || '').toUpperCase();
+                const positions = latestAtcPositions.filter(entry =>
+                    String(entry.station_code || '').toUpperCase() === station);
+                if (String(position.position_code || '').toUpperCase() === 'CTR') {
+                    const boundary = String(
+                        position.radar_boundary_code || station
+                    ).toUpperCase();
+                    const layer = atcFirLayers[boundary];
+                    if (layer) map.fitBounds(layer.getBounds(), {padding:[30,30]});
+                    openAtcInfoPanel(positions, station, station, MAP_TEXT.atc_radar_sector);
+                } else {
+                    const marker = atcAirportMarkers[station];
+                    if (marker) map.setView(marker.getLatLng(), 11, {animate:true});
+                    openAtcInfoPanel(
+                        positions, station, position.airport_name || station,
+                        MAP_TEXT.atc_positions
+                    );
+                }
+            }
+            return;
+        }
         const navigationItem = event.target.closest('[data-navigation-index]');
         if (navigationItem) {
             const point =
@@ -3431,6 +4172,8 @@ if ($statusMessage !== '') {
 
         document.getElementById('airportPanelIcao').innerText =
             code;
+        document.getElementById('airportPanelKind').innerText =
+            code + ' ' + MAP_TEXT.airport_information;
 
         document.getElementById('airportPanelName').innerText =
             getAirportName(
@@ -3465,11 +4208,13 @@ if ($statusMessage !== '') {
             .toggle('active', selectedAirportTab === 'metar');
 
         renderAirportTrafficList(airport);
+        updateSelectedAirportAtc();
     }
 
     function openAirportTrafficPanel(code)
     {
         closeNavigationPointPanel();
+        closeAtcInfoPanel();
 
         selectedAirportCode =
             code;
@@ -3576,6 +4321,7 @@ if ($statusMessage !== '') {
     async function openNavigationPointPanel(point)
     {
         closeAirportTrafficPanel();
+        closeAtcInfoPanel();
         pilotInfoPanel.classList.remove('open');
         selectedCallsign = null;
         selectedPilotData = null;
@@ -3782,6 +4528,7 @@ if ($statusMessage !== '') {
     function openPilotPanel(pilot)
     {
         closeNavigationPointPanel();
+        closeAtcInfoPanel();
 
         if (selectedCallsign !== pilot.callsign) {
             removeFlightPlanRoute();
@@ -4265,7 +5012,11 @@ if ($statusMessage !== '') {
             let statusText =
                 MAP_TEXT.active_pilots
                 + ': '
-                + totalCount;
+                + totalCount
+                + '<br>'
+                + MAP_TEXT.active_atc
+                + ': '
+                + activeAtcCount;
 
             if (invisibleCount > 0)
             {
@@ -4297,12 +5048,14 @@ if ($statusMessage !== '') {
     }
 
     loadPilots();
+    loadAtcPositions();
     openTargetAirport();
 
     setInterval(
         loadPilots,
         2000
     );
+    setInterval(loadAtcPositions, 5000);
 </script>
 
 <?php require_once 'includes/footer.php'; ?>

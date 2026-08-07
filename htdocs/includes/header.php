@@ -482,9 +482,11 @@ if (isset($_SESSION['web_user_id'])) {
                 <?php if ($unreadPrivateMessageCount > 0): ?><span class="header-notification-dot"></span><?php endif; ?>
             </a>
 
-            <button type="button" onclick="openAtcClient()">
-                <?php echo htmlspecialchars(t('nav_atc_login')); ?>
-            </button>
+            <?php if (!empty($atcLoginEnabled) || $headerOpPermission >= 5): ?>
+                <button type="button" onclick="openAtcClient()">
+                    <?php echo htmlspecialchars(t('nav_atc_login')); ?>
+                </button>
+            <?php endif; ?>
 
             <a href="notifications.php" title="<?php echo htmlspecialchars(t('nav_notifications')); ?>">
                 🔔

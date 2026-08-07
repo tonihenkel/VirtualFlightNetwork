@@ -30,6 +30,10 @@ function vfnConfigDefinitions(): array
             'type' => 'boolean',
             'category' => 'general'
         ],
+        'atcLoginEnabled' => [
+            'type' => 'boolean',
+            'category' => 'permissions'
+        ],
         'chatFrequencyRangeNm' => [
             'type' => 'number',
             'min' => 1,

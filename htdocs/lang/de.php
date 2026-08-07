@@ -1,6 +1,22 @@
 <?php
 
 return [
+    'atc_context_initial_contact' => 'Initial Contact auswählen',
+    'atc_context_edit_flightplan' => 'Flugplan ändern',
+    'atc_context_center_target' => 'Flugzeug zentrieren',
+    'atc_flightplan_title' => 'Flugplan',
+    'atc_flightplan_rules' => 'Flugregeln',
+    'atc_flightplan_type' => 'Flugart',
+    'atc_flightplan_departure' => 'Start',
+    'atc_flightplan_arrival' => 'Ziel',
+    'atc_flightplan_alternate1' => 'Ausweich 1',
+    'atc_flightplan_alternate2' => 'Ausweich 2',
+    'atc_flightplan_level' => 'Reiseflughöhe',
+    'atc_flightplan_speed' => 'Reisegeschwindigkeit',
+    'atc_flightplan_route' => 'Route',
+    'atc_flightplan_remarks' => 'Bemerkungen',
+    'atc_flightplan_cancel' => 'Abbrechen',
+    'atc_flightplan_save' => 'Speichern',
 
     'admin_tab_todo' => 'TODO-Liste',
     'admin_todo_title' => 'VFN Master-TODO',
@@ -48,6 +64,9 @@ return [
 
     'status_active_pilots' =>
         'Aktive Piloten',
+
+    'status_active_atc' =>
+        'Aktive Lotsen',
 
     'status_system' =>
         'System',
@@ -198,6 +217,42 @@ return [
 
     'map_active_pilots' =>
         'Aktive Piloten',
+
+    'map_active_atc' =>
+        'Aktive Lotsen',
+
+    'map_atc_online' =>
+        'ATC online',
+
+    'map_atc_positions' =>
+        'Besetzte Positionen',
+
+    'map_atc_none' =>
+        'Derzeit ist keine Position besetzt.',
+
+    'map_atc_controller' =>
+        'Lotse',
+
+    'map_atc_frequency' =>
+        'Frequenz',
+
+    'map_atc_radar_sector' =>
+        'Radarbereich',
+
+    'map_atc_information' =>
+        'ATC-Informationen',
+
+    'map_airport_information' =>
+        'Airport-Informationen',
+
+    'map_atis_information' => 'Information',
+    'map_atis_runway' => 'Aktive Runway',
+    'map_atis_active' => 'ATIS-Sprachansage aktiv',
+    'map_atis_preparing' => 'ATIS-Sprachansage wird vorbereitet',
+    'map_atis_unavailable' => 'ATIS-Sprachansage derzeit nicht verfügbar',
+
+    'map_open_airport_information' =>
+        'Flughafeninformationen öffnen',
 
     'map_invisible_pilots' =>
         'Unsichtbare Piloten',
@@ -1247,7 +1302,7 @@ return [
         'Achtung: Alle anderen Benutzer, Chats, Sessions, Positionen, Flugpläne, Statistiken, Aktivitäten, Filter und Einstellungen werden unwiderruflich gelöscht.',
 
     'admin_database_reset_preserved' =>
-        'Erhalten bleiben: airports, divisions inklusive Seiteninhalt, division_staff, division_content_revisions und chat_filter_words. Danach wird admin mit OP-Level 5 und dem Passwort saturn neu angelegt.',
+        'Erhalten bleiben: airports, divisions inklusive Seiteninhalt, division_staff, division_content_revisions, chat_filter_words und der ATC-Frequenzkatalog. Danach wird admin mit OP-Level 5 und dem Passwort saturn neu angelegt.',
 
     'admin_database_reset_password' =>
         'Aktuelles Passwort',
@@ -1400,6 +1455,9 @@ return [
     'feature_atis_title' => 'Flugpläne und D-ATIS',
     'feature_atis_text' => 'Flugpläne, automatische METAR-D-ATIS und Controllerinformationen stehen direkt im Plugin bereit.',
     'admin_configuration_registration_enabled' => 'Registrierung aktiviert',
+    'admin_configuration_atc_login_enabled' => 'ATC-Login für Spieler aktiviert',
+    'atc_login_disabled' => 'ATC-Login vorübergehend deaktiviert',
+    'atc_login_disabled_text' => 'Der ATC-Client ist derzeit gesperrt. Nur Administratoren mit OP-Level 5 können ihn weiterhin verwenden.',
     'registration_disabled' => 'Neue Registrierungen sind derzeit deaktiviert.',
     'csrf_invalid' => 'Die Sicherheitsprüfung ist abgelaufen. Bitte lade die Seite neu.',
     'register_rate_limited' => 'Zu viele Registrierungsversuche. Bitte versuche es später erneut.',
@@ -1455,6 +1513,7 @@ return [
     'map_search_type_navaids' => 'Nur Funknavigationsanlagen',
     'map_search_type_airways' => 'Nur Luftstraßen',
     'map_search_type_radars' => 'Nur Radarbereiche',
+    'map_search_type_atc' => 'Nur aktive ATC-Positionen',
     'map_search_exact' => 'Exakt',
     'map_airport_search_result' => 'Flughafen',
     'map_airport_metar_loading' => 'METAR wird geladen …',
@@ -1639,6 +1698,7 @@ return [
     'atc_client_title' => 'ATC Radar Client',
     'atc_fullscreen' => 'Vollbild',
     'atc_close' => 'Schließen',
+    'atc_position_logout' => 'Position ausloggen',
     'atc_login_required' => 'Anmeldung erforderlich',
     'atc_login_required_text' => 'Bitte melde dich zuerst auf der VFN-Website an.',
     'atc_access_denied' => 'Keine ATC-Berechtigung',
@@ -1677,4 +1737,33 @@ return [
     'atc_setup_window' => 'ATC-Anmeldung und Positionswahl',
     'atc_window_detach' => 'In eigenem Fenster öffnen',
     'atc_window_dock' => 'Ins Hauptfenster zurückholen',
+    'atc_radar_session' => 'Radar-Sitzung',
+    'atc_callsign' => 'Kennung',
+    'atc_map_profile' => 'Kartenprofil',
+    'atc_live_traffic' => 'Live-Verkehr',
+    'atc_active_positions' => 'Besetzte Positionen',
+    'atc_voice' => 'Voice',
+    'atc_voice_disconnected' => 'Voice nicht verbunden.',
+    'atc_voice_connected' => 'Voice verbunden.',
+    'atc_voice_receive_only' => 'Nur Empfang',
+    'atc_atis_control' => 'Flughafen-ATIS',
+    'atc_atis_arrival_runways' => 'Landebahn(en)',
+    'atc_atis_departure_runways' => 'Startbahn(en)',
+    'atc_atis_transition_level' => 'Transition Level',
+    'atc_atis_transition_altitude' => 'Transition Altitude (ft)',
+    'atc_atis_approach_type' => 'Anflugverfahren',
+    'atc_atis_remarks' => 'Zusatzhinweise',
+    'atc_atis_save' => 'ATIS aktualisieren',
+    'atc_atis_automatic' => 'Automatik verwenden',
+    'atc_atis_saved' => 'ATIS-Daten gespeichert. Die neue Ansage wird erzeugt.',
+    'atc_atis_auto_saved' => 'Manuelle Vorgaben entfernt. Die automatische ATIS wird erzeugt.',
+    'atc_atis_not_available' => 'Für diese Position ist keine Flughafen-ATIS verfügbar.',
+    'atc_atis_current' => 'Aktuelle Ansage',
+    'atc_atis_manual' => 'Manuelle Vorgaben aktiv',
+    'atc_atis_auto' => 'Automatische Auswahl aktiv',
+    'atc_chat' => 'Frequenz-Chat',
+    'atc_chat_frequency' => 'Frequenz',
+    'atc_chat_placeholder' => 'Nachricht eingeben …',
+    'atc_chat_send' => 'Senden',
+    'atc_chat_receive_only' => 'Zuschauer können den Chat nur mitlesen.',
 ];

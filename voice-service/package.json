@@ -10,6 +10,7 @@
   "dependencies": {
     "dotenv": "^16.4.5",
     "mysql2": "^3.11.3",
+    "node-edge-tts": "^1.2.10",
     "ws": "^8.18.0"
   }
 }

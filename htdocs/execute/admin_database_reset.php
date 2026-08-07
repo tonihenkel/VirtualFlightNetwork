@@ -67,6 +67,7 @@ try {
         'division_staff',
         'division_content_revisions',
         'chat_filter_words',
+        'atc_position_frequencies',
         'users'
     ];
     $resetTables = array_values(array_filter(

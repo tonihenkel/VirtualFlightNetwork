@@ -6,9 +6,11 @@ const fs = require('fs');
 const path = require('path');
 const net = require('net');
 const dns = require('dns').promises;
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 const mysql = require('mysql2/promise');
 const WebSocket = require('ws');
+const { EdgeTTS } = require('node-edge-tts');
 
 const config = {
   host: process.env.VOICE_HOST || '0.0.0.0',
@@ -32,6 +34,13 @@ const config = {
   testAudioDirectory: path.resolve(
     process.env.VOICE_TEST_AUDIO_DIR || path.join(__dirname, 'test-audio')
   ),
+  airportFrequencyCsv: path.resolve(
+    process.env.AIRPORT_FREQUENCY_CSV || path.join(__dirname, '..', 'htdocs', 'data', 'airports', 'airport-frequencies.csv')
+  ),
+  runwayCsv: path.resolve(
+    process.env.RUNWAY_CSV || path.join(__dirname, '..', 'htdocs', 'data', 'airports', 'runways.csv')
+  ),
+  autoAtisRangeNm: Number(process.env.AUTO_ATIS_RANGE_NM || 60),
   ranges: {
     gnd: Number(process.env.RANGE_GND_NM || 30),
     twr: Number(process.env.RANGE_TWR_NM || 60),
@@ -44,12 +53,74 @@ const config = {
 const pool = mysql.createPool(config.db);
 const clients = new Map();
 let testBroadcast = null;
+const autoAtisBroadcasts = new Map();
+let autoAtisReconcileRunning = false;
+const airportAtisFrequencies = new Map();
+const airportRunways = new Map();
 // Match the plugin's 2048-sample capture buffers. Tiny 20 ms frames caused
 // older X-Plane clients to spend most of their receive loop synchronously
 // opening/playing JSON-wrapped waveOut packets, producing gaps and backlog.
 const testBroadcastFrameBytes = 2048 * 2;
 
 fs.mkdirSync(config.testAudioDirectory, { recursive: true });
+fs.mkdirSync(path.join(config.testAudioDirectory, 'atis'), { recursive: true });
+
+function parseCsvLine(line) {
+  const result = [];
+  let value = '';
+  let quoted = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === '"') {
+      if (quoted && line[index + 1] === '"') { value += '"'; index += 1; }
+      else quoted = !quoted;
+    } else if (character === ',' && !quoted) {
+      result.push(value); value = '';
+    } else value += character;
+  }
+  result.push(value);
+  return result;
+}
+
+function loadAtisReferenceData() {
+  try {
+    const lines = fs.readFileSync(config.airportFrequencyCsv, 'utf8').split(/\r?\n/);
+    const header = parseCsvLine(lines.shift() || '');
+    const identIndex = header.indexOf('airport_ident');
+    const typeIndex = header.indexOf('type');
+    const frequencyIndex = header.indexOf('frequency_mhz');
+    for (const line of lines) {
+      if (!line) continue;
+      const row = parseCsvLine(line);
+      const station = String(row[identIndex] || '').toUpperCase();
+      const type = String(row[typeIndex] || '').toUpperCase();
+      const frequency = normalizeFrequency(row[frequencyIndex]);
+      if (station && ['ATIS', 'D-ATIS'].includes(type) && frequency &&
+          !airportAtisFrequencies.has(station)) airportAtisFrequencies.set(station, frequency);
+    }
+  } catch (error) { console.error('Unable to load global ATIS frequencies:', error); }
+  try {
+    const lines = fs.readFileSync(config.runwayCsv, 'utf8').split(/\r?\n/);
+    const header = parseCsvLine(lines.shift() || '');
+    const column = (name) => header.indexOf(name);
+    for (const line of lines) {
+      if (!line) continue;
+      const row = parseCsvLine(line);
+      const station = String(row[column('airport_ident')] || '').toUpperCase();
+      if (!station || Number(row[column('closed')] || 0)) continue;
+      const entries = [
+        {ident: row[column('le_ident')], heading: Number(row[column('le_heading_degT')])},
+        {ident: row[column('he_ident')], heading: Number(row[column('he_heading_degT')])}
+      ].filter(item => item.ident && Number.isFinite(item.heading));
+      if (!entries.length) continue;
+      if (!airportRunways.has(station)) airportRunways.set(station, []);
+      airportRunways.get(station).push(...entries);
+    }
+  } catch (error) { console.error('Unable to load global runway data:', error); }
+  console.log(`ATIS reference data: ${airportAtisFrequencies.size} airports, ${airportRunways.size} runway sets.`);
+}
+
+loadAtisReferenceData();
 
 function normalizeFrequency(value) {
   const match = String(value || '').trim().match(/^(\d{3})[.,]?(\d{0,3})$/);
@@ -127,7 +198,8 @@ function getFrequencyRangeNm(frequency, station, overrideRangeNm = null) {
     return Infinity;
   }
 
-  if ([5, 10, 25, 50].includes(Number(overrideRangeNm))) {
+  if (Number.isFinite(Number(overrideRangeNm)) && Number(overrideRangeNm) >= 1 &&
+      Number(overrideRangeNm) <= 500) {
     return Number(overrideRangeNm);
   }
 
@@ -168,8 +240,9 @@ function canReceive(sender, receiver, frequency) {
   }
 
   if (receiver.monitor) {
-    if (receiver.opPermission < 1 ||
-        (receiver.monitorFrequency !== frequency && !receiver.monitorGlobal)) {
+    // A global monitor (currently UNICOM) is global only with regard to
+    // distance. It must never bypass the tuned-frequency check.
+    if (!receiver.monitorAuthorized || receiver.monitorFrequency !== frequency) {
       return false;
     }
     if (receiver.monitorGlobal) return true;
@@ -230,6 +303,12 @@ function findBlockingTransmitter(client, frequency) {
   if (testBroadcast && testBroadcast.frequency === frequency &&
       transmissionRegionsOverlap(client, testBroadcast.sender, frequency)) {
     return testBroadcast.sender;
+  }
+  for (const broadcast of autoAtisBroadcasts.values()) {
+    if (broadcast.frequency === frequency &&
+        transmissionRegionsOverlap(client, broadcast.sender, frequency)) {
+      return broadcast.sender;
+    }
   }
   return null;
 }
@@ -494,8 +573,337 @@ async function startTestBroadcast(client, payload) {
   broadcastTestStatus();
 }
 
+const atisAlphabet = [
+  'Alpha','Bravo','Charlie','Delta','Echo','Foxtrot','Golf','Hotel','India','Juliett',
+  'Kilo','Lima','Mike','November','Oscar','Papa','Quebec','Romeo','Sierra','Tango',
+  'Uniform','Victor','Whiskey','X-ray','Yankee','Zulu'
+];
+const phoneticLetters = {
+  A:'Alpha',B:'Bravo',C:'Charlie',D:'Delta',E:'Echo',F:'Foxtrot',G:'Golf',H:'Hotel',
+  I:'India',J:'Juliett',K:'Kilo',L:'Lima',M:'Mike',N:'November',O:'Oscar',P:'Papa',
+  Q:'Quebec',R:'Romeo',S:'Sierra',T:'Tango',U:'Uniform',V:'Victor',W:'Whiskey',
+  X:'X-ray',Y:'Yankee',Z:'Zulu'
+};
+const spokenDigits = ['zero','one','two','three','four','five','six','seven','eight','nine'];
+
+function speakCharacters(value) {
+  return String(value || '').toUpperCase().split('').map(character =>
+    phoneticLetters[character] || (/[0-9]/.test(character) ? spokenDigits[Number(character)] : character)
+  ).join(' ');
+}
+
+function speakNumberDigits(value) {
+  return String(value || '').split('').map(character =>
+    /[0-9]/.test(character) ? spokenDigits[Number(character)] : character
+  ).join(' ');
+}
+
+function fetchText(url) {
+  return new Promise((resolve, reject) => {
+    const request = https.get(url, {headers:{'User-Agent':'VFN-Auto-ATIS/1.0'}}, response => {
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        response.resume(); reject(new Error(`HTTP ${response.statusCode}`)); return;
+      }
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', chunk => { body += chunk; });
+      response.on('end', () => resolve(body));
+    });
+    request.setTimeout(10000, () => request.destroy(new Error('METAR timeout')));
+    request.on('error', reject);
+  });
+}
+
+async function fetchAirportMetar(station) {
+  const body = await fetchText(
+    `https://tgftp.nws.noaa.gov/data/observations/metar/stations/${encodeURIComponent(station)}.TXT`
+  );
+  const lines = body.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  if (lines.length < 2) throw new Error(`No METAR for ${station}`);
+  return {observedAt: lines[0], raw: lines[1]};
+}
+
+function chooseAtisRunway(station, rawMetar) {
+  const windMatch = String(rawMetar).match(/\b(\d{3}|VRB)(\d{2,3})(?:G\d{2,3})?KT\b/);
+  const runways = airportRunways.get(station) || [];
+  if (!windMatch || windMatch[1] === 'VRB' || !runways.length) return '';
+  const wind = Number(windMatch[1]);
+  return runways.reduce((best, runway) => {
+    const difference = Math.abs(((runway.heading - wind + 540) % 360) - 180);
+    return !best || difference < best.difference ? {...runway, difference} : best;
+  }, null)?.ident || '';
+}
+
+function buildAtisSpeech(station, airportName, metar, runway, letter, override = null) {
+  const raw = metar.raw.toUpperCase();
+  const parts = [
+    `${airportName || speakCharacters(station)} information ${letter}.`,
+    `This is an automated V F N airport information broadcast.`
+  ];
+  const time = raw.match(/\b\d{2}(\d{2})(\d{2})Z\b/);
+  if (time) parts.push(`Time ${speakNumberDigits(time[1] + time[2])} Zulu.`);
+  const wind = raw.match(/\b(\d{3}|VRB)(\d{2,3})(?:G(\d{2,3}))?KT\b/);
+  if (wind) {
+    const direction = wind[1] === 'VRB' ? 'variable' : `${speakNumberDigits(wind[1])} degrees`;
+    parts.push(`Wind ${direction}, ${Number(wind[2])} knots${wind[3] ? `, gusting ${Number(wind[3])} knots` : ''}.`);
+  }
+  const visibility = raw.match(/\s(\d{4})\s/);
+  if (visibility) parts.push(Number(visibility[1]) >= 9999
+    ? 'Visibility one zero kilometers or more.'
+    : `Visibility ${Number(visibility[1])} meters.`);
+  const cloudNames = {FEW:'few',SCT:'scattered',BKN:'broken',OVC:'overcast'};
+  const clouds = [...raw.matchAll(/\b(FEW|SCT|BKN|OVC)(\d{3})\b/g)].map(match =>
+    `${cloudNames[match[1]]} at ${Number(match[2]) * 100} feet`
+  );
+  if (clouds.length) parts.push(`Clouds ${clouds.join(', ')}.`);
+  else if (/\b(CAVOK|SKC|CLR|NSC)\b/.test(raw)) parts.push('No significant cloud.');
+  const temperature = raw.match(/\b(M?\d{2})\/(M?\d{2})\b/);
+  if (temperature) {
+    const readTemp = value => value.startsWith('M') ? `minus ${Number(value.slice(1))}` : `${Number(value)}`;
+    parts.push(`Temperature ${readTemp(temperature[1])}, dew point ${readTemp(temperature[2])}.`);
+  }
+  const qnh = raw.match(/\bQ(\d{4})\b/);
+  if (qnh) parts.push(`Q N H ${speakNumberDigits(qnh[1])}.`);
+  const arrivalRunways = String(override?.arrival_runways || '').trim();
+  const departureRunways = String(override?.departure_runways || '').trim();
+  if (arrivalRunways) parts.push(`Landing runways ${speakCharacters(arrivalRunways)}.`);
+  if (departureRunways) parts.push(`Departure runways ${speakCharacters(departureRunways)}.`);
+  if (!arrivalRunways && !departureRunways && runway) parts.push(`Runway ${speakCharacters(runway)} in use.`);
+  const approachType = String(override?.approach_type || '').trim();
+  if (approachType) parts.push(`${approachType}.`);
+  const transitionLevel = String(override?.transition_level || '').replace(/^FL\s*/i, '').trim();
+  if (transitionLevel) parts.push(`Transition level ${speakNumberDigits(transitionLevel)}.`);
+  const transitionAltitude = String(override?.transition_altitude || '').replace(/\s*FT$/i, '').trim();
+  if (transitionAltitude) parts.push(`Transition altitude ${speakNumberDigits(transitionAltitude)} feet.`);
+  const remarks = String(override?.remarks || '').trim();
+  if (remarks) parts.push(remarks.endsWith('.') ? remarks : `${remarks}.`);
+  parts.push(`Advise on initial contact you have information ${letter}.`);
+  return parts.join(' ');
+}
+
+function stopAutoAtis(station, reason = 'stopped') {
+  const current = autoAtisBroadcasts.get(station);
+  if (!current) return;
+  autoAtisBroadcasts.delete(station);
+  if (current.process && !current.process.killed) current.process.kill();
+  console.log(`Automatic ATIS ${station} stopped: ${reason}`);
+}
+
+function scheduleAtisFileRemoval(filePath, attempt = 0) {
+  if (!filePath || [...autoAtisBroadcasts.values()].some(item => item.audioPath === filePath)) return;
+  try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); }
+  catch (error) {
+    if (attempt < 6) setTimeout(() => scheduleAtisFileRemoval(filePath, attempt + 1), 1000 * (attempt + 1));
+    else console.warn(`Unable to remove obsolete ATIS audio ${filePath}: ${error.message}`);
+  }
+}
+
+function cleanupAtisAudioDirectory() {
+  const directory = path.join(config.testAudioDirectory, 'atis');
+  const active = new Set([...autoAtisBroadcasts.values()].map(item => path.resolve(item.audioPath || '')));
+  try {
+    for (const name of fs.readdirSync(directory)) {
+      if (!name.toLowerCase().endsWith('.mp3')) continue;
+      const filePath = path.resolve(directory, name);
+      if (active.has(filePath)) continue;
+      const age = Date.now() - fs.statSync(filePath).mtimeMs;
+      if (age > 60 * 60 * 1000) scheduleAtisFileRemoval(filePath);
+    }
+  } catch (error) { console.warn(`ATIS audio cleanup failed: ${error.message}`); }
+}
+
+async function synthesizeAtis(text, outputPath) {
+  const temporaryPath = `${outputPath}.${Date.now()}.mp3`;
+  const tts = new EdgeTTS({
+    voice:'en-US-AriaNeural', lang:'en-US',
+    outputFormat:'audio-24khz-48kbitrate-mono-mp3', rate:'-8%', timeout:20000
+  });
+  await tts.ttsPromise(text, temporaryPath);
+  if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+  fs.renameSync(temporaryPath, outputPath);
+}
+
+function startAutoAtisAudio(details) {
+  const previousAudioPath = autoAtisBroadcasts.get(details.station)?.audioPath || '';
+  stopAutoAtis(details.station, 'updated');
+  const args = [
+    '-hide_banner','-loglevel','warning','-stream_loop','-1','-re','-i',details.audioPath,
+    '-vn','-ac','1','-ar','16000','-f','s16le','pipe:1'
+  ];
+  const process = spawn(config.ffmpegPath, args, {windowsHide:true});
+  const sender = {
+    id:`auto-atis-${details.station}`, callsign:`${details.station}_ATIS`,
+    txCom:1, com1:details.frequency, com2:details.frequency,
+    latitude:details.latitude, longitude:details.longitude,
+    station:`${details.station}_ATIS`, rangeNm:config.autoAtisRangeNm,
+    audioPacketsForwarded:0
+  };
+  const current = {...details, process, sender, sequence:0, buffer:Buffer.alloc(0)};
+  autoAtisBroadcasts.set(details.station, current);
+  if (previousAudioPath && previousAudioPath !== details.audioPath) {
+    scheduleAtisFileRemoval(previousAudioPath);
+  }
+  process.stdout.on('data', chunk => {
+    if (autoAtisBroadcasts.get(details.station) !== current) return;
+    current.buffer = Buffer.concat([current.buffer, chunk]);
+    while (current.buffer.length >= testBroadcastFrameBytes) {
+      const frame = current.buffer.subarray(0, testBroadcastFrameBytes);
+      current.buffer = current.buffer.subarray(testBroadcastFrameBytes);
+      forwardAudio(sender, {
+        frequency:details.frequency, codec:'pcm16', sampleRate:16000,
+        sequence:++current.sequence, payload:frame.toString('base64')
+      });
+    }
+  });
+  process.stderr.on('data', chunk => console.warn(`FFmpeg ATIS ${details.station}: ${chunk}`));
+  process.on('error', error => {
+    console.error(`Automatic ATIS ${details.station} failed:`, error);
+    if (autoAtisBroadcasts.get(details.station) === current) autoAtisBroadcasts.delete(details.station);
+  });
+  process.on('close', () => {
+    if (autoAtisBroadcasts.get(details.station) === current) autoAtisBroadcasts.delete(details.station);
+  });
+  console.log(`Automatic ATIS ${details.station} ${details.frequency} started (${details.letter}).`);
+}
+
+async function ensureAutoAtisSchema() {
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS auto_atis_broadcasts (
+       airport_icao VARCHAR(12) NOT NULL,
+       frequency VARCHAR(12) NOT NULL,
+       info_index TINYINT UNSIGNED NOT NULL DEFAULT 0,
+       info_letter VARCHAR(16) NOT NULL DEFAULT 'Alpha',
+       content_hash CHAR(64) NOT NULL DEFAULT '',
+       metar_raw VARCHAR(255) NOT NULL DEFAULT '',
+       active_runway VARCHAR(16) NOT NULL DEFAULT '',
+       atis_text TEXT NOT NULL,
+       is_active TINYINT(1) NOT NULL DEFAULT 1,
+       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+       PRIMARY KEY (airport_icao)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+  );
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS atc_atis_overrides (
+       airport_icao VARCHAR(12) NOT NULL,
+       updated_by BIGINT UNSIGNED NOT NULL,
+       arrival_runways VARCHAR(64) NOT NULL DEFAULT '',
+       departure_runways VARCHAR(64) NOT NULL DEFAULT '',
+       transition_level VARCHAR(16) NOT NULL DEFAULT '',
+       transition_altitude VARCHAR(16) NOT NULL DEFAULT '',
+       approach_type VARCHAR(64) NOT NULL DEFAULT '',
+       remarks VARCHAR(500) NOT NULL DEFAULT '',
+       is_active TINYINT(1) NOT NULL DEFAULT 1,
+       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+       PRIMARY KEY (airport_icao), KEY idx_atc_atis_active (is_active)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+  );
+}
+
+async function reconcileAutoAtis() {
+  if (autoAtisReconcileRunning) return;
+  autoAtisReconcileRunning = true;
+  try {
+    await ensureAutoAtisSchema();
+    const [rows] = await pool.query(
+      `SELECT s.airport_icao AS station_code, MAX(s.airport_name) AS name,
+              MAX(s.latitude) AS latitude_deg, MAX(s.longitude) AS longitude_deg,
+              MAX(s.frequency) AS scoped_frequency
+       FROM atc_session_atis_airports s
+       INNER JOIN atc_sessions a ON a.id=s.session_id
+       WHERE a.is_active=1 AND a.is_spectator=0
+         AND a.last_seen_at >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
+       GROUP BY s.airport_icao`
+    );
+    const activeStations = new Set(rows.map(row => String(row.station_code).toUpperCase()));
+    for (const station of [...autoAtisBroadcasts.keys()]) {
+      if (!activeStations.has(station)) stopAutoAtis(station, 'last ATC offline');
+    }
+    if (activeStations.size) {
+      await pool.query(
+        `UPDATE auto_atis_broadcasts SET is_active=0
+         WHERE is_active=1 AND airport_icao NOT IN (?)`, [[...activeStations]]
+      );
+    } else await pool.query('UPDATE auto_atis_broadcasts SET is_active=0 WHERE is_active=1');
+    for (const airport of rows) {
+      const station = String(airport.station_code).toUpperCase();
+      const frequency = normalizeFrequency(airport.scoped_frequency) || airportAtisFrequencies.get(station);
+      if (!frequency) continue;
+      let metar;
+      try { metar = await fetchAirportMetar(station); }
+      catch (error) { console.warn(`Automatic ATIS ${station}: ${error.message}`); continue; }
+      const [overrideRows] = await pool.query(
+        'SELECT * FROM atc_atis_overrides WHERE airport_icao=? AND is_active=1 LIMIT 1', [station]
+      );
+      const override = overrideRows[0] || null;
+      const automaticRunway = chooseAtisRunway(station, metar.raw);
+      const runway = String(override?.arrival_runways || override?.departure_runways || automaticRunway).trim();
+      const overrideSignature = override ? [
+        override.arrival_runways, override.departure_runways, override.transition_level,
+        override.transition_altitude, override.approach_type, override.remarks
+      ].join('|') : '';
+      const contentHash = crypto.createHash('sha256')
+        .update(`${metar.raw}|${automaticRunway}|${overrideSignature}`).digest('hex');
+      const [existingRows] = await pool.query(
+        'SELECT * FROM auto_atis_broadcasts WHERE airport_icao=? LIMIT 1', [station]
+      );
+      const existing = existingRows[0] || null;
+      const unchanged = existing && existing.content_hash === contentHash;
+      let infoIndex = unchanged ? Number(existing.info_index) :
+        (existing && Number(existing.is_active) ? (Number(existing.info_index) + 1) % 26 : 0);
+      const letter = atisAlphabet[infoIndex];
+      const atisText = unchanged ? String(existing.atis_text) :
+        buildAtisSpeech(station, String(airport.name || station), metar, automaticRunway, letter, override);
+      const current = autoAtisBroadcasts.get(station);
+      if (unchanged && current && current.frequency === frequency) continue;
+      // FFmpeg keeps its input file open on Windows. Use a content-versioned
+      // filename so a changed ATIS can be synthesized before the old process
+      // is stopped, without trying to overwrite a locked MP3.
+      const audioPath = path.join(
+        config.testAudioDirectory,
+        'atis',
+        `${station}-${contentHash.slice(0, 16)}.mp3`
+      );
+      if (!unchanged || !fs.existsSync(audioPath)) await synthesizeAtis(atisText, audioPath);
+      await pool.query(
+        `INSERT INTO auto_atis_broadcasts
+         (airport_icao,frequency,info_index,info_letter,content_hash,metar_raw,
+          active_runway,atis_text,is_active,updated_at)
+         VALUES (?,?,?,?,?,?,?,?,1,NOW())
+         ON DUPLICATE KEY UPDATE frequency=VALUES(frequency),info_index=VALUES(info_index),
+          info_letter=VALUES(info_letter),content_hash=VALUES(content_hash),
+          metar_raw=VALUES(metar_raw),active_runway=VALUES(active_runway),
+          atis_text=VALUES(atis_text),is_active=1,updated_at=NOW()`,
+        [station,frequency,infoIndex,letter,contentHash,metar.raw,runway,atisText]
+      );
+      startAutoAtisAudio({
+        station, frequency, letter, runway, contentHash, audioPath,
+        latitude:Number(airport.latitude_deg), longitude:Number(airport.longitude_deg)
+      });
+    }
+  } catch (error) { console.error('Automatic ATIS reconciliation failed:', error); }
+  finally { autoAtisReconcileRunning = false; cleanupAtisAudioDirectory(); }
+}
+
 async function handleMonitor(client, payload) {
-  if (client.opPermission < 1) {
+  let atcSession = null;
+  if (client.userId) {
+    const [rows] = await pool.query(
+      `SELECT callsign, is_spectator, can_transmit_voice
+       FROM atc_sessions
+       WHERE user_id = ? AND is_active = 1
+       ORDER BY last_seen_at DESC, id DESC
+       LIMIT 1`,
+      [client.userId]
+    );
+    atcSession = rows[0] || null;
+    if (atcSession) {
+      client.callsign = String(atcSession.callsign || client.callsign).toUpperCase();
+      client.spectator = Number(atcSession.is_spectator || 0) === 1 ||
+        Number(atcSession.can_transmit_voice || 0) !== 1;
+    }
+  }
+  client.monitorAuthorized = client.opPermission >= 1 || Boolean(atcSession);
+  if (!client.monitorAuthorized) {
     send(client.ws, {
       type: 'error',
       message: 'No permission for voice monitoring.'
@@ -535,6 +943,8 @@ async function handleMonitor(client, payload) {
   send(client.ws, {
     type: 'monitor',
     success: true,
+    callsign: client.callsign,
+    receiveOnly: client.spectator,
     frequency: client.monitorFrequency,
     global: client.monitorGlobal,
     airportIcao: client.monitorLocationName,
@@ -614,6 +1024,7 @@ wss.on('connection', (ws) => {
     longitude: NaN,
     station: '',
     monitor: false,
+    monitorAuthorized: false,
     monitorFrequency: null,
     monitorGlobal: false,
     monitorLatitude: NaN,
@@ -775,8 +1186,17 @@ const heartbeatTimer = setInterval(() => {
   }
 }, 25000);
 
+const autoAtisTimer = setInterval(() => {
+  reconcileAutoAtis().catch(error => console.error('Automatic ATIS timer failed:', error));
+}, 30000);
+setTimeout(() => {
+  reconcileAutoAtis().catch(error => console.error('Automatic ATIS startup failed:', error));
+}, 2500);
+
 wss.on('close', () => {
   clearInterval(heartbeatTimer);
+  clearInterval(autoAtisTimer);
+  for (const station of [...autoAtisBroadcasts.keys()]) stopAutoAtis(station, 'server shutdown');
 });
 
 server.listen(config.port, config.host, () => {

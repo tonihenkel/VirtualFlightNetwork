@@ -39,6 +39,25 @@ try {
 
         vfnWriteRuntimeConfig($submitted);
         vfnApplyRuntimeConfig(vfnReadRuntimeConfig());
+
+        if (array_key_exists('atcLoginEnabled', $submitted) && !$submitted['atcLoginEnabled']) {
+            require_once __DIR__ . '/../includes/atc_schema.php';
+            ensureAtcSchema($pdo);
+            $pdo->exec(
+                "UPDATE user_sessions s
+                 INNER JOIN atc_sessions a
+                    ON a.user_id = s.user_id AND a.callsign = s.callsign
+                 INNER JOIN users u ON u.id = a.user_id
+                 SET s.is_active = 0
+                 WHERE a.is_active = 1 AND u.op_permission < 5"
+            );
+            $pdo->exec(
+                "UPDATE atc_sessions a
+                 INNER JOIN users u ON u.id = a.user_id
+                 SET a.is_active = 0, a.disconnected_at = NOW()
+                 WHERE a.is_active = 1 AND u.op_permission < 5"
+            );
+        }
     }
 
     $values = [];

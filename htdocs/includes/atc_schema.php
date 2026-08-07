@@ -15,6 +15,9 @@ function ensureAtcSchema(PDO $pdo): void
             can_transmit_voice TINYINT(1) NOT NULL DEFAULT 1,
             scope_positions VARCHAR(100) NOT NULL DEFAULT '',
             map_profile VARCHAR(32) NOT NULL DEFAULT 'airport_info',
+            radar_boundary_code VARCHAR(24) NOT NULL DEFAULT '',
+            frequency VARCHAR(12) NOT NULL DEFAULT '',
+            atis_scope_ready TINYINT(1) NOT NULL DEFAULT 0,
             is_active TINYINT(1) NOT NULL DEFAULT 1,
             connected_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             last_seen_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -23,6 +26,21 @@ function ensureAtcSchema(PDO $pdo): void
             UNIQUE KEY uq_atc_session_token (session_token),
             KEY idx_atc_active_station (is_active, station_code, position_code, is_spectator),
             KEY idx_atc_user_active (user_id, is_active)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS atc_session_atis_airports (
+            session_id BIGINT UNSIGNED NOT NULL,
+            airport_icao VARCHAR(12) NOT NULL,
+            frequency VARCHAR(12) NOT NULL,
+            airport_name VARCHAR(180) NOT NULL DEFAULT '',
+            latitude DECIMAL(10,7) NULL,
+            longitude DECIMAL(10,7) NULL,
+            PRIMARY KEY (session_id, airport_icao),
+            KEY idx_atc_atis_airport (airport_icao),
+            CONSTRAINT fk_atc_atis_session FOREIGN KEY (session_id)
+                REFERENCES atc_sessions(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 
@@ -37,6 +55,40 @@ function ensureAtcSchema(PDO $pdo): void
             "ALTER TABLE atc_sessions
              ADD COLUMN map_profile VARCHAR(32) NOT NULL DEFAULT 'airport_info'
              AFTER scope_positions"
+        );
+    }
+
+    $frequencyColumn = $pdo->query(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'atc_sessions'
+           AND COLUMN_NAME = 'frequency'"
+    )->fetchColumn();
+    if ((int)$frequencyColumn === 0) {
+        $pdo->exec(
+            "ALTER TABLE atc_sessions
+             ADD COLUMN frequency VARCHAR(12) NOT NULL DEFAULT '' AFTER map_profile"
+        );
+    }
+
+    $radarBoundaryColumn = $pdo->query(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'atc_sessions'
+           AND COLUMN_NAME = 'radar_boundary_code'"
+    )->fetchColumn();
+    if ((int)$radarBoundaryColumn === 0) {
+        $pdo->exec(
+            "ALTER TABLE atc_sessions
+             ADD COLUMN radar_boundary_code VARCHAR(24) NOT NULL DEFAULT '' AFTER map_profile"
+        );
+    }
+    $atisScopeColumn = $pdo->query(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'atc_sessions'
+           AND COLUMN_NAME = 'atis_scope_ready'"
+    )->fetchColumn();
+    if ((int)$atisScopeColumn === 0) {
+        $pdo->exec(
+            "ALTER TABLE atc_sessions ADD COLUMN atis_scope_ready TINYINT(1) NOT NULL DEFAULT 0 AFTER frequency"
         );
     }
 }

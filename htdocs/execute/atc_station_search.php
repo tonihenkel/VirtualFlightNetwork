@@ -9,6 +9,7 @@ require_once __DIR__ . '/../includes/web_session.php';
 require_once __DIR__ . '/../includes/language.php';
 require_once __DIR__ . '/../includes/atc_permissions.php';
 require_once __DIR__ . '/../includes/airport_atc_data.php';
+require_once __DIR__ . '/../includes/atc_frequency_catalog.php';
 
 try {
     $pdo = new PDO(
@@ -143,6 +144,7 @@ try {
     $divisionPrefixes = getDivisionAtcPrefixes($divisionCode);
     $canUseRadar = $spectator
         || canOccupyAtcPosition($rating, 'CTR', $specialRating);
+    $seenRadarPositions = [];
     if ($canUseRadar && is_file($sourcePath) && is_readable($sourcePath)) {
         $section = '';
         $handle = fopen($sourcePath, 'rb');
@@ -157,6 +159,7 @@ try {
             $columns = explode('|', $line);
             $code = strtoupper(trim((string)($columns[0] ?? '')));
             $name = trim((string)($columns[1] ?? ''));
+            $sectorAlias = strtoupper(trim((string)($columns[2] ?? '')));
             if ($code === '' || $name === '') continue;
             $matchesDivision = false;
             foreach ($divisionPrefixes as $prefix) {
@@ -167,20 +170,76 @@ try {
             }
             if (!$globalStationAccess && !$matchesDivision) continue;
             if (mb_stripos($code, $query) === false
+                && mb_stripos($sectorAlias, $query) === false
                 && mb_stripos($name, $query) === false) continue;
+            $selectableCode = normalizeAtcStationCode(
+                $sectorAlias !== '' ? $sectorAlias : $code
+            );
+            if (isset($seenRadarPositions[$selectableCode])) continue;
+            $seenRadarPositions[$selectableCode] = true;
             $items[] = [
-                'code' => $code,
-                'name' => $name,
+                'code' => $selectableCode,
+                'name' => $name . ($sectorAlias !== '' ? ' – ' . $sectorAlias : ''),
                 'municipality' => '',
                 'kind' => 'fir',
                 'kind_label' => $section === 'UIRS'
                     ? t('atc_station_uir') : t('atc_station_fir'),
                 'eligible_positions' => ['CTR'],
+                'radar_boundary_code' => $code,
             ];
             if (count($items) >= 25) break;
         }
         if (is_resource($handle)) fclose($handle);
     }
+
+    // VATGlasses contains many operational sub-sectors which VATSpy only
+    // exposes as repeated aliases of a larger parent FIR. Make the exact
+    // position searchable while retaining the existing division restriction.
+    if ($canUseRadar) {
+        foreach (getCompiledAtcSectors() as $compiledCode => $compiled) {
+            $compiledCode = normalizeAtcStationCode((string)$compiledCode);
+            if ($compiledCode === '' || isset($seenRadarPositions[$compiledCode])) continue;
+            $matchesDivision = false;
+            foreach ($divisionPrefixes as $prefix) {
+                if (strpos($compiledCode, $prefix) === 0) {
+                    $matchesDivision = true;
+                    break;
+                }
+            }
+            if (!$globalStationAccess && !$matchesDivision) continue;
+            $callsign = trim((string)($compiled['callsign'] ?? ''));
+            $positionKey = trim((string)($compiled['position_key'] ?? ''));
+            if (mb_stripos($compiledCode, $query) === false
+                && mb_stripos($callsign, $query) === false
+                && mb_stripos($positionKey, $query) === false) continue;
+            $seenRadarPositions[$compiledCode] = true;
+            $frequency = normalizeAtcVoiceFrequency((string)($compiled['frequency'] ?? ''));
+            $items[] = [
+                'code' => $compiledCode,
+                'name' => ($callsign !== '' ? $callsign : $compiledCode)
+                    . ($positionKey !== '' ? ' – ' . $positionKey : '')
+                    . ($frequency !== '' ? ' (' . $frequency . ' MHz)' : ''),
+                'municipality' => '',
+                'kind' => 'fir',
+                'kind_label' => t('atc_station_fir'),
+                'eligible_positions' => ['CTR'],
+                'radar_boundary_code' => strtoupper((string)($compiled['group'] ?? '')),
+            ];
+        }
+    }
+
+    usort($items, static function (array $left, array $right) use ($normalizedQuery): int {
+        $leftCode = strtoupper((string)($left['code'] ?? ''));
+        $rightCode = strtoupper((string)($right['code'] ?? ''));
+        $score = static function (string $code) use ($normalizedQuery): int {
+            if ($code === $normalizedQuery) return 0;
+            if (strpos($code, $normalizedQuery . '-') === 0
+                || strpos($code, $normalizedQuery . '_') === 0) return 1;
+            if (strpos($code, $normalizedQuery) === 0) return 2;
+            return 3;
+        };
+        return [$score($leftCode), $leftCode] <=> [$score($rightCode), $rightCode];
+    });
 
     echo json_encode(
         ['success' => true, 'items' => array_slice($items, 0, 25)],

@@ -157,6 +157,9 @@ static std::atomic<bool> gPositionUpdateLastSuccess(true);
 static std::mutex gPositionUpdateResultMutex;
 static std::string gPositionUpdateLastResponse = "";
 static std::thread gPositionUpdateThread;
+static std::string gCom1AtcCallsign = "";
+static std::string gCom2AtcCallsign = "";
+static int gFlightplanServerRevision = 0;
 
 std::string ExtractIcaoAirlineFromCallsign(
     const std::string& callsign
@@ -1143,9 +1146,32 @@ static XPLMDataRef gCom3 = nullptr;
 
 static XPLMDataRef gTransponder = nullptr;
 static XPLMDataRef gTransponderMode = nullptr;
+static XPLMDataRef gTransponderModeLegacy = nullptr;
 static XPLMCommandRef gTransponderStandbyCommand = nullptr;
 static XPLMCommandRef gTransponderOnCommand = nullptr;
 static XPLMCommandRef gTransponderIdentCommand = nullptr;
+static int gVfnTransponderModeSelection = -1;
+
+static int ReadTransponderMode()
+{
+    const int modernMode =
+        gTransponderMode ? XPLMGetDatai(gTransponderMode) : 0;
+    const int legacyMode =
+        gTransponderModeLegacy ? XPLMGetDatai(gTransponderModeLegacy) : 0;
+    const int simulatorMode =
+        (std::max)(modernMode, legacyMode);
+
+    // Some older or custom X-Plane 11 aircraft (including B190 variants)
+    // expose a valid value only through the legacy dataref. If both aircraft
+    // datarefs report OFF after a VFN panel command, retain that explicit
+    // VFN selection as the existing compatibility fallback.
+    if (simulatorMode <= 0 && gVfnTransponderModeSelection >= 0)
+    {
+        return gVfnTransponderModeSelection;
+    }
+
+    return simulatorMode;
+}
 static XPLMCommandRef gVoicePttCommand = nullptr;
 static XPLMCommandRef gVoiceToggleTransmitComCommand = nullptr;
 static XPLMCommandRef gG1000XpdrStbyCommands[3] = {};
@@ -3303,6 +3329,30 @@ void PlayIncomingChatSound()
     }
 }
 
+void PlayInitialContactSound()
+{
+    const std::vector<std::string> candidates = {
+        gPluginDirectory + "\\resources\\initial_contact_sound.mp3",
+        gPluginDirectory + "\\initial_contact_sound.mp3",
+        gPluginDirectory + "\\..\\resources\\initial_contact_sound.mp3"
+    };
+    std::string soundPath;
+    for (const std::string& candidate : candidates)
+    {
+        if (FileExists(candidate)) { soundPath = candidate; break; }
+    }
+    if (soundPath.empty()) { PlayIncomingChatSound(); return; }
+    mciSendStringA("stop vfn_initial_contact_sound", nullptr, 0, nullptr);
+    mciSendStringA("close vfn_initial_contact_sound", nullptr, 0, nullptr);
+    const std::string openCommand =
+        "open \"" + soundPath + "\" type mpegvideo alias vfn_initial_contact_sound";
+    if (mciSendStringA(openCommand.c_str(), nullptr, 0, nullptr) != 0 ||
+        mciSendStringA("play vfn_initial_contact_sound from 0", nullptr, 0, nullptr) != 0)
+    {
+        MessageBeep(MB_ICONEXCLAMATION);
+    }
+}
+
 
 std::wstring StringToWideString(
     const std::string& value
@@ -4406,7 +4456,15 @@ void AddChatLine(
 
     if (notify)
     {
-        PlayIncomingChatSound();
+        if (line.type == "atc_contact" ||
+            line.text.find("INITIAL CONTACT") != std::string::npos)
+        {
+            PlayInitialContactSound();
+        }
+        else
+        {
+            PlayIncomingChatSound();
+        }
     }
 }
 
@@ -5651,26 +5709,51 @@ std::string ExtractJsonStringValue(
         return "";
     }
 
-    size_t firstQuote =
-        response.find("\"", colonPos + 1);
+    size_t firstQuote = colonPos + 1;
+    while (
+        firstQuote < response.size() &&
+        std::isspace(static_cast<unsigned char>(response[firstQuote]))
+    )
+    {
+        firstQuote++;
+    }
 
-    if (firstQuote == std::string::npos)
+    // Do not scan into the following JSON field when this value is empty,
+    // null, numeric or otherwise not a JSON string.
+    if (firstQuote >= response.size() || response[firstQuote] != '"')
     {
         return "";
     }
 
-    size_t secondQuote =
-        response.find("\"", firstQuote + 1);
-
-    if (secondQuote == std::string::npos)
+    std::string value;
+    bool escaped = false;
+    for (size_t index = firstQuote + 1; index < response.size(); ++index)
     {
-        return "";
+        const char character = response[index];
+        if (escaped)
+        {
+            switch (character)
+            {
+                case 'n': value.push_back('\n'); break;
+                case 'r': value.push_back('\r'); break;
+                case 't': value.push_back('\t'); break;
+                default: value.push_back(character); break;
+            }
+            escaped = false;
+            continue;
+        }
+        if (character == '\\')
+        {
+            escaped = true;
+            continue;
+        }
+        if (character == '"')
+        {
+            return value;
+        }
+        value.push_back(character);
     }
-
-    return response.substr(
-        firstQuote + 1,
-        secondQuote - firstQuote - 1
-    );
+    return "";
 }
 
 
@@ -6656,6 +6739,31 @@ void ProcessPositionUpdateResult()
             response
         );
 
+        gCom1AtcCallsign = ExtractJsonStringValue(response, "com1_atc_callsign");
+        gCom2AtcCallsign = ExtractJsonStringValue(response, "com2_atc_callsign");
+
+        int flightplanRevision = ExtractJsonIntValue(response, "revision", 0);
+        if (flightplanRevision > 0 && flightplanRevision != gFlightplanServerRevision)
+        {
+            gFlightplanServerRevision = flightplanRevision;
+            std::string rules = ToUpperString(ExtractJsonStringValue(response, "flight_rules"));
+            std::string type = ToUpperString(ExtractJsonStringValue(response, "flight_type"));
+            gSelectedFlightRulesIndex = rules == "V" || rules == "VFR" ? 1 : rules == "Y" ? 2 : rules == "Z" ? 3 : 0;
+            gSelectedFlightTypeIndex = type == "S" ? 0 : type == "N" ? 1 : type == "M" ? 3 : type == "X" ? 4 : 2;
+            gFlightplanDepartureTimeText = ExtractJsonStringValue(response, "departure_time");
+            gFlightplanDepartureAirportText = ExtractJsonStringValue(response, "departure_airport");
+            gFlightplanArrivalAirportText = ExtractJsonStringValue(response, "arrival_airport");
+            gFlightplanAlternate1AirportText = ExtractJsonStringValue(response, "alternate1_airport");
+            gFlightplanAlternate2AirportText = ExtractJsonStringValue(response, "alternate2_airport");
+            gFlightplanRouteText = ExtractJsonStringValue(response, "route_text");
+            gFlightplanCruisingLevelText = ExtractJsonStringValue(response, "cruising_level");
+            gFlightplanCruisingSpeedText = ExtractJsonStringValue(response, "cruising_speed");
+            gFlightplanRemarksText = ExtractJsonStringValue(response, "remarks");
+            SyncCustomFlightplanToWidgets();
+            UpdateFlightplanSelectionButtonCaptions();
+            SetFlightplanStatus("Flightplan updated by ATC.");
+        }
+
         gPositionUpdateFailureCount = 0;
         gPositionUpdateFirstFailureTime = -1.0f;
         return;
@@ -7462,8 +7570,11 @@ void SendPositionUpdate()
 
     int transponder =
         gTransponder ? XPLMGetDatai(gTransponder) : 0;
-    int transponderMode =
-        gTransponderMode ? XPLMGetDatai(gTransponderMode) : 0;
+    int transponderMode = ReadTransponderMode();
+    if (XPLMGetElapsedTime() < gTransponderIdentUntil)
+    {
+        transponderMode = 4;
+    }
 
     int hasCrashed = 0;
 
@@ -9311,9 +9422,15 @@ std::string FormatTransponderCode(int value)
 
 
 std::string GetCompactComSubLabel(
-    const std::string& frequency
+    const std::string& frequency,
+    const std::string& atcCallsign
 )
 {
+    if (!atcCallsign.empty())
+    {
+        return "[" + atcCallsign + "]";
+    }
+
     if (frequency == "122.800")
     {
         return "UNICOM";
@@ -14701,6 +14818,10 @@ CustomRect GetCompactTransponderIdentRect(const CustomRect& rect)
 
 void SetTransponderMode(int mode)
 {
+    // Retain the VFN panel selection for aircraft that reset the writable
+    // simulator transponder-mode dataref after accepting the command.
+    gVfnTransponderModeSelection = mode;
+
     if (gTransponderMode != nullptr)
     {
         XPLMSetDatai(
@@ -14912,7 +15033,7 @@ void DrawCompactWindow(
     int com1 = gCom1 ? XPLMGetDatai(gCom1) : 0;
     int com2 = gCom2 ? XPLMGetDatai(gCom2) : 0;
     int transponder = gTransponder ? XPLMGetDatai(gTransponder) : 0;
-    int transponderMode = gTransponderMode ? XPLMGetDatai(gTransponderMode) : 0;
+    int transponderMode = ReadTransponderMode();
 
     std::string com1Frequency =
         FormatComFrequency(com1);
@@ -14935,8 +15056,8 @@ void DrawCompactWindow(
     bool com2TxActive =
         gVoicePttActive && gVoiceTransmitCom == 2;
 
-    DrawCompactRadioPanel({ left + 12, top - 50, left + 255, top - 132 }, "COM 1", com1Frequency, GetCompactComSubLabel(com1Frequency), com1RxActive, com1TxActive, gVoiceTransmitCom == 1);
-    DrawCompactRadioPanel({ left + 12, top - 140, left + 255, top - 222 }, "COM 2", com2Frequency, GetCompactComSubLabel(com2Frequency), com2RxActive, com2TxActive, gVoiceTransmitCom == 2);
+    DrawCompactRadioPanel({ left + 12, top - 50, left + 255, top - 132 }, "COM 1", com1Frequency, GetCompactComSubLabel(com1Frequency, gCom1AtcCallsign), com1RxActive, com1TxActive, gVoiceTransmitCom == 1);
+    DrawCompactRadioPanel({ left + 12, top - 140, left + 255, top - 222 }, "COM 2", com2Frequency, GetCompactComSubLabel(com2Frequency, gCom2AtcCallsign), com2RxActive, com2TxActive, gVoiceTransmitCom == 2);
     DrawCompactTransponderPanel({ left + 12, top - 230, left + 255, top - 300 }, transponder, transponderMode);
 
     CustomRect chatRect = { left + 270, top - 50, right - 12, top - 300 };
@@ -19632,8 +19753,7 @@ float FlightLoopCallback(
 
     const int currentOnGround =
         gOnGround ? (XPLMGetDatai(gOnGround) != 0 ? 1 : 0) : 1;
-    const int currentTransponderMode =
-        gTransponderMode ? XPLMGetDatai(gTransponderMode) : 0;
+    const int currentTransponderMode = ReadTransponderMode();
 
     if (!gLoggedIn || gSpectatorMode)
     {
@@ -19998,12 +20118,14 @@ PLUGIN_API int XPluginStart(
             "sim/cockpit2/radios/actuators/transponder_mode"
         );
 
+    gTransponderModeLegacy =
+        XPLMFindDataRef(
+            "sim/cockpit/radios/transponder_mode"
+        );
+
     if (gTransponderMode == nullptr)
     {
-        gTransponderMode =
-            XPLMFindDataRef(
-                "sim/cockpit/radios/transponder_mode"
-            );
+        gTransponderMode = gTransponderModeLegacy;
     }
 
     gTransponderStandbyCommand =

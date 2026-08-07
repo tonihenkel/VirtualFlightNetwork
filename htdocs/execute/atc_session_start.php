@@ -9,6 +9,8 @@ require_once __DIR__ . '/../includes/web_session.php';
 require_once __DIR__ . '/../includes/atc_permissions.php';
 require_once __DIR__ . '/../includes/airport_atc_data.php';
 require_once __DIR__ . '/../includes/atc_schema.php';
+require_once __DIR__ . '/../includes/atc_frequency_catalog.php';
+require_once __DIR__ . '/../includes/atc_atis_scope.php';
 
 function atcScopeForPosition(string $position): array
 {
@@ -38,6 +40,37 @@ function atcMapProfileForPosition(string $position): string
     return $profiles[$position] ?? 'airport_info';
 }
 
+function atcFrequencyForPosition(string $airport, string $position): string
+{
+    $overrides = require dirname(__DIR__) . '/includes/airport_atc_overrides.php';
+    $overrideFrequency = trim((string)($overrides[$airport]['frequencies'][$position] ?? ''));
+    if ($overrideFrequency !== '') return $overrideFrequency;
+    $path = dirname(__DIR__) . '/data/airports/airport-frequencies.csv';
+    $wanted = [
+        'INFO' => ['AFIS', 'INFO', 'INFORMATION', 'FIS'],
+        'DEL' => ['DEL', 'CLD', 'CLR'],
+        'GND' => ['GND', 'RMP', 'APRON'],
+        'TWR' => ['TWR'],
+        'APP' => ['APP', 'ARR', 'A/D', 'RDR', 'DIR'],
+        'DEP' => ['DEP', 'A/D', 'RDR', 'DIR'],
+    ][$position] ?? [];
+    $handle = @fopen($path, 'rb');
+    if ($handle === false) return '';
+    $header = fgetcsv($handle);
+    $columns = is_array($header) ? array_flip($header) : [];
+    while (($row = fgetcsv($handle)) !== false) {
+        if (strtoupper(trim((string)($row[$columns['airport_ident'] ?? 2] ?? ''))) !== $airport) continue;
+        $type = strtoupper(trim((string)($row[$columns['type'] ?? 3] ?? '')));
+        if (in_array($type, $wanted, true)) {
+            $frequency = trim((string)($row[$columns['frequency_mhz'] ?? 5] ?? ''));
+            fclose($handle);
+            return $frequency;
+        }
+    }
+    fclose($handle);
+    return '';
+}
+
 try {
     $pdo = new PDO(
         "mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4",
@@ -51,17 +84,21 @@ try {
     }
     ensureAtcSchema($pdo);
     $stmt = $pdo->prepare(
-        "SELECT id, rating_atc, rating_special, division_code
+        "SELECT id, rating_atc, rating_special, division_code, op_permission
          FROM users WHERE id = :id LIMIT 1"
     );
     $stmt->execute(['id' => (int)$_SESSION['web_user_id']]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$user) throw new RuntimeException('user_not_found');
+    if (empty($atcLoginEnabled) && (int)($user['op_permission'] ?? 0) < 5) {
+        http_response_code(403);
+        throw new RuntimeException('atc_login_disabled');
+    }
 
     $spectator = (string)($_POST['spectator'] ?? '0') === '1';
     $station = strtoupper(trim((string)($_POST['station'] ?? '')));
     $position = strtoupper(trim((string)($_POST['position'] ?? '')));
-    if (!preg_match('/^[A-Z0-9-]{2,12}$/', $station)
+    if (!preg_match('/^[A-Z0-9_-]{2,24}$/', $station)
         || !in_array($position, ['INFO', 'DEL', 'GND', 'TWR', 'APP', 'DEP', 'CTR'], true)) {
         http_response_code(422);
         throw new RuntimeException('invalid_station_or_position');
@@ -77,6 +114,7 @@ try {
 
     $division = strtoupper(trim((string)$user['division_code']));
     $stationPositions = [];
+    $radarBoundaryCode = '';
     $countryClause = $globalStationAccess
         ? '' : 'iso_country = :division AND';
     $airportStmt = $pdo->prepare(
@@ -114,12 +152,22 @@ try {
                 if (!in_array($section, ['FIRS', 'UIRS'], true)
                     || $line === '' || substr($line, 0, 1) === ';') continue;
                 $columns = explode('|', $line);
-                if (strtoupper(trim((string)($columns[0] ?? ''))) === $station) {
+                $parentCode = strtoupper(trim((string)($columns[0] ?? '')));
+                $sectorAlias = strtoupper(trim((string)($columns[2] ?? '')));
+                if ($parentCode === $station || $sectorAlias === $station) {
                     $stationExists = true;
+                    $radarBoundaryCode = $parentCode;
                     break;
                 }
             }
             if (is_resource($handle)) fclose($handle);
+        }
+        if (!$stationExists) {
+            $compiledSector = findCompiledAtcSector($station);
+            if ($compiledSector !== null) {
+                $stationExists = true;
+                $radarBoundaryCode = strtoupper((string)($compiledSector['group'] ?? $station));
+            }
         }
         $divisionAllowed = $globalStationAccess;
         if (!$globalStationAccess) {
@@ -179,14 +227,20 @@ try {
         $token = bin2hex(random_bytes(32));
         $scope = atcScopeForPosition($position);
         $mapProfile = atcMapProfileForPosition($position);
+        $availableFrequencies = findAtcFrequencies($pdo, $station, $position);
+        $frequency = $airport ? atcFrequencyForPosition($station, $position) : '';
+        if ($frequency === '' && !empty($availableFrequencies)) {
+            $frequency = (string)$availableFrequencies[0]['frequency'];
+        }
         $insert = $pdo->prepare(
             "INSERT INTO atc_sessions
              (user_id, session_token, callsign, station_code, position_code,
               is_spectator, can_control, can_transmit_voice, scope_positions,
-              map_profile)
+              map_profile, radar_boundary_code, frequency)
              VALUES
              (:user_id, :token, :callsign, :station, :position,
-              :spectator, :can_control, :can_voice, :scope, :map_profile)"
+              :spectator, :can_control, :can_voice, :scope, :map_profile,
+              :radar_boundary_code, :frequency)"
         );
         $insert->execute([
             'user_id' => (int)$user['id'], 'token' => $token,
@@ -196,9 +250,49 @@ try {
             'can_voice' => $spectator ? 0 : 1,
             'scope' => implode(',', $scope),
             'map_profile' => $mapProfile,
+            'radar_boundary_code' => $radarBoundaryCode,
+            'frequency' => $frequency,
         ]);
         $_SESSION['atc_session_id'] = (int)$pdo->lastInsertId();
         $_SESSION['atc_session_token'] = $token;
+        if (!$spectator) {
+            $atisSession = [
+                'id' => $_SESSION['atc_session_id'],
+                'user_id' => (int)$user['id'],
+                'station_code' => $station,
+                'position_code' => $position,
+                'radar_boundary_code' => $radarBoundaryCode,
+            ];
+            $atisAirports = getAtisAirportsForSession($pdo, $atisSession);
+            $storeAtisScope = $pdo->prepare(
+                "INSERT INTO atc_session_atis_airports
+                 (session_id,airport_icao,frequency,airport_name,latitude,longitude)
+                 VALUES (:session_id,:icao,:frequency,:name,:latitude,:longitude)"
+            );
+            foreach ($atisAirports as $atisAirport) {
+                $storeAtisScope->execute([
+                    'session_id' => $_SESSION['atc_session_id'],
+                    'icao' => (string)$atisAirport['icao'],
+                    'frequency' => (string)$atisAirport['frequency'],
+                    'name' => (string)$atisAirport['name'],
+                    'latitude' => $atisAirport['latitude'],
+                    'longitude' => $atisAirport['longitude'],
+                ]);
+            }
+            $pdo->prepare("UPDATE atc_sessions SET atis_scope_ready=1 WHERE id=:id")
+                ->execute(['id'=>$_SESSION['atc_session_id']]);
+        }
+        $voiceToken = (string)($_SESSION['web_voice_token'] ?? '');
+        if ($voiceToken !== '') {
+            $pdo->prepare(
+                "UPDATE user_sessions
+                 SET callsign=:callsign, is_spectator=:spectator
+                 WHERE user_id=:user_id AND token=:token AND is_active=1"
+            )->execute([
+                'callsign'=>$callsign, 'spectator'=>$spectator ? 1 : 0,
+                'user_id'=>(int)$user['id'], 'token'=>$voiceToken,
+            ]);
+        }
     } finally {
         $release = $pdo->prepare('SELECT RELEASE_LOCK(:lock_name)');
         $release->execute(['lock_name' => $lockName]);
@@ -207,11 +301,17 @@ try {
     echo json_encode([
         'success' => true,
         'callsign' => $callsign,
+        'station_code' => $station,
+        'position_code' => $position,
         'spectator' => $spectator,
         'can_control' => !$spectator,
+        'can_transmit_voice' => !$spectator,
         'voice_mode' => $spectator ? 'receive_only' : 'transmit_receive',
         'scope_positions' => $scope,
         'map_profile' => $mapProfile,
+        'radar_boundary_code' => $radarBoundaryCode,
+        'frequency' => $frequency,
+        'available_frequencies' => $availableFrequencies,
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $error) {
     if (http_response_code() < 400) http_response_code(500);

@@ -212,7 +212,7 @@ $apiStatusUrl =
         .status-panel {
             margin-top: 18px;
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             gap: 12px;
         }
 
@@ -363,6 +363,10 @@ $apiStatusUrl =
         }
 
         @media (max-width: 950px) {
+            .status-panel {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
             .hero {
                 grid-template-columns: 1fr;
                 padding: 45px 25px;
@@ -477,6 +481,13 @@ if ($statusMessage !== '') {
                     <div class="status-value" id="activePilots">-</div>
                     <div class="status-label">
                         <?php echo htmlspecialchars(t('status_active_pilots')); ?>
+                    </div>
+                </div>
+
+                <div class="status-box">
+                    <div class="status-value" id="activeAtc">-</div>
+                    <div class="status-label">
+                        <?php echo htmlspecialchars(t('status_active_atc')); ?>
                     </div>
                 </div>
 
@@ -670,18 +681,21 @@ if ($statusMessage !== '') {
     {
         try
         {
-            const response =
-                await fetch(
-                    '<?php echo htmlspecialchars($apiStatusUrl); ?>?time=' + Date.now()
-                );
+            const responses = await Promise.all([
+                fetch('<?php echo htmlspecialchars($apiStatusUrl); ?>?time=' + Date.now()),
+                fetch('execute/get_atc_positions.php?time=' + Date.now())
+            ]);
 
-            const data =
-                await response.json();
+            const data = await responses[0].json();
+            const atcData = await responses[1].json();
 
             if (data.success)
             {
                 document.getElementById('activePilots').innerText =
                     data.count;
+
+                document.getElementById('activeAtc').innerText =
+                    atcData.success ? Number(atcData.count || 0) : '0';
 
                 document.getElementById('apiStatus').innerText =
                     '<?php echo htmlspecialchars(t('status_online')); ?>';
@@ -701,6 +715,9 @@ if ($statusMessage !== '') {
                 '<?php echo htmlspecialchars(t('status_offline')); ?>';
 
             document.getElementById('activePilots').innerText =
+                '0';
+
+            document.getElementById('activeAtc').innerText =
                 '0';
         }
     }

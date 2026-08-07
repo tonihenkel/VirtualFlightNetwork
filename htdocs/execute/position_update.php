@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../includes/atc_atis_scope.php';
 header("Content-Type: application/json; charset=utf-8");
 
 require_once 'config.php';
@@ -8,6 +9,119 @@ require_once '../includes/track_maintenance.php';
 
 
 $token = trim($_POST["token"] ?? "");
+
+/** Return the active controller heard on this frequency at the pilot position. */
+function findPositionAtcCallsign(
+    PDO $pdo,
+    string $frequency,
+    float $latitude,
+    float $longitude
+): string {
+    $frequency = normalizeAtcVoiceFrequency($frequency);
+    if ($frequency === '' || $frequency === '122.800') return '';
+
+    $statement = $pdo->prepare(
+        "SELECT a.callsign,a.station_code,a.position_code,a.radar_boundary_code,
+                ap.latitude_deg,ap.longitude_deg
+         FROM atc_sessions a
+         LEFT JOIN airports ap ON UPPER(ap.ident)=UPPER(a.station_code)
+         WHERE a.is_active=1 AND a.is_spectator=0
+           AND a.last_seen_at>=DATE_SUB(NOW(),INTERVAL 30 SECOND)
+           AND ABS(CAST(a.frequency AS DECIMAL(7,3))-CAST(:frequency AS DECIMAL(7,3)))<0.001"
+    );
+    $statement->execute(['frequency' => $frequency]);
+
+    $matches = [];
+    foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $session) {
+        $position = strtoupper((string)$session['position_code']);
+        $inside = false;
+        $specificity = 0.0;
+
+        if (in_array($position, ['APP', 'DEP', 'CTR'], true)) {
+            foreach (readAtisScopeFeatures($session) as $feature) {
+                $geometry = is_array($feature['geometry'] ?? null)
+                    ? $feature['geometry'] : [];
+                if (!pointInAtisGeometry($longitude, $latitude, $geometry)
+                    && distanceToAtcGeometryNm($longitude, $latitude, $geometry) > 10.0) continue;
+                $inside = true;
+                // Prefer a smaller, more specific sub-sector when sectors overlap.
+                $encoded = json_encode($geometry['coordinates'] ?? []);
+                preg_match_all('/-?\d+(?:\.\d+)?/', (string)$encoded, $numbers);
+                $values = array_map('floatval', $numbers[0] ?? []);
+                $lons = []; $lats = [];
+                for ($i = 0; $i + 1 < count($values); $i += 2) {
+                    $lons[] = $values[$i]; $lats[] = $values[$i + 1];
+                }
+                if ($lons && $lats) {
+                    $specificity = max(0.000001,
+                        (max($lons) - min($lons)) * (max($lats) - min($lats)));
+                }
+                break;
+            }
+        } elseif ($session['latitude_deg'] !== null && $session['longitude_deg'] !== null) {
+            $range = 20.0;
+            if ($position === 'TWR') $range = 30.0;
+            elseif (in_array($position, ['GND', 'DEL', 'INFO'], true)) $range = 12.0;
+            $inside = atisDistanceNm(
+                $latitude, $longitude,
+                (float)$session['latitude_deg'], (float)$session['longitude_deg']
+            ) <= $range;
+            $specificity = $range * $range;
+        }
+
+        $priority = 6;
+        if ($position === 'DEL') $priority = 1;
+        elseif ($position === 'GND') $priority = 2;
+        elseif ($position === 'TWR') $priority = 3;
+        elseif (in_array($position, ['APP', 'DEP'], true)) $priority = 4;
+        elseif ($position === 'CTR') $priority = 5;
+        if ($inside) $matches[] = [
+            'callsign' => strtoupper((string)$session['callsign']),
+            'specificity' => $specificity,
+            'priority' => $priority,
+        ];
+    }
+    usort($matches, static function (array $a, array $b): int {
+        $specificity = $a['specificity'] <=> $b['specificity'];
+        return $specificity !== 0 ? $specificity : ($a['priority'] <=> $b['priority']);
+    });
+    return (string)($matches[0]['callsign'] ?? '');
+}
+
+/** Approximate distance to a sector boundary in NM (local equirectangular plane). */
+function distanceToAtcGeometryNm(
+    float $longitude,
+    float $latitude,
+    array $geometry
+): float {
+    $type = (string)($geometry['type'] ?? '');
+    $coordinates = $geometry['coordinates'] ?? [];
+    $polygons = $type === 'Polygon' ? [$coordinates]
+        : ($type === 'MultiPolygon' ? $coordinates : []);
+    $best = INF;
+    $lonScale = max(0.05, cos(deg2rad($latitude)));
+    foreach ($polygons as $polygon) {
+        foreach (is_array($polygon) ? $polygon : [] as $ring) {
+            if (!is_array($ring) || count($ring) < 2) continue;
+            for ($i = 1; $i < count($ring); ++$i) {
+                $a = $ring[$i - 1]; $b = $ring[$i];
+                if (!is_array($a) || !is_array($b)) continue;
+                $ax = ((float)$a[0] - $longitude) * $lonScale;
+                $ay = (float)$a[1] - $latitude;
+                $bx = ((float)$b[0] - $longitude) * $lonScale;
+                $by = (float)$b[1] - $latitude;
+                $dx = $bx - $ax; $dy = $by - $ay;
+                $denominator = $dx * $dx + $dy * $dy;
+                $t = $denominator > 0.0
+                    ? max(0.0, min(1.0, -($ax * $dx + $ay * $dy) / $denominator))
+                    : 0.0;
+                $distanceDegrees = hypot($ax + $t * $dx, $ay + $t * $dy);
+                $best = min($best, $distanceDegrees * 60.0);
+            }
+        }
+    }
+    return $best;
+}
 
 $callsign = strtoupper(trim($_POST["callsign"] ?? ""));
 $aircraft_icao = strtoupper(trim($_POST["aircraft_icao"] ?? ""));
@@ -1296,6 +1410,28 @@ try {
         (float)$longitude
     );
 
+    $com1AtcCallsign = findPositionAtcCallsign(
+        $pdo, (string)$com1, (float)$latitude, (float)$longitude
+    );
+    $com2AtcCallsign = findPositionAtcCallsign(
+        $pdo, (string)$com2, (float)$latitude, (float)$longitude
+    );
+
+    $currentFlightplanStmt = $pdo->prepare(
+        "SELECT flight_rules,flight_type,departure_time,departure_airport,arrival_airport,
+                alternate1_airport,alternate2_airport,route_text,cruising_level,
+                cruising_speed,remarks,
+                (CRC32(CONCAT_WS('|',flight_rules,flight_type,departure_time,
+                    departure_airport,arrival_airport,alternate1_airport,
+                    alternate2_airport,route_text,cruising_level,cruising_speed,remarks)) & 2147483647) AS revision
+         FROM pilot_flightplans WHERE session_token=:token LIMIT 1"
+    );
+    $currentFlightplanStmt->execute(['token' => $token]);
+    $currentFlightplan = $currentFlightplanStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    if ($currentFlightplan !== null) {
+        $currentFlightplan['revision'] = (int)($currentFlightplan['revision'] ?? 0);
+    }
+
     echo json_encode([
         "success" => true,
         "message" => "Position aktualisiert.",
@@ -1306,6 +1442,9 @@ try {
         "op_permission" => (int)$session["op_permission"],
         "can_use_invisible" => $canUseInvisible,
         "is_invisible" => ((int)$session["is_invisible"] === 1)
+        ,"com1_atc_callsign" => $com1AtcCallsign
+        ,"com2_atc_callsign" => $com2AtcCallsign
+        ,"flightplan" => $currentFlightplan
     ]);
 
 } catch (Exception $e) {

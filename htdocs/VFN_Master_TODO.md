@@ -166,9 +166,15 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Kartensuche nach Piloten, Flughäfen, Wegpunkten und Navaids filtern sowie auf exakte Kennungen begrenzen
 - [-] ATC-Sektoren und Zuständigkeitsgrenzen als schaltbare Kartenebene darstellen
   - [x] Weltweite FIR/ARTCC-Grenzen aus dem CC-BY-SA-lizenzierten VATSpy-GeoJSON lokal importieren
+  - [x] 1.282 weltweit veröffentlichte APP/DEP-Polygone aus dem CC-BY-SA-lizenzierten SimAware-TRACON-Projekt importieren und validieren
+  - [x] Exakte Untersektor-Geometrien von lediglich übergeordneten VATSpy-Fallbacks technisch unterscheiden und Fallbacks sichtbar kennzeichnen
+  - [x] 1.271 weltweit definierte CTR/FSS-Controllersektoren mit 4.363 Höhen-Segmenten aus VATGlasses indexiert importieren (CC BY-NC-SA 4.0)
+  - [x] Exakte operative Sektoren per Position laden; Browser lädt nicht mehr den vollständigen Detaildatensatz
+  - [x] Höhenunter- und -obergrenze (`min_fl`/`max_fl`) je Sektorsegment im Datensatz erhalten
   - [x] FIR/ARTCC-Ebene in der Karte schaltbar, verzögert geladen und anklickbar machen
   - [ ] Weltweite reale CTR-, CTA- und TMA-Lufträume aus einer zulässigen Quelle importieren
   - [ ] Eigenes GeoJSON-Format und Admin-Import für operative VFN-Untersektoren bereitstellen
+  - [-] Die 138 weltweiten VATSpy-Gruppen mit mehreren Radar-Aliasen einzeln gegen frei nutzbare offizielle Sektorpakete prüfen; VATGlasses deckt jetzt viele operativ getrennte Positionen ab, verbleibende Fallbacks benötigen regionale Quellen
   - [ ] FIR/ACC-, APP- und weitere Sektorebenen mit Höhenband und Bezeichnung unterscheiden
 - [x] Airways mit allen Segmenten auf der Karte darstellen
   - [x] Airways über die AIRAC-Suche als eigenen Ergebnistyp finden
@@ -207,7 +213,20 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Controller-D-ATIS über `controller_atis`
 - [x] Flugplanbearbeitung und paginierte Historie auf der Webseite
 - [ ] ATC-seitige Flugplanannahme/-änderung
+- [x] Automatische Voice-ATIS bei besetzter ATC-Position
+  - [x] ATIS-Flughäfen dynamisch aus APP-/DEP-/CTR-Polygon beziehungsweise Terminalradius bestimmen
+  - [x] Mehrere ATIS-Flughäfen eines Radarbereichs per Dropdown verwalten
+  - [x] Einzelne ATIS-Verwaltungen als zusätzliche Fenster öffnen und synchronisieren
+  - [x] Veraltete automatisch erzeugte ATIS-MP3-Versionen bereinigen
+  - [x] Aktive ATIS-Flughäfen als klickbare Punkte mit Status in `map.php` darstellen
+- [x] Alle ATC-Arbeitsfenster verschiebbar, dockbar, auslagerbar und einklappbar machen
 - [ ] Voice Flightplans
+- [-] Weltweiter ATC-Frequenzkatalog
+  - [x] Persistente Positions- und Sektorfrequenzen mit mehreren Frequenzen pro Radarbereich
+  - [x] Täglicher Import aktuell besetzter weltweiter Positionen aus dem öffentlichen VATSIM-Datenfeed
+  - [x] Radar-Untersektoren mit Bindestrich/Unterstrich korrekt zuordnen und im ATC-Voicefenster auswählbar machen
+  - [x] ATC-Frequenzkatalog beim Test-Datenbankreset erhalten
+  - [ ] Offiziellen IVAO-API-Zugang hinterlegen und den vollständigen statischen IVAO-Positionskatalog importieren
 
 # 7. Chat und Kommunikation
 

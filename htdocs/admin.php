@@ -1367,6 +1367,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             'showRatings' => t('admin_configuration_show_ratings'),
             'maintenanceMode' => t('admin_configuration_maintenance_mode'),
             'registrationEnabled' => t('admin_configuration_registration_enabled'),
+            'atcLoginEnabled' => t('admin_configuration_atc_login_enabled'),
             'chatFrequencyRangeNm' => t('admin_configuration_chat_range'),
             'aviationWeatherMetarCacheUrl' => t('admin_configuration_metar_cache_url'),
             'noaaMetarStationBaseUrl' => t('admin_configuration_metar_station_url'),

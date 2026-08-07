@@ -58,7 +58,7 @@ function insertChatMessage(
         $senderCallsign = 'SYSTEM';
     }
 
-    if (!in_array($messageType, ['pilot', 'staff', 'system', 'award', 'landing'], true)) {
+    if (!in_array($messageType, ['pilot', 'staff', 'system', 'award', 'landing', 'atc_contact'], true)) {
         $messageType = 'system';
     }
 

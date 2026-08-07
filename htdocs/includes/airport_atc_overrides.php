@@ -4,6 +4,13 @@
 // Keep the reason visible so an override can be reviewed when source data
 // changes. RMZ and AFIS do not constitute aerodrome control.
 $overrides = [
+    'EDDP' => [
+        'controlled' => true,
+        'positions' => ['INFO', 'DEL', 'GND', 'TWR', 'APP', 'DEP'],
+        'operation' => 'controlled',
+        'frequencies' => ['DEL' => '121.680'],
+        'note' => 'Leipzig Delivery is operational on 121.680; missing from the imported frequency dump.',
+    ],
     'EDQB' => [
         'controlled' => false,
         'positions' => ['INFO'],
