@@ -35,6 +35,7 @@ function renderFlag(string $language): string
 $unreadActivityCount = 0;
 $pendingDivisionTransferCount = 0;
 $pendingBanAppealCount = 0;
+$pendingBugReportCount = 0;
 $unreadPrivateMessageCount = 0;
 $headerOpPermission =
     (int)($_SESSION['web_op_permission'] ?? 0);
@@ -116,6 +117,17 @@ if (isset($_SESSION['web_user_id'])) {
 
         $_SESSION['web_op_permission'] =
             $headerOpPermission;
+
+        if ($headerOpPermission >= 1) {
+            try {
+                $pendingBugReportCount = (int)$headerPdo->query(
+                    "SELECT COUNT(*) FROM bug_reports
+                     WHERE status IN ('new','open','in_progress','waiting_user','testing')"
+                )->fetchColumn();
+            } catch (Throwable $ignoredBugReports) {
+                $pendingBugReportCount = 0;
+            }
+        }
 
         if ($headerOpPermission > 1) {
             $pendingDivisionTransferCount = (int)$headerPdo
@@ -471,6 +483,11 @@ if (isset($_SESSION['web_user_id'])) {
             <?php echo htmlspecialchars(t('nav_download')); ?>
         </a>
 
+        <a href="bug_reports.php">
+            <?php echo htmlspecialchars(t('nav_bug_reports')); ?>
+            <?php if ($headerOpPermission >= 1 && $pendingBugReportCount > 0): ?><span class="header-notification-dot"></span><?php endif; ?>
+        </a>
+
         <?php if (isset($_SESSION['web_user_id'])): ?>
 
             <a href="flightplans.php">
@@ -493,10 +510,10 @@ if (isset($_SESSION['web_user_id'])) {
                 <?php if ($unreadActivityCount > 0 || $unreadPrivateMessageCount > 0 || $pendingDivisionTransferCount > 0 || $pendingBanAppealCount > 0): ?><span class="header-notification-dot"></span><?php endif; ?>
             </a>
 
-            <?php if ($headerOpPermission > 1): ?>
-                <a href="admin.php">
+            <?php if ($headerOpPermission >= 1): ?>
+                <a href="<?php echo $headerOpPermission > 1 ? 'admin.php' : 'bug_reports.php'; ?>">
                     <?php echo htmlspecialchars(t('nav_admin_panel')); ?>
-                    <?php if ($pendingDivisionTransferCount > 0 || $pendingBanAppealCount > 0): ?>
+                    <?php if ($pendingDivisionTransferCount > 0 || $pendingBanAppealCount > 0 || $pendingBugReportCount > 0): ?>
                         <span class="header-notification-dot"></span>
                     <?php endif; ?>
                 </a>

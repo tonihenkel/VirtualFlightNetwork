@@ -120,7 +120,7 @@ static const std::string gSetInvisibleUrl =
 gServerAddress + "/execute/set_invisible.php";
 
 static const std::string gPilotsUrl =
-gServerAddress + "/execute/get_pilots.php";
+gServerAddress + "/execute/get_pilots.php?protection=VFN-Pilots-8c41f7a2d96e5b30";
 
 static const std::string gChatSendUrl =
 gServerAddress + "/execute/chat_send.php";
@@ -1126,6 +1126,7 @@ static XPLMDataRef gFlapRatio = nullptr;
 static XPLMDataRef gSpeedbrakeRatio = nullptr;
 static XPLMDataRef gThrottleRatio = nullptr;
 static XPLMDataRef gEngineRpm = nullptr;
+static XPLMDataRef gEngineCount = nullptr;
 static XPLMDataRef gYokePitchRatio = nullptr;
 static XPLMDataRef gYokeRollRatio = nullptr;
 static XPLMDataRef gYokeHeadingRatio = nullptr;
@@ -5135,7 +5136,7 @@ void UpdateTrafficPolling(float elapsed)
     gTrafficPollElapsed = 0.0f;
     const std::string token = gAuthToken;
     const bool hideInvisible =
-        gCurrentOpPermission <= 1 || gHideInvisibleTraffic;
+        gCurrentOpPermission < 1 || gHideInvisibleTraffic;
 
     if (gTrafficPollThread.joinable())
     {
@@ -7274,6 +7275,60 @@ float ReadDataRefArrayMaximum(
 }
 
 
+std::vector<float> ReadEngineValues(
+    XPLMDataRef dataRef,
+    int engineCount,
+    float minimum,
+    float maximum
+)
+{
+    const int requestedCount = std::clamp(engineCount, 1, 8);
+    std::vector<float> values(
+        static_cast<std::size_t>(requestedCount),
+        0.0f
+    );
+    if (!dataRef)
+    {
+        return values;
+    }
+
+    const int readCount = XPLMGetDatavf(
+        dataRef,
+        values.data(),
+        0,
+        requestedCount
+    );
+    for (int index = 0; index < requestedCount; ++index)
+    {
+        values[static_cast<std::size_t>(index)] =
+            index < readCount
+                ? std::clamp(
+                    values[static_cast<std::size_t>(index)],
+                    minimum,
+                    maximum
+                )
+                : 0.0f;
+    }
+    return values;
+}
+
+
+std::string FloatValuesToCsv(const std::vector<float>& values)
+{
+    std::ostringstream stream;
+    stream << std::fixed << std::setprecision(3);
+    for (std::size_t index = 0; index < values.size(); ++index)
+    {
+        if (index > 0)
+        {
+            stream << ',';
+        }
+        stream << values[index];
+    }
+    return stream.str();
+}
+
+
 float ReadDataRefArrayFirst(
     XPLMDataRef dataRef,
     float fallback = 0.0f
@@ -7534,6 +7589,23 @@ void SendPositionUpdate()
             0.0f,
             ReadDataRefArrayMaximum(gEngineRpm)
         );
+    const int engineCount = std::clamp(
+        gEngineCount ? XPLMGetDatai(gEngineCount) : 1,
+        1,
+        8
+    );
+    const std::vector<float> engineThrustRatios = ReadEngineValues(
+        gThrottleRatio,
+        engineCount,
+        0.0f,
+        1.0f
+    );
+    const std::vector<float> engineRpms = ReadEngineValues(
+        gEngineRpm,
+        engineCount,
+        0.0f,
+        100000.0f
+    );
     const float yokePitchRatio =
         gYokePitchRatio
             ? std::clamp(
@@ -7607,6 +7679,9 @@ void SendPositionUpdate()
         "&speedbrake_ratio=" + UrlEncode(FloatToString(speedbrakeRatio)) +
         "&thrust_ratio=" + UrlEncode(FloatToString(thrustRatio)) +
         "&engine_rpm=" + UrlEncode(FloatToString(engineRpm)) +
+        "&engine_count=" + UrlEncode(IntToString(engineCount)) +
+        "&engine_thrust_ratios=" + UrlEncode(FloatValuesToCsv(engineThrustRatios)) +
+        "&engine_rpms=" + UrlEncode(FloatValuesToCsv(engineRpms)) +
         "&yoke_pitch_ratio=" + UrlEncode(FloatToString(yokePitchRatio)) +
         "&yoke_roll_ratio=" + UrlEncode(FloatToString(yokeRollRatio)) +
         "&yoke_heading_ratio=" + UrlEncode(FloatToString(yokeHeadingRatio)) +
@@ -7628,6 +7703,7 @@ void SendPositionUpdate()
         "&fuel_remaining_percent=" + UrlEncode(FloatToString(fuelRemainingPercent)) +
         "&night_flight_seconds=" + UrlEncode(IntToString(gNightFlightSeconds)) +
         "&total_flight_seconds=" + UrlEncode(IntToString(gTotalFlightSeconds)) +
+        "&plugin_language=" + UrlEncode(gCurrentLanguage) +
         "&has_crashed=" + UrlEncode(IntToString(hasCrashed));
 
     StartPositionUpdateWorker(
@@ -8077,6 +8153,7 @@ void PerformCustomLogin()
         "&password=" + UrlEncode(password) +
         "&callsign=" + UrlEncode(callsign) +
         "&plugin_version=" + UrlEncode(VFN_PLUGIN_VERSION) +
+        "&plugin_language=" + UrlEncode(gCurrentLanguage) +
         "&spectator=" + UrlEncode(gSpectatorLogin ? "1" : "0");
 
     std::string response =
@@ -11097,7 +11174,7 @@ CustomRect GetSettingsHideInvisibleTrafficRect(int left, int top, int right)
 int GetSettingsLanguageTop(int top)
 {
     return gCanUseInvisible
-        ? top - (gCurrentOpPermission > 1 ? 200 : 154)
+        ? top - (gCurrentOpPermission >= 1 ? 200 : 154)
         : top - 76;
 }
 
@@ -11943,7 +12020,7 @@ void DrawSettingsWindow(
         );
     }
 
-    if (gCurrentOpPermission > 1)
+    if (gCurrentOpPermission >= 1)
     {
         const CustomRect filterRect =
             GetSettingsHideInvisibleTrafficRect(left, top, right);
@@ -12420,7 +12497,7 @@ int SettingsHandleMouse(
         }
 
         if (
-            gCurrentOpPermission > 1
+            gCurrentOpPermission >= 1
             && PointInWindowRect(
                 x, y,
                 GetSettingsHideInvisibleTrafficRect(left, top, right),
@@ -17485,7 +17562,8 @@ int LoginWindowHandler(
                 "username=" + UrlEncode(username) +
                 "&password=" + UrlEncode(password) +
                 "&callsign=" + UrlEncode(callsign) +
-                "&plugin_version=" + UrlEncode(VFN_PLUGIN_VERSION);
+                "&plugin_version=" + UrlEncode(VFN_PLUGIN_VERSION) +
+                "&plugin_language=" + UrlEncode(gCurrentLanguage);
 
             std::string response =
                 HttpPost(
@@ -19958,6 +20036,11 @@ PLUGIN_API int XPluginStart(
             "sim/flightmodel2/engines/engine_rotation_speed_rpm"
         );
 
+    gEngineCount =
+        XPLMFindDataRef(
+            "sim/aircraft/engine/acf_num_engines"
+        );
+
     gYokePitchRatio =
         XPLMFindDataRef(
             "sim/joystick/yoke_pitch_ratio"
@@ -20069,10 +20152,25 @@ PLUGIN_API int XPluginStart(
         Falls ein älteres Flugzeug die cockpit2-DataRefs nicht liefert, fallen wir auf die alten DataRefs zurück.
     */
 
+    /*
+        Always prefer the 8.33 kHz channel datarefs.  The older
+        *_frequency_hz datarefs only expose two decimal places for some
+        aircraft and turn a tuned channel such as 124.175 into 124.170.
+        The *_833 datarefs have been available since X-Plane 10.30 and
+        contain the channel exactly as it is shown in the cockpit.
+    */
     gCom1 =
         XPLMFindDataRef(
-            "sim/cockpit2/radios/actuators/com1_frequency_hz"
+            "sim/cockpit2/radios/actuators/com1_frequency_hz_833"
         );
+
+    if (gCom1 == nullptr)
+    {
+        gCom1 =
+            XPLMFindDataRef(
+                "sim/cockpit2/radios/actuators/com1_frequency_hz"
+            );
+    }
 
     if (gCom1 == nullptr)
     {
@@ -20084,8 +20182,16 @@ PLUGIN_API int XPluginStart(
 
     gCom2 =
         XPLMFindDataRef(
-            "sim/cockpit2/radios/actuators/com2_frequency_hz"
+            "sim/cockpit2/radios/actuators/com2_frequency_hz_833"
         );
+
+    if (gCom2 == nullptr)
+    {
+        gCom2 =
+            XPLMFindDataRef(
+                "sim/cockpit2/radios/actuators/com2_frequency_hz"
+            );
+    }
 
     if (gCom2 == nullptr)
     {
@@ -20097,8 +20203,16 @@ PLUGIN_API int XPluginStart(
 
     gCom3 =
         XPLMFindDataRef(
-            "sim/cockpit2/radios/actuators/com3_frequency_hz"
+            "sim/cockpit2/radios/actuators/com3_frequency_hz_833"
         );
+
+    if (gCom3 == nullptr)
+    {
+        gCom3 =
+            XPLMFindDataRef(
+                "sim/cockpit2/radios/actuators/com3_frequency_hz"
+            );
+    }
 
     if (gCom3 == nullptr)
     {

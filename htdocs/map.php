@@ -758,7 +758,7 @@ if ($statusMessage !== '') {
             </label>
         </div>
         <a class="map-statistics-link" href="statistics.php"><?php echo htmlspecialchars(t('map_open_statistics')); ?></a>
-        <?php if ($viewerOpPermission > 1): ?>
+        <?php if ($viewerOpPermission >= 1): ?>
             <label class="map-invisible-filter">
                 <input id="hideInvisiblePilots" type="checkbox">
                 <?php echo htmlspecialchars(t('map_hide_invisible_pilots')); ?>
@@ -2970,7 +2970,7 @@ if ($statusMessage !== '') {
                 fillOpacity: 1,
                 opacity: 1
             });
-            marker.bindTooltip(escapeHtml(point.identifier || ''), {
+            marker.bindTooltip(escapeHtml((point.procedure ? point.procedure + ' · ' : '') + (point.identifier || '')), {
                 direction: 'top',
                 offset: [0, -4],
                 permanent: MAP_WAYPOINT_LABELS_MODE === 'always',
@@ -4819,6 +4819,7 @@ if ($statusMessage !== '') {
                 await fetch(
                     '/execute/get_pilots.php?time='
                     + Date.now()
+                    + '&protection=<?php echo rawurlencode((string)$getPilotsProtection); ?>'
                 );
 
             const data =

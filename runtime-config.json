@@ -4,7 +4,7 @@
     "showRatings": true,
     "maintenanceMode": false,
     "registrationEnabled": false,
-    "atcLoginEnabled": false,
+    "atcLoginEnabled": true,
     "chatFrequencyRangeNm": 200,
     "aviationWeatherMetarCacheUrl": "https://aviationweather.gov/data/cache/metars.cache.xml.gz",
     "noaaMetarStationBaseUrl": "https://tgftp.nws.noaa.gov/data/observations/metar/stations/",

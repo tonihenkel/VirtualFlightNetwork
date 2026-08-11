@@ -2,6 +2,7 @@
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/admin_auth.php';
 require_once __DIR__ . '/../includes/activity_log.php';
+require_once __DIR__ . '/../includes/division_schema.php';
 
 try {
     $pdo = createAdminPdo();
@@ -48,6 +49,11 @@ try {
                 'division' => $request['requested_division_code'],
                 'user_id' => $request['user_id']
             ]);
+            deleteHomeDivisionGca(
+                $pdo,
+                (int)$request['user_id'],
+                (string)$request['requested_division_code']
+            );
         }
         $pdo->prepare(
             "UPDATE division_transfer_requests

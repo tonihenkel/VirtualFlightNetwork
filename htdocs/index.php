@@ -30,7 +30,8 @@ $pluginVersion =
     'v' . ($pluginVersionValue !== '' ? $pluginVersionValue : '0.1.0');
 
 $apiStatusUrl =
-    "/execute/get_pilots.php";
+    "/execute/get_pilots.php?protection="
+    . rawurlencode((string)$getPilotsProtection);
 
 ?>
 <!DOCTYPE html>
@@ -682,7 +683,7 @@ if ($statusMessage !== '') {
         try
         {
             const responses = await Promise.all([
-                fetch('<?php echo htmlspecialchars($apiStatusUrl); ?>?time=' + Date.now()),
+                fetch('<?php echo htmlspecialchars($apiStatusUrl); ?>&time=' + Date.now()),
                 fetch('execute/get_atc_positions.php?time=' + Date.now())
             ]);
 

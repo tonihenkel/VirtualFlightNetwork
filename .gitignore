@@ -26,3 +26,11 @@ VFN_Follow_Me_Amarok_Complete.zip
 voice-service/test-audio/*
 !voice-service/test-audio/.gitkeep
 voice-service/vendor/ffmpeg/
+
+# Heruntergeladene bzw. reproduzierbare Rohdaten und lokale Generator-Tests.
+# Die daraus erzeugten, von VFN verwendeten Layout-/Webdaten bleiben versioniert.
+data-sources/xplane-gateway/apt/
+data-sources/xplane-gateway/gateway-airports.dat*
+data-sources/xplane-gateway/sync-state*.json
+data-source-test/
+htdocs/data/airport_layouts/

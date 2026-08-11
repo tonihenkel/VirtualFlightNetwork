@@ -12,7 +12,7 @@ const VFN_ROUTE_AIRAC_BASE_URL = 'https://airac.net/api/v1';
 const VFN_ROUTE_CACHE_SECONDS = 86400;
 const VFN_ROUTE_MAX_TOKENS = 30;
 
-function routeJson(array $payload, int $status = 200): never
+function routeJson(array $payload, int $status = 200): void
 {
     http_response_code($status);
     echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -52,6 +52,42 @@ function routeAirport(PDO $pdo, string $code): ?array
         'latitude' => (float)$row['latitude_deg'],
         'longitude' => (float)$row['longitude_deg'],
     ];
+}
+
+function routeRunwayThreshold(string $airport, string $runway): ?array
+{
+    $airport = strtoupper(trim($airport));
+    $runway = strtoupper(trim($runway));
+    if (!preg_match('/^[A-Z0-9-]{2,15}$/', $airport) || !preg_match('/^\d{2}[LCR]?$/', $runway)) {
+        return null;
+    }
+    $path = __DIR__ . '/../data/airport_layouts/' . $airport . '.json';
+    if (!is_file($path)) {
+        return null;
+    }
+    $layout = json_decode((string)file_get_contents($path), true);
+    foreach ((array)($layout['runways'] ?? []) as $item) {
+        foreach ((array)($item['ends'] ?? []) as $end) {
+            $point = $end['point'] ?? null;
+            if (strtoupper(trim((string)($end['ident'] ?? ''))) !== $runway
+                || !is_array($point) || count($point) < 2
+                || !is_numeric($point[0]) || !is_numeric($point[1])) {
+                continue;
+            }
+            return [
+                'identifier' => 'RWY ' . $runway,
+                'kind' => 'runway',
+                'latitude' => (float)$point[0],
+                'longitude' => (float)$point[1],
+            ];
+        }
+    }
+    return null;
+}
+
+function routeSameIdentifier(array $point, string $identifier): bool
+{
+    return strtoupper(trim((string)($point['identifier'] ?? ''))) === strtoupper(trim($identifier));
 }
 
 function routeCachedFetch(string $cacheKey, string $url): ?array
@@ -116,6 +152,199 @@ function routeCandidates(string $identifier): array
     return $result;
 }
 
+function routeApiPoint($raw, string $fallbackKind = 'waypoint'): ?array
+{
+    if (!is_array($raw)) {
+        return null;
+    }
+    $coordinates = is_array($raw['coordinates'] ?? null) ? $raw['coordinates'] : [];
+    $latitude = $coordinates['lat'] ?? $raw['latitude'] ?? null;
+    $longitude = $coordinates['lon'] ?? $raw['longitude'] ?? null;
+    if (!is_numeric($latitude) || !is_numeric($longitude)) {
+        return null;
+    }
+    $rawType = $raw['type'] ?? $fallbackKind;
+    $kind = is_array($rawType) ? (string)($rawType['code'] ?? $fallbackKind) : (string)$rawType;
+    return [
+        'identifier' => strtoupper(trim((string)($raw['identifier'] ?? $raw['icao'] ?? ''))),
+        'kind' => strtolower(trim($kind)) ?: $fallbackKind,
+        'latitude' => (float)$latitude,
+        'longitude' => (float)$longitude,
+    ];
+}
+
+function routeProcedureAliasMatches(string $filed, string $airac): bool
+{
+    if ($filed === $airac) {
+        return true;
+    }
+    $longer = strlen($filed) > strlen($airac) ? $filed : $airac;
+    $shorter = $longer === $filed ? $airac : $filed;
+    if (strlen($longer) !== strlen($shorter) + 1) {
+        return false;
+    }
+    for ($index = 0, $length = strlen($longer); $index < $length; $index++) {
+        if (substr($longer, 0, $index) . substr($longer, $index + 1) === $shorter) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function routeAirportProcedures(string $airport, string $type): array
+{
+    $procedures = [];
+    for ($page = 1; $page <= 10; $page++) {
+        $url = VFN_ROUTE_AIRAC_BASE_URL . '/procedures?'
+            . http_build_query([
+                'airport' => $airport,
+                'type' => $type,
+                'per_page' => 100,
+                'page' => $page,
+            ]);
+        $response = routeCachedFetch('procedures_' . $airport . '_' . $type . '_' . $page, $url);
+        if (!is_array($response) || ($response['status'] ?? '') !== 'success') {
+            break;
+        }
+        foreach ((array)($response['data'] ?? []) as $item) {
+            if (is_array($item) && strtoupper((string)($item['type']['code'] ?? '')) === $type) {
+                $identifier = strtoupper(trim((string)($item['identifier'] ?? '')));
+                if ($identifier !== '') {
+                    // Listings can contain one row per runway transition. For
+                    // route matching this is still one procedure identifier.
+                    $procedures[$identifier] = $item;
+                }
+            }
+        }
+        if (empty($response['pagination']['has_more'])) {
+            break;
+        }
+    }
+    return array_values($procedures);
+}
+
+/**
+ * Let AIRAC.net expand airways as well as SID/STAR procedure legs. Procedure
+ * aliases are resolved against the actual departure/arrival airport data.
+ * Some providers omit one character from a seven-character operational name;
+ * such a correction is accepted only when it yields one unique procedure.
+ */
+function routePrepareProcedures(string $departure, string $arrival, string $routeText): array
+{
+    $tokens = preg_split('/\s+/', trim($routeText)) ?: [];
+    $departureRunway = '';
+    $arrivalRunway = '';
+    $aliases = [];
+    $catalogues = [
+        'SID' => routeAirportProcedures($departure, 'SID'),
+        'STAR' => routeAirportProcedures($arrival, 'STAR'),
+    ];
+    foreach ($tokens as $index => $token) {
+        $clean = strtoupper((string)preg_replace('/\/.*$/', '', trim($token)));
+        if (!preg_match('/^[A-Z]{3,5}\d[A-Z]$/', $clean)) {
+            continue;
+        }
+        foreach (['SID' => $departure, 'STAR' => $arrival] as $type => $airport) {
+            $matches = array_values(array_filter($catalogues[$type], static function (array $procedure) use ($clean): bool {
+                $identifier = strtoupper(trim((string)($procedure['identifier'] ?? '')));
+                return $identifier !== '' && routeProcedureAliasMatches($clean, $identifier);
+            }));
+            if (count($matches) !== 1) {
+                continue;
+            }
+            $candidate = strtoupper(trim((string)$matches[0]['identifier']));
+            $url = VFN_ROUTE_AIRAC_BASE_URL . '/procedures/'
+                . rawurlencode($airport) . '/' . rawurlencode($candidate);
+            $response = routeCachedFetch('procedure_' . $airport . '_' . $candidate, $url);
+            if (!is_array($response) || ($response['status'] ?? '') !== 'success'
+                || !is_array($response['data'] ?? null)) {
+                continue;
+            }
+            $procedure = $response['data'];
+            $tokens[$index] = str_replace($clean, $candidate, strtoupper(trim($token)));
+            $aliases[$candidate] = $clean;
+            $runways = is_array($procedure['available_runways'] ?? null)
+                ? $procedure['available_runways'] : [];
+            $runway = strtoupper(trim((string)($runways[0] ?? '')));
+            if ($type === 'SID' && $departureRunway === '') {
+                $departureRunway = $runway;
+            } elseif ($type === 'STAR' && $arrivalRunway === '') {
+                $arrivalRunway = $runway;
+            }
+            continue 2;
+        }
+    }
+    return [
+        'route' => implode(' ', $tokens),
+        'departure_runway' => $departureRunway,
+        'arrival_runway' => $arrivalRunway,
+        'aliases' => $aliases,
+    ];
+}
+
+function routeParsedByAirac(string $departure, string $arrival, string $routeText, string $departureRunway = ''): ?array
+{
+    if ($routeText === '') {
+        return null;
+    }
+    $prepared = routePrepareProcedures($departure, $arrival, $routeText);
+    if ($departureRunway !== '') {
+        $prepared['departure_runway'] = $departureRunway;
+    }
+    $parameters = [
+        'origin' => $departure,
+        'destination' => $arrival,
+        'route' => $prepared['route'],
+    ];
+    if ($prepared['departure_runway'] !== '') {
+        $parameters['departure_runway'] = $prepared['departure_runway'];
+    }
+    if ($prepared['arrival_runway'] !== '') {
+        $parameters['arrival_runway'] = $prepared['arrival_runway'];
+    }
+    $url = VFN_ROUTE_AIRAC_BASE_URL . '/routes/parse?' . http_build_query($parameters);
+    $response = routeCachedFetch('parsed_' . $departure . '_' . $arrival . '_' . $routeText, $url);
+    if (!is_array($response) || ($response['status'] ?? '') !== 'success') {
+        return null;
+    }
+    $data = is_array($response['data'] ?? null) ? $response['data'] : [];
+    $segments = is_array($data['segments'] ?? null) ? $data['segments'] : [];
+    $points = [];
+    foreach ($segments as $segment) {
+        if (!is_array($segment)) {
+            continue;
+        }
+        foreach (['from', 'to'] as $side) {
+            $rawPoint = is_array($segment[$side] ?? null) ? $segment[$side] : [];
+            $point = routeApiPoint($rawPoint);
+            if (!$point) {
+                continue;
+            }
+            $via = strtoupper(trim((string)($rawPoint['via'] ?? '')));
+            if ($via !== '' && isset($prepared['aliases'][$via])) {
+                $point['procedure'] = $prepared['aliases'][$via];
+            }
+            $last = $points[count($points) - 1] ?? null;
+            if ($last
+                && abs((float)$last['latitude'] - (float)$point['latitude']) < 0.000001
+                && abs((float)$last['longitude'] - (float)$point['longitude']) < 0.000001) {
+                continue;
+            }
+            $points[] = $point;
+        }
+    }
+    if (count($points) < 2) {
+        return null;
+    }
+    return [
+        'points' => $points,
+        'procedures' => array_values($prepared['aliases']),
+        'distance_nm' => is_numeric($data['total_distance'] ?? null)
+            ? (float)$data['total_distance']
+            : null,
+    ];
+}
+
 try {
     $pdo = new PDO(
         "mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4",
@@ -133,6 +362,11 @@ try {
     $departure = strtoupper(trim((string)($_POST['departure'] ?? '')));
     $arrival = strtoupper(trim((string)($_POST['arrival'] ?? '')));
     $routeText = strtoupper(trim((string)($_POST['route'] ?? '')));
+    $departureRunway = strtoupper(trim((string)($_POST['departure_runway'] ?? '')));
+    $departureRunway = preg_replace('/^(?:RWY?|RUNWAY)\s*/', '', $departureRunway);
+    if ($departureRunway !== '' && !preg_match('/^\d{2}[LCR]?$/', $departureRunway)) {
+        routeJson(['success' => false, 'message' => 'invalid_departure_runway'], 400);
+    }
     if (!preg_match('/^[A-Z0-9-]{2,15}$/', $departure)
         || !preg_match('/^[A-Z0-9-]{2,15}$/', $arrival)) {
         routeJson(['success' => false, 'message' => 'invalid_airports'], 400);
@@ -144,11 +378,26 @@ try {
         routeJson(['success' => false, 'message' => 'airport_not_found'], 404);
     }
 
-    $points = [$departurePoint];
+    $routeStartPoint = routeRunwayThreshold($departure, $departureRunway) ?: $departurePoint;
+    $points = [$routeStartPoint];
     $resolvedIdentifiers = [];
     $directOnly = $routeText === '' || preg_match('/^DCT(?:\s+DCT)*$/', $routeText);
+    $parsedRoute = !$directOnly ? routeParsedByAirac($departure, $arrival, $routeText, $departureRunway) : null;
 
-    if (!$directOnly) {
+    if ($parsedRoute) {
+        $points = $parsedRoute['points'];
+        $points = array_values(array_filter($points, static function (array $point) use ($departure, $arrival): bool {
+            return !routeSameIdentifier($point, $departure) && !routeSameIdentifier($point, $arrival);
+        }));
+        array_unshift($points, $routeStartPoint);
+        $points[] = $arrivalPoint;
+        $resolvedIdentifiers = array_values(array_filter(array_map(
+            static fn(array $point): string => trim((string)($point['identifier'] ?? '')),
+            array_slice($points, 1, -1)
+        )));
+    }
+
+    if (!$directOnly && !$parsedRoute) {
         $rawTokens = preg_split('/\s+/', mb_substr($routeText, 0, 1500)) ?: [];
         $tokens = [];
         foreach ($rawTokens as $rawToken) {
@@ -169,7 +418,7 @@ try {
             }
         }
 
-        $previous = $departurePoint;
+        $previous = $routeStartPoint;
         foreach ($tokens as $token) {
             $candidates = routeCandidates($token);
             if (!$candidates) {
@@ -190,7 +439,10 @@ try {
         }
     }
 
-    $points[] = $arrivalPoint;
+    $lastPoint = $points[count($points) - 1] ?? null;
+    if (!$lastPoint || (!routeSameIdentifier($lastPoint, $arrival) && routeDistanceNm($lastPoint, $arrivalPoint) > 0.1)) {
+        $points[] = $arrivalPoint;
+    }
     $distanceNm = 0.0;
     for ($index = 1, $count = count($points); $index < $count; $index++) {
         $distanceNm += routeDistanceNm($points[$index - 1], $points[$index]);
@@ -202,8 +454,8 @@ try {
     // zig-zag route even though every individual lookup succeeded. Reject a
     // route whose detour is implausible and use the reliable great-circle
     // route instead. A 35% margin still permits normal airway/SID/STAR detours.
-    if ($directDistanceNm > 0.0 && $distanceNm > $directDistanceNm * 1.35) {
-        $points = [$departurePoint, $arrivalPoint];
+    if (!$parsedRoute && $directDistanceNm > 0.0 && $distanceNm > $directDistanceNm * 1.35) {
+        $points = [$routeStartPoint, $arrivalPoint];
         $resolvedIdentifiers = [];
         $distanceNm = $directDistanceNm;
     }
@@ -213,6 +465,7 @@ try {
         'mode' => $resolvedIdentifiers ? 'waypoints' : 'direct',
         'distance_nm' => round($distanceNm, 1),
         'resolved_waypoints' => $resolvedIdentifiers,
+        'resolved_procedures' => $parsedRoute['procedures'] ?? [],
         'points' => $points,
     ]);
 } catch (Throwable $error) {

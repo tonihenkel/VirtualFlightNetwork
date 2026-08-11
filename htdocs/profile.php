@@ -20,6 +20,7 @@ require_once 'includes/language.php';
 require_once 'includes/ratings.php';
 require_once 'includes/two_factor.php';
 require_once 'includes/web_session.php';
+require_once 'includes/division_schema.php';
 
 if (!validateVfnWebSession(new PDO(
     "mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4",
@@ -117,6 +118,24 @@ try {
         header('Location: index.php?type=error&message=user_not_found');
         exit;
     }
+    ensureDivisionManagementSchema($pdo);
+    $gcaStmt = $pdo->prepare(
+        "SELECT g.division_code,g.status,g.requested_at,g.reviewed_at,d.name division_name
+         FROM guest_controller_approvals g LEFT JOIN divisions d ON d.code=g.division_code
+         WHERE g.user_id=:uid ORDER BY g.requested_at DESC"
+    );
+    $gcaStmt->execute(['uid' => $profileUserId]);
+    $profileGcas = $gcaStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $divisionStaffStmt = $pdo->prepare(
+        "SELECT ds.division_code,ds.role_code,ds.role_title,d.name division_name
+         FROM division_staff ds
+         LEFT JOIN divisions d ON d.code=ds.division_code
+         WHERE ds.user_id=:uid AND ds.is_active=1
+         ORDER BY ds.sort_order ASC,ds.role_code ASC"
+    );
+    $divisionStaffStmt->execute(['uid' => $profileUserId]);
+    $profileDivisionStaff = $divisionStaffStmt->fetchAll(PDO::FETCH_ASSOC);
 
     $avatarRelativePath =
         'uploads/avatars/' . (int)$profileUser['id'] . '.jpg';
@@ -322,6 +341,24 @@ if (
 ) {
     $activeTab = 'overview';
 }
+
+$profileTopAirport = '----';
+$profileTopCountry = '----';
+$profileTopRoute = '----';
+$profileLongestFlight = '----';
+$topAirportStmt=$pdo->prepare("SELECT code,COUNT(*) visits FROM (SELECT departure_airport code FROM pilot_flights WHERE user_id=:u1 AND status='completed' UNION ALL SELECT arrival_airport code FROM pilot_flights WHERE user_id=:u2 AND status='completed')x WHERE code IS NOT NULL AND code<>'' AND code<>'ZZZZ' GROUP BY code ORDER BY visits DESC,code LIMIT 1");
+$topAirportStmt->execute(['u1'=>$profileUserId,'u2'=>$profileUserId]);
+if($row=$topAirportStmt->fetch(PDO::FETCH_ASSOC))$profileTopAirport=(string)$row['code'];
+$topCountryStmt=$pdo->prepare("SELECT UPPER(a.iso_country) code,COUNT(*) visits FROM (SELECT departure_airport code FROM pilot_flights WHERE user_id=:u1 AND status='completed' UNION ALL SELECT arrival_airport code FROM pilot_flights WHERE user_id=:u2 AND status='completed')x JOIN airports a ON a.ident=x.code OR a.icao_code=x.code OR a.gps_code=x.code WHERE a.iso_country IS NOT NULL AND a.iso_country<>'' GROUP BY UPPER(a.iso_country) ORDER BY visits DESC,code LIMIT 1");
+$topCountryStmt->execute(['u1'=>$profileUserId,'u2'=>$profileUserId]);
+if($row=$topCountryStmt->fetch(PDO::FETCH_ASSOC))$profileTopCountry=$countries[(string)$row['code']]??(string)$row['code'];
+$topRouteStmt=$pdo->prepare("SELECT departure_airport,arrival_airport,COUNT(*) flights FROM pilot_flights WHERE user_id=:uid AND status='completed' AND departure_airport<>'ZZZZ' AND arrival_airport<>'ZZZZ' GROUP BY departure_airport,arrival_airport ORDER BY flights DESC,departure_airport,arrival_airport LIMIT 1");
+$topRouteStmt->execute(['uid'=>$profileUserId]);
+if($row=$topRouteStmt->fetch(PDO::FETCH_ASSOC))$profileTopRoute=$row['departure_airport'].' → '.$row['arrival_airport'];
+$longestStmt=$pdo->prepare("SELECT departure_airport,arrival_airport,distance_nm FROM pilot_flights WHERE user_id=:uid AND status='completed' ORDER BY distance_nm DESC LIMIT 1");
+$longestStmt->execute(['uid'=>$profileUserId]);
+if($row=$longestStmt->fetch(PDO::FETCH_ASSOC))$profileLongestFlight=($row['departure_airport']?:'ZZZZ').' → '.($row['arrival_airport']?:'ZZZZ').' · '.number_format((float)$row['distance_nm'],0,',','.').' NM';
+$profileStatisticsQuery=$isOwnProfile?'mode=own':'mode=player&amp;user_id='.(int)$profileUserId;
 
 if (empty($_SESSION['profile_settings_csrf'])) {
     $_SESSION['profile_settings_csrf'] = bin2hex(random_bytes(32));
@@ -662,6 +699,8 @@ $awardImages = [
         }
 
         .stat-row strong { color: white; }
+        .profile-stat-link { color:#65bdff;text-decoration:none; }
+        .profile-stat-link:hover { text-decoration:underline; }
 
         .rating-track {
             display: flex;

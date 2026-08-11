@@ -73,7 +73,7 @@ try {
 
     $viewerOpPermission = (int)$viewer['op_permission'];
     $maySeeSpectators = $viewerOpPermission >= 1;
-    $maySeeInvisible = $viewerOpPermission > 1 && !$hideInvisibleRequested;
+    $maySeeInvisible = $viewerOpPermission >= 1 && !$hideInvisibleRequested;
     $invisibleCondition = $maySeeInvisible
         ? "AND (s.is_invisible = 0 OR u.op_permission <= :viewer_op_permission)"
         : "AND s.is_invisible = 0";

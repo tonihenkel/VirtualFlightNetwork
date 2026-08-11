@@ -20,6 +20,11 @@ if (!isset($pilotSortColumns[$pilotSort])) {
     $pilotSort = 'flights';
 }
 $pilotOrderColumn = $pilotSortColumns[$pilotSort];
+$userId = max(0, (int)($_GET['user_id'] ?? 0));
+$aircraftSort = (string)($_GET['aircraft_sort'] ?? 'flights');
+$aircraftSortColumns = ['flights'=>'flights','distance'=>'distance_nm','hours'=>'duration_seconds','airports'=>'airports'];
+if (!isset($aircraftSortColumns[$aircraftSort])) $aircraftSort = 'flights';
+$aircraftOrderColumn = $aircraftSortColumns[$aircraftSort];
 
 try {
     $pdo = new PDO(
@@ -28,6 +33,31 @@ try {
         $dbPass,
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
     );
+
+    if ($userId > 0) {
+        $userStmt=$pdo->prepare('SELECT id,username,real_name,country_code FROM users WHERE id=:id AND is_active=1 LIMIT 1');
+        $userStmt->execute(['id'=>$userId]); $selectedUser=$userStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$selectedUser) { http_response_code(404); throw new RuntimeException('user_not_found'); }
+        $summaryStmt=$pdo->prepare("SELECT COUNT(*) flights,COALESCE(SUM(distance_nm),0) distance_nm,COALESCE(SUM(duration_seconds),0) duration_seconds FROM pilot_flights WHERE user_id=:uid AND status='completed' AND completed_at>=DATE_SUB(NOW(),INTERVAL $period DAY)");
+        $summaryStmt->execute(['uid'=>$userId]);$personalSummary=$summaryStmt->fetch(PDO::FETCH_ASSOC);
+        $aircraftStmt=$pdo->prepare("SELECT UPPER(COALESCE(NULLIF(aircraft_icao,''),'----')) code,COUNT(*) flights,COALESCE(SUM(distance_nm),0) distance_nm,COALESCE(SUM(duration_seconds),0) duration_seconds,COUNT(DISTINCT NULLIF(departure_airport,'ZZZZ'))+COUNT(DISTINCT NULLIF(arrival_airport,'ZZZZ')) airports FROM pilot_flights WHERE user_id=:uid AND status='completed' AND completed_at>=DATE_SUB(NOW(),INTERVAL $period DAY) GROUP BY code ORDER BY $aircraftOrderColumn DESC,flights DESC,code LIMIT 10");
+        $aircraftStmt->execute(['uid'=>$userId]);$personalAircraft=$aircraftStmt->fetchAll(PDO::FETCH_ASSOC);
+        $airportStmt=$pdo->prepare("SELECT m.code,COUNT(*) movements,MAX(a.name) name,MAX(a.municipality) municipality FROM (SELECT departure_airport code FROM pilot_flights WHERE user_id=:u1 AND status='completed' AND completed_at>=DATE_SUB(NOW(),INTERVAL $period DAY) UNION ALL SELECT arrival_airport code FROM pilot_flights WHERE user_id=:u2 AND status='completed' AND completed_at>=DATE_SUB(NOW(),INTERVAL $period DAY))m LEFT JOIN airports a ON a.ident=m.code OR a.icao_code=m.code OR a.gps_code=m.code WHERE m.code IS NOT NULL AND m.code<>'' AND m.code<>'ZZZZ' GROUP BY m.code ORDER BY movements DESC,m.code LIMIT 10");
+        $airportStmt->execute(['u1'=>$userId,'u2'=>$userId]);$personalAirports=$airportStmt->fetchAll(PDO::FETCH_ASSOC);
+        $countryStmt=$pdo->prepare("SELECT COALESCE(UPPER(NULLIF(a.iso_country,'')),'--') code,COUNT(*) movements,COUNT(DISTINCT m.code) airports FROM (SELECT departure_airport code FROM pilot_flights WHERE user_id=:u1 AND status='completed' AND completed_at>=DATE_SUB(NOW(),INTERVAL $period DAY) UNION ALL SELECT arrival_airport code FROM pilot_flights WHERE user_id=:u2 AND status='completed' AND completed_at>=DATE_SUB(NOW(),INTERVAL $period DAY))m LEFT JOIN airports a ON a.ident=m.code OR a.icao_code=m.code OR a.gps_code=m.code WHERE m.code IS NOT NULL AND m.code<>'' AND m.code<>'ZZZZ' GROUP BY COALESCE(UPPER(NULLIF(a.iso_country,'')),'--') ORDER BY movements DESC,airports DESC,code LIMIT 10");
+        $countryStmt->execute(['u1'=>$userId,'u2'=>$userId]);$personalCountries=$countryStmt->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode(['success'=>true,'mode'=>'player','user'=>['id'=>(int)$selectedUser['id'],'username'=>$selectedUser['username'],'real_name'=>$selectedUser['real_name'],'country_code'=>$selectedUser['country_code']],'period_days'=>$period,'summary'=>['flights'=>(int)$personalSummary['flights'],'pilots'=>1,'distance_nm'=>round((float)$personalSummary['distance_nm'],1),'duration_seconds'=>(int)$personalSummary['duration_seconds']],'top_aircraft'=>$personalAircraft,'top_airports'=>$personalAirports,'top_movement_countries'=>$personalCountries,'top_pilot_countries'=>[],'top_pilots'=>[],'aircraft_sort'=>$aircraftSort,'heatmap'=>[]],JSON_UNESCAPED_UNICODE); exit;
+    }
+
+    $aircraftStmt = $pdo->query(
+        "SELECT UPPER(COALESCE(NULLIF(aircraft_icao,''),'----')) AS code,
+                COUNT(*) AS flights, COALESCE(SUM(distance_nm),0) AS distance_nm,
+                COALESCE(SUM(duration_seconds),0) AS duration_seconds,
+                COUNT(DISTINCT NULLIF(departure_airport,'ZZZZ')) + COUNT(DISTINCT NULLIF(arrival_airport,'ZZZZ')) AS airports
+         FROM pilot_flights WHERE status='completed' AND completed_at>=DATE_SUB(NOW(),INTERVAL $period DAY)
+         GROUP BY code ORDER BY $aircraftOrderColumn DESC, flights DESC, code ASC LIMIT 10"
+    );
+    $topAircraft = $aircraftStmt->fetchAll(PDO::FETCH_ASSOC);
 
     $airportStmt = $pdo->query(
         "SELECT routes.airport_code, routes.movements,
@@ -207,6 +237,8 @@ try {
             'duration_seconds' => (int)($summary['duration_seconds'] ?? 0)
         ],
         'top_airports' => $airports,
+        'top_aircraft' => $topAircraft,
+        'aircraft_sort' => $aircraftSort,
         'top_pilot_countries' => $pilotCountries,
         'top_movement_countries' => $movementCountries,
         'pilot_sort' => $pilotSort,

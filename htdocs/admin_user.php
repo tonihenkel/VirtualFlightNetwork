@@ -126,6 +126,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      is_active=:is_active WHERE id=:id"
                 );
                 $stmt->execute($newValues + ['id' => $targetId]);
+                if ((string)$target['division_code'] !== (string)$division) {
+                    deleteHomeDivisionGca($pdo, $targetId, $division);
+                }
                 if (!$active) {
                     $stmt = $pdo->prepare(
                         "UPDATE user_sessions SET is_active=0, last_seen=NOW()

@@ -185,6 +185,35 @@ $flapRatio = $ratioValue('flap_ratio');
 $speedbrakeRatio = $ratioValue('speedbrake_ratio');
 $thrustRatio = $ratioValue('thrust_ratio');
 $engineRpm = max(0.0, (float)($_POST['engine_rpm'] ?? 0.0));
+$engineCount = max(1, min(8, (int)($_POST['engine_count'] ?? 1)));
+$engineArray = static function (
+    string $name,
+    int $count,
+    float $minimum,
+    float $maximum
+): array {
+    $rawValues = explode(',', (string)($_POST[$name] ?? ''));
+    $values = [];
+    for ($index = 0; $index < $count; $index++) {
+        $value = isset($rawValues[$index])
+            ? (float)$rawValues[$index]
+            : 0.0;
+        $values[] = max($minimum, min($maximum, $value));
+    }
+    return $values;
+};
+$engineThrustRatios = $engineArray(
+    'engine_thrust_ratios',
+    $engineCount,
+    0.0,
+    1.0
+);
+$engineRpms = $engineArray(
+    'engine_rpms',
+    $engineCount,
+    0.0,
+    100000.0
+);
 $yokePitchRatio = max(
     -1.0,
     min(1.0, (float)($_POST['yoke_pitch_ratio'] ?? 0.0))
@@ -521,6 +550,7 @@ try {
             s.last_vertical_speed,
             s.is_invisible,
             s.is_spectator,
+            s.plugin_language,
             u.username,
             u.op_permission,
             u.rating_atc,
@@ -759,16 +789,23 @@ try {
     $previousPosition =
         $positionStmt->fetch(PDO::FETCH_ASSOC);
 
+    $pluginLanguage = strtolower(trim((string)($_POST['plugin_language'] ?? '')));
+    $pluginLanguage = in_array($pluginLanguage, ['de', 'en'], true)
+        ? $pluginLanguage
+        : (string)($session['plugin_language'] ?? 'en');
+
     $stmt = $pdo->prepare(
         "UPDATE user_sessions
          SET last_seen = NOW(),
-             callsign = :callsign
+             callsign = :callsign,
+             plugin_language = :plugin_language
          WHERE token = :token
          LIMIT 1"
     );
 
     $stmt->execute([
         "callsign" => $callsign,
+        "plugin_language" => $pluginLanguage,
         "token" => $token
     ]);
 
@@ -797,6 +834,9 @@ try {
             speedbrake_ratio,
             thrust_ratio,
             engine_rpm,
+            engine_count,
+            engine_thrust_ratios,
+            engine_rpms,
             yoke_pitch_ratio,
             yoke_roll_ratio,
             yoke_heading_ratio,
@@ -840,6 +880,9 @@ try {
             :speedbrake_ratio,
             :thrust_ratio,
             :engine_rpm,
+            :engine_count,
+            :engine_thrust_ratios,
+            :engine_rpms,
             :yoke_pitch_ratio,
             :yoke_roll_ratio,
             :yoke_heading_ratio,
@@ -881,6 +924,9 @@ try {
             speedbrake_ratio = VALUES(speedbrake_ratio),
             thrust_ratio = VALUES(thrust_ratio),
             engine_rpm = VALUES(engine_rpm),
+            engine_count = VALUES(engine_count),
+            engine_thrust_ratios = VALUES(engine_thrust_ratios),
+            engine_rpms = VALUES(engine_rpms),
             yoke_pitch_ratio = VALUES(yoke_pitch_ratio),
             yoke_roll_ratio = VALUES(yoke_roll_ratio),
             yoke_heading_ratio = VALUES(yoke_heading_ratio),
@@ -925,6 +971,9 @@ try {
         "speedbrake_ratio" => $speedbrakeRatio,
         "thrust_ratio" => $thrustRatio,
         "engine_rpm" => $engineRpm,
+        "engine_count" => $engineCount,
+        "engine_thrust_ratios" => json_encode($engineThrustRatios),
+        "engine_rpms" => json_encode($engineRpms),
         "yoke_pitch_ratio" => $yokePitchRatio,
         "yoke_roll_ratio" => $yokeRollRatio,
         "yoke_heading_ratio" => $yokeHeadingRatio,

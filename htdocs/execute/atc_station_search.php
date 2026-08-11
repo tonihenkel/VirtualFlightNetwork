@@ -10,6 +10,7 @@ require_once __DIR__ . '/../includes/language.php';
 require_once __DIR__ . '/../includes/atc_permissions.php';
 require_once __DIR__ . '/../includes/airport_atc_data.php';
 require_once __DIR__ . '/../includes/atc_frequency_catalog.php';
+require_once __DIR__ . '/../includes/division_schema.php';
 
 try {
     $pdo = new PDO(
@@ -41,7 +42,11 @@ try {
     $specialRating = (int)($user['rating_special'] ?? 0);
     $globalStationAccess = $spectator || $specialRating > 0;
     $divisionCode = strtoupper(trim((string)($user['division_code'] ?? '')));
+    $gcaDivisions = ($spectator || $rating < 5) ? [] : getApprovedGcaDivisions($pdo, (int)$_SESSION['web_user_id']);
+    $searchAllCountries = $globalStationAccess || !empty($gcaDivisions);
     $permissions = getAtcPositionPermissions($rating, $specialRating);
+    $gcaEffectiveRating = getGcaEffectiveAtcRating($rating);
+    $gcaAllowedPositions = getGcaAllowedAtcPositions($rating);
     if ($spectator) {
         foreach ($permissions as &$permission) $permission['allowed'] = true;
         unset($permission);
@@ -60,7 +65,7 @@ try {
     if ($isExactIdentifier) {
         // Exact identifiers are the most common ATC lookup. Avoid a costly
         // leading-wildcard scan over the worldwide airport table.
-        $countryClause = $globalStationAccess
+        $countryClause = $searchAllCountries
             ? '' : 'iso_country = :division_code AND';
         $airportStmt = $pdo->prepare(
             "SELECT ident, icao_code, gps_code, name, municipality, type,
@@ -76,13 +81,13 @@ try {
             'q2' => $normalizedQuery,
             'q3' => $normalizedQuery,
         ];
-        if (!$globalStationAccess) {
+        if (!$searchAllCountries) {
             $airportParams['division_code'] = $divisionCode;
         }
     } else {
         $like = '%' . $query . '%';
         $starts = $query . '%';
-        $countryClause = $globalStationAccess
+        $countryClause = $searchAllCountries
             ? '' : 'AND iso_country = :division_code';
         $airportStmt = $pdo->prepare(
             "SELECT ident, icao_code, gps_code, name, municipality, type,
@@ -102,7 +107,7 @@ try {
             'q4' => $like, 'q5' => $like,
             'starts1' => $starts, 'starts2' => $starts, 'starts3' => $starts,
         ];
-        if (!$globalStationAccess) {
+        if (!$searchAllCountries) {
             $airportParams['division_code'] = $divisionCode;
         }
     }
@@ -115,13 +120,20 @@ try {
         )));
         if ($code === '') continue;
         $classification = getAirportAtcClassification($code, $frequencyCsv);
+        $airportDivision = strtoupper((string)($airport['iso_country'] ?? ''));
+        if (!$globalStationAccess && $airportDivision !== $divisionCode && !in_array($airportDivision, $gcaDivisions, true)) continue;
+        $airportPermissions = (!$globalStationAccess && $airportDivision !== $divisionCode)
+            ? getAtcPositionPermissions($gcaEffectiveRating, 0) : $permissions;
         $eligiblePositions = $spectator
             ? getSpectatorAirportPositions($airport, $classification)
             : $classification['positions'];
+        if (!$globalStationAccess && $airportDivision !== $divisionCode) {
+            $eligiblePositions = array_values(array_intersect($eligiblePositions, $gcaAllowedPositions));
+        }
         $operation = (string)($classification['operation'] ?? (
             $classification['controlled'] ? 'controlled' : 'uncontrolled'
         ));
-        if (!hasAtcPositionIntersection($eligiblePositions, $permissions)) continue;
+        if (!hasAtcPositionIntersection($eligiblePositions, $airportPermissions)) continue;
         $items[] = [
             'code' => $code,
             'name' => (string)$airport['name'],
@@ -144,6 +156,7 @@ try {
     $divisionPrefixes = getDivisionAtcPrefixes($divisionCode);
     $canUseRadar = $spectator
         || canOccupyAtcPosition($rating, 'CTR', $specialRating);
+    if (!$canUseRadar && $gcaDivisions) $canUseRadar = in_array('CTR', $gcaAllowedPositions, true);
     $seenRadarPositions = [];
     if ($canUseRadar && is_file($sourcePath) && is_readable($sourcePath)) {
         $section = '';
@@ -168,7 +181,13 @@ try {
                     break;
                 }
             }
-            if (!$globalStationAccess && !$matchesDivision) continue;
+            $matchesGca = false;
+            foreach ($gcaDivisions as $gcaDivision) foreach (array_unique(array_merge(getDivisionAtcPrefixes($gcaDivision), getDivisionAirportPrefixes($pdo, $gcaDivision))) as $prefix) {
+                if (strpos($code, $prefix) === 0) { $matchesGca = true; break 2; }
+            }
+            if (!$globalStationAccess && !$matchesDivision && !$matchesGca) continue;
+            if (!$globalStationAccess && !$matchesDivision && $matchesGca
+                && !in_array('CTR', $gcaAllowedPositions, true)) continue;
             if (mb_stripos($code, $query) === false
                 && mb_stripos($sectorAlias, $query) === false
                 && mb_stripos($name, $query) === false) continue;
@@ -206,7 +225,13 @@ try {
                     break;
                 }
             }
-            if (!$globalStationAccess && !$matchesDivision) continue;
+            $matchesGca = false;
+            foreach ($gcaDivisions as $gcaDivision) foreach (array_unique(array_merge(getDivisionAtcPrefixes($gcaDivision), getDivisionAirportPrefixes($pdo, $gcaDivision))) as $prefix) {
+                if (strpos($compiledCode, $prefix) === 0) { $matchesGca = true; break 2; }
+            }
+            if (!$globalStationAccess && !$matchesDivision && !$matchesGca) continue;
+            if (!$globalStationAccess && !$matchesDivision && $matchesGca
+                && !in_array('CTR', $gcaAllowedPositions, true)) continue;
             $callsign = trim((string)($compiled['callsign'] ?? ''));
             $positionKey = trim((string)($compiled['position_key'] ?? ''));
             if (mb_stripos($compiledCode, $query) === false

@@ -732,6 +732,8 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             <?php endif; ?>
             <a class="admin-button" href="flightplans.php"><?php echo htmlspecialchars(t('nav_flightplans')); ?></a>
             <a class="admin-button" href="moderation.php"><?php echo htmlspecialchars(t('moderation_center_title')); ?></a>
+            <a class="admin-button" href="bug_reports.php"><?php echo htmlspecialchars(t('bug_staff_queue')); ?><?php if (($pendingBugReportCount ?? 0) > 0): ?> (<?php echo (int)$pendingBugReportCount; ?>)<?php endif; ?></a>
+            <?php if ($adminOpPermission >= 1): ?><a class="admin-button" href="admin_gca.php"><?php echo htmlspecialchars(t('gca_admin_title')); ?></a><?php endif; ?>
             <?php if ($adminOpPermission >= 3): ?><a class="admin-button" href="admin_divisions.php"><?php echo htmlspecialchars(t('division_admin_title')); ?></a><?php endif; ?>
             <?php if ($adminOpPermission >= 5): ?><a class="admin-button" href="system_status.php"><?php echo htmlspecialchars(t('system_status_title')); ?></a><?php endif; ?>
         </p>
@@ -2517,7 +2519,9 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
     {
         const select = document.getElementById('staffChatReferencePilot');
         try {
-            const response = await fetch('execute/get_pilots.php');
+            const response = await fetch(
+                'execute/get_pilots.php?protection=<?php echo rawurlencode((string)$getPilotsProtection); ?>'
+            );
             const data = await response.json();
             const previous = select.value;
             select.innerHTML = '';
@@ -3541,7 +3545,9 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
     {
         const select = document.getElementById('voiceTestReferencePilot');
         if (!select) return;
-        const response = await fetch('execute/get_pilots.php');
+        const response = await fetch(
+            'execute/get_pilots.php?protection=<?php echo rawurlencode((string)$getPilotsProtection); ?>'
+        );
         const data = await response.json();
         const previous = select.value;
         select.innerHTML = '';

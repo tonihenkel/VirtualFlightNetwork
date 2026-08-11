@@ -44,6 +44,66 @@ function ensureAtcSchema(PDO $pdo): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS atc_assumed_aircraft (
+            pilot_session_token VARCHAR(128) NOT NULL,
+            pilot_callsign VARCHAR(40) NOT NULL,
+            atc_session_id BIGINT UNSIGNED NOT NULL,
+            atc_user_id INT NOT NULL,
+            atc_callsign VARCHAR(40) NOT NULL,
+            assumed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (pilot_session_token),
+            KEY idx_atc_assumed_session (atc_session_id),
+            KEY idx_atc_assumed_callsign (pilot_callsign),
+            CONSTRAINT fk_atc_assumed_session FOREIGN KEY (atc_session_id)
+                REFERENCES atc_sessions(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS atc_aircraft_clearances (
+            pilot_session_token VARCHAR(128) NOT NULL,
+            pilot_callsign VARCHAR(40) NOT NULL,
+            clearance_type VARCHAR(12) NOT NULL DEFAULT 'DIRECT',
+            clearance_value VARCHAR(80) NOT NULL DEFAULT '',
+            cleared_altitude VARCHAR(20) NOT NULL DEFAULT '',
+            issued_by_user_id INT NOT NULL,
+            issued_by_callsign VARCHAR(40) NOT NULL,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (pilot_session_token),
+            KEY idx_atc_clearance_callsign (pilot_callsign)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    foreach ([
+        'cleared_departure_runway' => "VARCHAR(10) NOT NULL DEFAULT ''",
+        'cleared_sid' => "VARCHAR(80) NOT NULL DEFAULT ''",
+        'cleared_direct' => "VARCHAR(80) NOT NULL DEFAULT ''",
+        'cleared_star' => "VARCHAR(80) NOT NULL DEFAULT ''",
+    ] as $column => $definition) {
+        $exists = (int)$pdo->query(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = 'atc_aircraft_clearances'
+               AND COLUMN_NAME = " . $pdo->quote($column)
+        )->fetchColumn();
+        if ($exists === 0) {
+            $pdo->exec("ALTER TABLE atc_aircraft_clearances ADD COLUMN {$column} {$definition} AFTER clearance_value");
+            if ($column === 'cleared_departure_runway') {
+                continue;
+            }
+            $legacyType = $column === 'cleared_sid'
+                ? 'SID'
+                : ($column === 'cleared_direct' ? 'DIRECT' : 'STAR');
+            $pdo->exec(
+                "UPDATE atc_aircraft_clearances
+                 SET {$column} = clearance_value
+                 WHERE clearance_type = " . $pdo->quote($legacyType) . " AND clearance_value <> ''"
+            );
+        }
+    }
+
     $mapProfileColumn = $pdo->query(
         "SELECT COUNT(*) FROM information_schema.COLUMNS
          WHERE TABLE_SCHEMA = DATABASE()

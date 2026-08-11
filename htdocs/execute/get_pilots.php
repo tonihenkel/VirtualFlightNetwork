@@ -10,6 +10,21 @@ require_once 'aircraft_types.php';
 require_once '../includes/ratings.php';
 require_once '../includes/web_session.php';
 
+$providedProtection = (string)($_GET['protection'] ?? '');
+$expectedProtection = (string)($getPilotsProtection ?? '');
+
+if (
+    $expectedProtection === ''
+    || !hash_equals($expectedProtection, $providedProtection)
+) {
+    http_response_code(403);
+    echo json_encode([
+        'success' => false,
+        'message' => 'Zugriff verweigert.'
+    ]);
+    exit;
+}
+
 $activeSeconds = 10;
 
 function getAirportByCode($pdo, $code)
@@ -84,12 +99,35 @@ try {
             p.pitch,
             p.roll_angle,
             p.vertical_speed,
+            p.on_ground,
+            p.gear_ratio,
+            p.flap_ratio,
+            p.slat_ratio,
+            p.speedbrake_ratio,
+            p.wing_sweep_ratio,
+            p.thrust_ratio,
+            p.thrust_reverser_ratio,
+            p.engine_rpm,
+            p.engine_count,
+            p.engine_thrust_ratios,
+            p.engine_rpms,
+            p.yoke_pitch_ratio,
+            p.yoke_roll_ratio,
+            p.yoke_heading_ratio,
+            p.nose_wheel_angle,
+            p.tire_rotation_rad_sec,
+            p.taxi_lights,
+            p.landing_lights,
+            p.beacon_lights,
+            p.strobe_lights,
+            p.nav_lights,
             p.ai_controls_aircraft,
             p.ai_destination_icao,
             p.com1,
             p.com2,
             p.com3,
             p.transponder,
+            p.transponder_mode,
             p.last_update,
             u.country_code,
             u.division_code,
@@ -192,6 +230,7 @@ try {
     $visiblePilots = [];
 
     $invisibleCount = 0;
+    $regularPilotCount = 0;
 
     foreach ($pilots as &$pilot) {
 
@@ -208,15 +247,18 @@ try {
             (int)$pilot["op_permission"];
 
         if ($isInvisible) {
-
-            $invisibleCount++;
-
+            // Invisible pilots are never disclosed publicly. OP users may see
+            // invisible staff members of the same or a lower permission level.
             if (
-                $viewerOpPermission <= 1
+                $viewerOpPermission < 1
                 || $viewerOpPermission < $pilotPermission
             ) {
                 continue;
             }
+
+            $invisibleCount++;
+        } else {
+            $regularPilotCount++;
         }
 
         if (
@@ -241,6 +283,120 @@ try {
             );
         $pilot["ai_controls_aircraft"] =
             (int)($pilot["ai_controls_aircraft"] ?? 0) === 1;
+
+        // Expose every simulator state that can affect how this aircraft is
+        // rendered by other multiplayer clients. Keep the flat fields for
+        // existing consumers and add a structured block for diagnostics and
+        // future clients.
+        $pilot["on_ground"] =
+            (int)($pilot["on_ground"] ?? 0) === 1;
+        $pilot["gear_ratio"] =
+            (float)($pilot["gear_ratio"] ?? 0.0);
+        $pilot["flap_ratio"] =
+            (float)($pilot["flap_ratio"] ?? 0.0);
+        $pilot["slat_ratio"] =
+            (float)($pilot["slat_ratio"] ?? 0.0);
+        $pilot["speedbrake_ratio"] =
+            (float)($pilot["speedbrake_ratio"] ?? 0.0);
+        $pilot["wing_sweep_ratio"] =
+            (float)($pilot["wing_sweep_ratio"] ?? 0.0);
+        $pilot["thrust_ratio"] =
+            (float)($pilot["thrust_ratio"] ?? 0.0);
+        $pilot["thrust_reverser_ratio"] =
+            (float)($pilot["thrust_reverser_ratio"] ?? 0.0);
+        $pilot["engine_rpm"] =
+            (float)($pilot["engine_rpm"] ?? 0.0);
+        $pilot["engine_count"] = max(
+            1,
+            min(8, (int)($pilot["engine_count"] ?? 1))
+        );
+        $engineThrustRatios = json_decode(
+            (string)($pilot["engine_thrust_ratios"] ?? '[]'),
+            true
+        );
+        $engineRpms = json_decode(
+            (string)($pilot["engine_rpms"] ?? '[]'),
+            true
+        );
+        if (!is_array($engineThrustRatios)) {
+            $engineThrustRatios = [];
+        }
+        if (!is_array($engineRpms)) {
+            $engineRpms = [];
+        }
+        $pilot["engines"] = [];
+        for ($engineIndex = 0; $engineIndex < $pilot["engine_count"]; $engineIndex++) {
+            $pilot["engines"][] = [
+                "number" => $engineIndex + 1,
+                "thrust_ratio" => (float)($engineThrustRatios[$engineIndex] ?? 0.0),
+                "rpm" => (float)($engineRpms[$engineIndex] ?? 0.0),
+                "running" =>
+                    (float)($engineRpms[$engineIndex] ?? 0.0) > 1.0
+            ];
+        }
+        $pilot["engine_thrust_ratios"] = array_column(
+            $pilot["engines"],
+            "thrust_ratio"
+        );
+        $pilot["engine_rpms"] = array_column($pilot["engines"], "rpm");
+        $pilot["yoke_pitch_ratio"] =
+            (float)($pilot["yoke_pitch_ratio"] ?? 0.0);
+        $pilot["yoke_roll_ratio"] =
+            (float)($pilot["yoke_roll_ratio"] ?? 0.0);
+        $pilot["yoke_heading_ratio"] =
+            (float)($pilot["yoke_heading_ratio"] ?? 0.0);
+        $pilot["nose_wheel_angle"] =
+            (float)($pilot["nose_wheel_angle"] ?? 0.0);
+        $pilot["tire_rotation_rad_sec"] =
+            (float)($pilot["tire_rotation_rad_sec"] ?? 0.0);
+        $pilot["taxi_lights"] =
+            (int)($pilot["taxi_lights"] ?? 0) === 1;
+        $pilot["landing_lights"] =
+            (int)($pilot["landing_lights"] ?? 0) === 1;
+        $pilot["beacon_lights"] =
+            (int)($pilot["beacon_lights"] ?? 0) === 1;
+        $pilot["strobe_lights"] =
+            (int)($pilot["strobe_lights"] ?? 0) === 1;
+        $pilot["nav_lights"] =
+            (int)($pilot["nav_lights"] ?? 0) === 1;
+        $pilot["transponder_mode"] =
+            (int)($pilot["transponder_mode"] ?? 0);
+
+        $pilot["multiplayer_state"] = [
+            "on_ground" => $pilot["on_ground"],
+            "transponder_mode" => $pilot["transponder_mode"],
+            "lights" => [
+                "navigation" => $pilot["nav_lights"],
+                "beacon" => $pilot["beacon_lights"],
+                "strobe" => $pilot["strobe_lights"],
+                "taxi" => $pilot["taxi_lights"],
+                "landing" => $pilot["landing_lights"]
+            ],
+            "configuration" => [
+                "gear_ratio" => $pilot["gear_ratio"],
+                "flap_ratio" => $pilot["flap_ratio"],
+                "slat_ratio" => $pilot["slat_ratio"],
+                "speedbrake_ratio" => $pilot["speedbrake_ratio"],
+                "spoiler_ratio" => $pilot["speedbrake_ratio"],
+                "wing_sweep_ratio" => $pilot["wing_sweep_ratio"],
+                "thrust_reverser_ratio" =>
+                    $pilot["thrust_reverser_ratio"]
+            ],
+            "engines" => [
+                "count" => $pilot["engine_count"],
+                "thrust_ratio" => $pilot["thrust_ratio"],
+                "engine_rpm" => $pilot["engine_rpm"],
+                "items" => $pilot["engines"]
+            ],
+            "controls" => [
+                "pitch_ratio" => $pilot["yoke_pitch_ratio"],
+                "roll_ratio" => $pilot["yoke_roll_ratio"],
+                "heading_ratio" => $pilot["yoke_heading_ratio"],
+                "nose_wheel_angle" => $pilot["nose_wheel_angle"],
+                "tire_rotation_rad_sec" =>
+                    $pilot["tire_rotation_rad_sec"]
+            ]
+        ];
 
         $pilotRating =
             (int)($pilot["rating_pilot"] ?? 0);
@@ -398,10 +554,10 @@ try {
             $invisibleCount,
 
         "total_count" =>
-            count($pilots),
+            $regularPilotCount,
 
         "count" =>
-            count($visiblePilots),
+            $regularPilotCount,
 
         "pilots" =>
             $visiblePilots

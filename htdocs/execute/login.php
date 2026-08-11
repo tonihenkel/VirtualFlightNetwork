@@ -13,6 +13,10 @@ $username = $_POST["username"] ?? "";
 $password = $_POST["password"] ?? "";
 $callsign = $_POST["callsign"] ?? "";
 $pluginVersion = trim((string)($_POST["plugin_version"] ?? ""));
+$pluginLanguage = strtolower(trim((string)($_POST["plugin_language"] ?? "")));
+$pluginLanguage = in_array($pluginLanguage, ["de", "en"], true)
+    ? $pluginLanguage
+    : "en";
 $spectatorMode = (string)($_POST["spectator"] ?? "0") === "1";
 
 $username = trim($username);
@@ -52,6 +56,16 @@ try {
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
         ]
     );
+
+    $languageColumn = $pdo->query(
+        "SHOW COLUMNS FROM user_sessions LIKE 'plugin_language'"
+    )->fetch(PDO::FETCH_ASSOC);
+    if (!$languageColumn) {
+        $pdo->exec(
+            "ALTER TABLE user_sessions
+             ADD COLUMN plugin_language VARCHAR(2) NOT NULL DEFAULT 'en'"
+        );
+    }
 
     $stmt = $pdo->prepare(
         "SELECT
@@ -164,7 +178,8 @@ try {
                 callsign,
                 is_active,
                 is_invisible,
-                is_spectator
+                is_spectator,
+                plugin_language
             )
          VALUES
             (
@@ -173,7 +188,8 @@ try {
                 :callsign,
                 1,
                 0,
-                :is_spectator
+                :is_spectator,
+                :plugin_language
             )"
     );
 
@@ -181,7 +197,8 @@ try {
         "user_id" => (int)$user["id"],
         "token" => $token,
         "callsign" => $callsign,
-        "is_spectator" => $spectatorMode ? 1 : 0
+        "is_spectator" => $spectatorMode ? 1 : 0,
+        "plugin_language" => $pluginLanguage
     ]);
 
     echo json_encode([

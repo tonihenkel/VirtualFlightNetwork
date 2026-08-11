@@ -17,6 +17,34 @@
                 $awardStmt->fetchAll(PDO::FETCH_ASSOC);
             ?>
 
+            <?php if (!empty($profileGcas)): ?>
+            <div class="card">
+                <div class="card-title"><?php echo htmlspecialchars(t('profile_gca_title')); ?></div>
+                <div class="card-body"><div class="role-grid">
+                    <?php foreach ($profileGcas as $gca): ?>
+                    <div class="role-item"><strong><img src="images/flags/<?php echo htmlspecialchars(strtolower((string)$gca['division_code'])); ?>.png" class="profile-country-flag" alt=""> <?php echo htmlspecialchars((string)($gca['division_name'] ?: $gca['division_code'])); ?></strong><?php echo htmlspecialchars(t('gca_status_'.$gca['status'])); ?></div>
+                    <?php endforeach; ?>
+                </div></div>
+            </div>
+            <?php endif; ?>
+
+            <?php if (!empty($profileDivisionStaff)): ?>
+            <div class="card">
+                <div class="card-title"><?php echo h(t('profile_division_staff_title')); ?></div>
+                <div class="card-body"><div class="role-grid">
+                    <?php foreach ($profileDivisionStaff as $staffRole): ?>
+                    <div class="role-item">
+                        <strong>
+                            <img src="images/flags/<?php echo h(strtolower((string)$staffRole['division_code'])); ?>.png" class="profile-country-flag" alt="">
+                            <?php echo h((string)($staffRole['division_name'] ?: $staffRole['division_code'])); ?>
+                        </strong>
+                        <?php echo h(trim((string)$staffRole['role_title']) !== '' ? (string)$staffRole['role_title'] : (string)$staffRole['role_code']); ?>
+                    </div>
+                    <?php endforeach; ?>
+                </div></div>
+            </div>
+            <?php endif; ?>
+
             <div class="card hero-card">
                 <div class="user-hero">
                     <div class="avatar-wrap">
@@ -121,8 +149,12 @@
                                 </div>
                                 <div class="stat-row">
                                     <span>🛧 <?php echo htmlspecialchars(t('profile_favourite_aircraft')); ?></span>
-                                    <strong><?php echo h($favouriteAircraft); ?></strong>
+                                    <strong><a class="profile-stat-link" href="statistics.php?<?php echo $profileStatisticsQuery; ?>#aircraftStatistics"><?php echo h($favouriteAircraft); ?></a></strong>
                                 </div>
+                                <div class="stat-row"><span><?php echo htmlspecialchars(t('profile_top_airport')); ?></span><strong><a class="profile-stat-link" href="statistics.php?<?php echo $profileStatisticsQuery; ?>#airportStatistics"><?php echo h($profileTopAirport); ?></a></strong></div>
+                                <div class="stat-row"><span><?php echo htmlspecialchars(t('profile_top_country')); ?></span><strong><a class="profile-stat-link" href="statistics.php?<?php echo $profileStatisticsQuery; ?>#countryStatistics"><?php echo h($profileTopCountry); ?></a></strong></div>
+                                <div class="stat-row"><span><?php echo htmlspecialchars(t('profile_top_route')); ?></span><strong><?php echo h($profileTopRoute); ?></strong></div>
+                                <div class="stat-row"><span><?php echo htmlspecialchars(t('profile_longest_flight')); ?></span><strong><?php echo h($profileLongestFlight); ?></strong></div>
                             </div>
 
                             <div>

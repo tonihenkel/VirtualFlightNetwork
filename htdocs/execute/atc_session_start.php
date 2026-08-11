@@ -11,6 +11,7 @@ require_once __DIR__ . '/../includes/airport_atc_data.php';
 require_once __DIR__ . '/../includes/atc_schema.php';
 require_once __DIR__ . '/../includes/atc_frequency_catalog.php';
 require_once __DIR__ . '/../includes/atc_atis_scope.php';
+require_once __DIR__ . '/../includes/division_schema.php';
 
 function atcScopeForPosition(string $position): array
 {
@@ -113,9 +114,12 @@ try {
     }
 
     $division = strtoupper(trim((string)$user['division_code']));
+    $gcaDivisions = ($spectator || $rating < 5) ? [] : getApprovedGcaDivisions($pdo, (int)$user['id']);
+    $stationDivision = '';
+    $searchAllCountries = $globalStationAccess || !empty($gcaDivisions);
     $stationPositions = [];
     $radarBoundaryCode = '';
-    $countryClause = $globalStationAccess
+    $countryClause = $searchAllCountries
         ? '' : 'iso_country = :division AND';
     $airportStmt = $pdo->prepare(
         "SELECT ident, icao_code, gps_code, type FROM airports
@@ -126,9 +130,15 @@ try {
     $airportParams = [
         'code1' => $station, 'code2' => $station, 'code3' => $station,
     ];
-    if (!$globalStationAccess) $airportParams['division'] = $division;
+    if (!$searchAllCountries) $airportParams['division'] = $division;
     $airportStmt->execute($airportParams);
     $airport = $airportStmt->fetch(PDO::FETCH_ASSOC);
+    if ($airport) {
+        $countryStmt = $pdo->prepare("SELECT iso_country FROM airports WHERE UPPER(ident)=:code1 OR UPPER(icao_code)=:code2 OR UPPER(gps_code)=:code3 LIMIT 1");
+        $countryStmt->execute(['code1'=>$station,'code2'=>$station,'code3'=>$station]);
+        $stationDivision = strtoupper((string)$countryStmt->fetchColumn());
+        if (!$globalStationAccess && $stationDivision !== $division && !in_array($stationDivision, $gcaDivisions, true)) $airport = false;
+    }
     if ($airport) {
         $classification = getAirportAtcClassification(
             $station,
@@ -170,6 +180,7 @@ try {
             }
         }
         $divisionAllowed = $globalStationAccess;
+        $guestRadar = false;
         if (!$globalStationAccess) {
             foreach (getDivisionAtcPrefixes($division) as $prefix) {
                 if (strpos($station, $prefix) === 0) {
@@ -177,12 +188,20 @@ try {
                     break;
                 }
             }
+            if (!$divisionAllowed) foreach ($gcaDivisions as $gcaDivision) foreach (array_unique(array_merge(getDivisionAtcPrefixes($gcaDivision), getDivisionAirportPrefixes($pdo, $gcaDivision))) as $prefix) {
+                if (strpos($station, $prefix) === 0) { $divisionAllowed = true; $guestRadar = true; break 2; }
+            }
         }
         if ($stationExists && $divisionAllowed) $stationPositions = ['CTR'];
     }
     if (!in_array($position, $stationPositions, true)) {
         http_response_code(422);
         throw new RuntimeException('station_position_unavailable');
+    }
+    $usesGca = !$globalStationAccess && (($stationDivision !== '' && $stationDivision !== $division) || (!empty($guestRadar)));
+    if ($usesGca && !in_array($position, getGcaAllowedAtcPositions($rating), true)) {
+        http_response_code(403);
+        throw new RuntimeException('gca_rating_limit');
     }
 
     $lockName = 'vfn_atc_callsign_' . substr(hash('sha256', $station . '_' . $position), 0, 32);

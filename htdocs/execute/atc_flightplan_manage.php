@@ -31,7 +31,7 @@ try {
     ensureAtcSchema($pdo);
     $sessionToken = (string)($_SESSION['atc_session_token'] ?? '');
     $sessionStatement = $pdo->prepare(
-        "SELECT user_id FROM atc_sessions
+        "SELECT id,user_id FROM atc_sessions
          WHERE user_id=:user_id AND session_token=:token AND is_active=1
            AND is_spectator=0 AND can_control=1
            AND last_seen_at>=DATE_SUB(NOW(),INTERVAL 30 SECOND) LIMIT 1"
@@ -40,7 +40,8 @@ try {
         'user_id' => (int)$_SESSION['web_user_id'],
         'token' => $sessionToken,
     ]);
-    if (!$sessionStatement->fetch(PDO::FETCH_ASSOC)) {
+    $atcSession = $sessionStatement->fetch(PDO::FETCH_ASSOC);
+    if (!$atcSession) {
         atcFplReply(false, ['message' => 'atc_control_session_required'], 403);
     }
 
@@ -85,8 +86,14 @@ try {
     }
 
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        atcFplReply(true, ['callsign' => $callsign, 'flightplan' => $flightplan]);
+        $ownership=$pdo->prepare("SELECT atc_session_id,atc_callsign FROM atc_assumed_aircraft WHERE pilot_session_token=:token LIMIT 1");
+        $ownership->execute(['token'=>(string)$target['session_token']]);$owner=$ownership->fetch(PDO::FETCH_ASSOC);
+        atcFplReply(true, ['callsign' => $callsign, 'flightplan' => $flightplan, 'assumed_by_me'=>$owner&&(int)$owner['atc_session_id']===(int)$atcSession['id'], 'assumed_by'=>(string)($owner['atc_callsign']??'')]);
     }
+
+    $ownership=$pdo->prepare("SELECT atc_session_id FROM atc_assumed_aircraft WHERE pilot_session_token=:token LIMIT 1");
+    $ownership->execute(['token'=>(string)$target['session_token']]);$owner=$ownership->fetch(PDO::FETCH_ASSOC);
+    if(!$owner||(int)$owner['atc_session_id']!==(int)$atcSession['id'])atcFplReply(false,['message'=>'aircraft_must_be_assumed'],409);
 
     $values = [];
     foreach ($fields as $field) $values[$field] = trim((string)($_POST[$field] ?? ''));
