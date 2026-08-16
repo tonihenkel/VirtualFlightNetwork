@@ -13,6 +13,19 @@ if (!isset($defaultTimezone) || trim($defaultTimezone) === '') {
 $currentPage = basename($_SERVER['PHP_SELF']);
 
 $currentLanguage = $_SESSION['language'] ?? 'en';
+$currentLanguageDirection = function_exists('vfnLanguageMeta')
+    ? (string)(vfnLanguageMeta($currentLanguage)['dir'] ?? 'ltr')
+    : 'ltr';
+$headerLanguages = function_exists('vfnLanguages') ? vfnLanguages() : [
+    'en' => ['name' => 'English', 'flag' => 'gb'],
+    'de' => ['name' => 'Deutsch', 'flag' => 'de'],
+];
+?>
+<script>
+document.documentElement.lang = <?php echo json_encode($currentLanguage, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+document.documentElement.dir = <?php echo json_encode($currentLanguageDirection, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+</script>
+<?php
 
 function buildLanguageUrl(string $language): string
 {
@@ -24,11 +37,9 @@ function buildLanguageUrl(string $language): string
 
 function renderFlag(string $language): string
 {
-    if ($language === 'de') {
-        return '<span class="flag flag-de"><span></span></span>';
-    }
-
-    return '<span class="flag flag-en"><span></span></span>';
+    $meta = function_exists('vfnLanguageMeta') ? vfnLanguageMeta($language) : ['flag' => 'gb'];
+    $flag = preg_replace('/[^a-z0-9-]/', '', strtolower((string)($meta['flag'] ?? 'gb')));
+    return '<img class="flag" src="images/flags/' . htmlspecialchars($flag, ENT_QUOTES) . '.png" alt="">';
 }
 
 
@@ -313,6 +324,7 @@ if (isset($_SESSION['web_user_id'])) {
             0 0 0 1px rgba(255,255,255,0.35);
 
         flex-shrink: 0;
+        object-fit: cover;
     }
 
     .flag.flag-de {
@@ -562,29 +574,18 @@ if (isset($_SESSION['web_user_id'])) {
 
                 <?php echo renderFlag($currentLanguage); ?>
 
-                <?php if ($currentLanguage === 'de'): ?>
-                    Deutsch
-                <?php else: ?>
-                    English
-                <?php endif; ?>
+                <?php echo htmlspecialchars((string)($headerLanguages[$currentLanguage]['name'] ?? 'English')); ?>
 
             </button>
 
             <div class="language-menu" id="languageMenu">
 
-                <a class="language-item"
-                   href="<?php echo htmlspecialchars(buildLanguageUrl('en')); ?>">
-
-                    <?php echo renderFlag('en'); ?>
-                    English
-                </a>
-
-                <a class="language-item"
-                   href="<?php echo htmlspecialchars(buildLanguageUrl('de')); ?>">
-
-                    <?php echo renderFlag('de'); ?>
-                    Deutsch
-                </a>
+                <?php foreach ($headerLanguages as $languageCode => $languageMeta): ?>
+                    <a class="language-item" href="<?php echo htmlspecialchars(buildLanguageUrl($languageCode)); ?>">
+                        <?php echo renderFlag($languageCode); ?>
+                        <?php echo htmlspecialchars((string)$languageMeta['name']); ?>
+                    </a>
+                <?php endforeach; ?>
 
             </div>
 

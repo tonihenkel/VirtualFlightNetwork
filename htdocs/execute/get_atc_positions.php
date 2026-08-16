@@ -37,7 +37,7 @@ try {
         $coverageRows = $pdo->query(
             "SELECT s.airport_icao, s.frequency AS atis_frequency,
                     s.airport_name, s.latitude, s.longitude,
-                    a.callsign, a.station_code, a.position_code,
+                    a.callsign, a.station_code, a.position_code, a.is_gca,
                     a.frequency, a.radar_boundary_code,
                     COALESCE(NULLIF(TRIM(u.real_name),''),u.username) AS controller_name
              FROM atc_session_atis_airports s
@@ -62,6 +62,7 @@ try {
             $autoAtis[$airportCode]['controllers'] ??= [];
             $autoAtis[$airportCode]['controllers'][] = [
                 'callsign'=>(string)$coverage['callsign'],
+                'is_gca'=>(int)($coverage['is_gca'] ?? 0),
                 'station_code'=>(string)$coverage['station_code'],
                 'position_code'=>(string)$coverage['position_code'],
                 'frequency'=>(string)$coverage['frequency'],
@@ -71,7 +72,7 @@ try {
         }
     } catch (Throwable $ignored) {}
     $stmt = $pdo->query(
-        "SELECT a.callsign, a.station_code, a.position_code, a.frequency,
+        "SELECT a.callsign, a.station_code, a.position_code, a.frequency, a.is_gca, a.is_trainer,
                 a.radar_boundary_code,
                 COALESCE(NULLIF(TRIM(u.real_name), ''), u.username) AS controller_name,
                 ap.latitude_deg AS latitude, ap.longitude_deg AS longitude,
@@ -79,7 +80,8 @@ try {
          FROM atc_sessions a
          INNER JOIN users u ON u.id = a.user_id
          LEFT JOIN airports ap ON ap.ident = a.station_code
-         WHERE a.is_active = 1 AND a.is_spectator = 0
+         WHERE a.is_active = 1 AND (a.is_spectator = 0 OR a.is_trainer = 1)
+           AND a.is_invisible = 0
            AND a.last_seen_at >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
          ORDER BY a.station_code, a.position_code, a.callsign"
     );
@@ -87,6 +89,7 @@ try {
     $atisFrequencies = [];
     $activeStations = [];
     foreach ($positions as $activePosition) {
+        if ((int)($activePosition['is_trainer'] ?? 0) === 1) continue;
         if (strtoupper((string)($activePosition['position_code'] ?? '')) === 'CTR') continue;
         $station = strtoupper(trim((string)($activePosition['station_code'] ?? '')));
         if ($station !== '') $activeStations[$station] = true;
@@ -132,6 +135,17 @@ try {
         fclose($handle);
     }
     foreach ($positions as &$position) {
+        $position['is_gca'] = (int)($position['is_gca'] ?? 0) === 1;
+        $position['is_trainer'] = (int)($position['is_trainer'] ?? 0) === 1;
+        if ($position['is_trainer']) {
+            $position['frequency'] = '';
+            $position['atis_frequency'] = '';
+            $position['atis_info_letter'] = '';
+            $position['atis_active_runway'] = '';
+            $position['atis_updated_at'] = '';
+            $position['atis_active'] = 0;
+            continue;
+        }
         if (normalizeAtcVoiceFrequency((string)($position['frequency'] ?? '')) === '') {
             $frequencies = findAtcFrequencies(
                 $pdo,
@@ -154,7 +168,7 @@ try {
         'success' => true,
         'positions' => $positions,
         'atis_airports' => array_values($autoAtis),
-        'count' => count($positions),
+        'count' => count(array_filter($positions, static fn(array $position): bool => empty($position['is_trainer']))),
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $error) {
     http_response_code(500);

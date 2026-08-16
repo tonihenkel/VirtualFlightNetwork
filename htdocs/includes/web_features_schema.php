@@ -25,6 +25,7 @@ function ensureWebFeatureSchema(PDO $pdo): void
             callsign VARCHAR(20) NOT NULL,
             flight_rules ENUM('I','V','Y','Z') NOT NULL DEFAULT 'I',
             flight_type ENUM('S','N','G','M','X') NOT NULL DEFAULT 'G',
+            communication_mode ENUM('VOICE','RECEIVE_ONLY','TEXT_ONLY') NOT NULL DEFAULT 'VOICE',
             departure_time VARCHAR(20) NOT NULL DEFAULT '',
             departure_airport VARCHAR(10) NOT NULL DEFAULT 'ZZZZ',
             arrival_airport VARCHAR(10) NOT NULL DEFAULT 'ZZZZ',
@@ -35,6 +36,7 @@ function ensureWebFeatureSchema(PDO $pdo): void
             cruising_speed VARCHAR(20) NOT NULL DEFAULT '',
             remarks TEXT NOT NULL,
             status ENUM('draft','filed','archived') NOT NULL DEFAULT 'draft',
+            plugin_selected TINYINT(1) NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -42,6 +44,16 @@ function ensureWebFeatureSchema(PDO $pdo): void
             KEY idx_web_flightplans_status_updated (status, updated_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+
+    $column = $pdo->query("SHOW COLUMNS FROM web_flightplans LIKE 'plugin_selected'")->fetch(PDO::FETCH_ASSOC);
+    if (!$column) {
+        $pdo->exec("ALTER TABLE web_flightplans ADD COLUMN plugin_selected TINYINT(1) NOT NULL DEFAULT 0 AFTER status");
+    }
+
+    $column = $pdo->query("SHOW COLUMNS FROM web_flightplans LIKE 'communication_mode'")->fetch(PDO::FETCH_ASSOC);
+    if (!$column) {
+        $pdo->exec("ALTER TABLE web_flightplans ADD COLUMN communication_mode ENUM('VOICE','RECEIVE_ONLY','TEXT_ONLY') NOT NULL DEFAULT 'VOICE' AFTER flight_type");
+    }
 
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS web_notification_state (

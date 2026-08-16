@@ -9,6 +9,8 @@ require_once 'config.php';
 require_once 'aircraft_types.php';
 require_once '../includes/ratings.php';
 require_once '../includes/web_session.php';
+require_once '../includes/atc_frequency_catalog.php';
+require_once '../includes/flightplan_schema.php';
 
 $providedProtection = (string)($_GET['protection'] ?? '');
 $expectedProtection = (string)($getPilotsProtection ?? '');
@@ -83,6 +85,8 @@ try {
         ]
     );
 
+    ensurePilotFlightplanCommunicationColumn($pdo);
+
     $stmt = $pdo->prepare(
         "SELECT
             p.user_id,
@@ -143,6 +147,7 @@ try {
 
             fp.flight_rules,
             fp.flight_type,
+            fp.communication_mode,
             fp.departure_time,
             fp.departure_airport,
             fp.arrival_airport,
@@ -190,8 +195,10 @@ try {
     $stmt->execute();
 
     $viewerOpPermission = 0;
+    $viewerUserId = 0;
 
     if (isset($_SESSION["web_user_id"])) {
+        $viewerUserId = (int)$_SESSION["web_user_id"];
         validateVfnWebSession($pdo);
     }
 
@@ -462,6 +469,9 @@ try {
             "flight_type" =>
                 $pilot["flight_type"] ?? "",
 
+            "communication_mode" =>
+                $pilot["communication_mode"] ?? "VOICE",
+
             "departure_time" =>
                 $pilot["departure_time"] ?? "",
 
@@ -541,27 +551,186 @@ try {
 
     unset($pilot);
 
+    // Keep the read-only network state in one response. Internal database IDs,
+    // user IDs and session tokens deliberately never leave this endpoint.
+    $atcStatement = $pdo->query(
+        "SELECT a.callsign, a.station_code, a.position_code, a.frequency, a.is_gca,
+                a.is_trainer,
+                a.user_id, a.is_invisible, u.op_permission AS controller_op_permission,
+                a.radar_boundary_code, a.scope_positions, a.map_profile,
+                a.is_spectator, a.can_control, a.can_transmit_voice,
+                a.connected_at, a.last_seen_at,
+                COALESCE(NULLIF(TRIM(u.real_name), ''), u.username) AS controller_name,
+                u.country_code, u.division_code,
+                ap.latitude_deg AS latitude, ap.longitude_deg AS longitude,
+                ap.name AS airport_name
+         FROM atc_sessions a
+         INNER JOIN users u ON u.id = a.user_id
+         LEFT JOIN airports ap ON UPPER(ap.ident) = UPPER(a.station_code)
+         WHERE a.is_active = 1 AND (a.is_spectator = 0 OR a.is_trainer = 1)
+           AND a.last_seen_at >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
+         ORDER BY a.station_code, a.position_code, a.callsign"
+    );
+    $atcs = array_values(array_filter(
+        $atcStatement->fetchAll(PDO::FETCH_ASSOC),
+        static function (array $atc) use ($viewerOpPermission, $viewerUserId): bool {
+            if ((int)($atc['is_invisible'] ?? 0) !== 1) {
+                return true;
+            }
+
+            // The owner always sees their own invisible ATC session. Other
+            // staff may only see invisible operators of the same or a lower
+            // permission level, matching the pilot visibility rules.
+            if ($viewerUserId > 0 && (int)($atc['user_id'] ?? 0) === $viewerUserId) {
+                return true;
+            }
+
+            return $viewerOpPermission >= 1
+                && $viewerOpPermission >= (int)($atc['controller_op_permission'] ?? 0);
+        }
+    ));
+    foreach ($atcs as &$atc) {
+        $atc['is_trainer'] = (int)($atc['is_trainer'] ?? 0) === 1;
+        if ($atc['is_trainer']) {
+            // Trainers are observers on the public map, not active control positions.
+            $atc['frequency'] = '';
+        } elseif (normalizeAtcVoiceFrequency((string)($atc['frequency'] ?? '')) === '') {
+            $knownFrequencies = findAtcFrequencies(
+                $pdo,
+                (string)($atc['station_code'] ?? ''),
+                (string)($atc['position_code'] ?? '')
+            );
+            if ($knownFrequencies) {
+                $atc['frequency'] = (string)$knownFrequencies[0]['frequency'];
+            }
+        }
+        $atc['is_spectator'] = (int)($atc['is_spectator'] ?? 0) === 1;
+        $atc['is_gca'] = (int)($atc['is_gca'] ?? 0) === 1;
+        $atc['can_control'] = (int)($atc['can_control'] ?? 0) === 1;
+        $atc['can_transmit_voice'] = (int)($atc['can_transmit_voice'] ?? 0) === 1;
+        $atc['scope_positions'] = array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string)($atc['scope_positions'] ?? ''))
+        )));
+        $atc['latitude'] = $atc['latitude'] !== null ? (float)$atc['latitude'] : null;
+        $atc['longitude'] = $atc['longitude'] !== null ? (float)$atc['longitude'] : null;
+        unset($atc['user_id'], $atc['is_invisible'], $atc['controller_op_permission']);
+    }
+    unset($atc);
+
+    $atisAirports = [];
+    $automaticAtis = [];
+    try {
+        foreach ($pdo->query(
+            "SELECT b.airport_icao, b.frequency, b.info_letter, b.active_runway,
+                    b.updated_at, b.is_active, ap.name AS airport_name,
+                    ap.latitude_deg AS latitude, ap.longitude_deg AS longitude
+             FROM auto_atis_broadcasts b
+             LEFT JOIN airports ap ON UPPER(ap.ident) = UPPER(b.airport_icao)
+             WHERE b.is_active = 1"
+        )->fetchAll(PDO::FETCH_ASSOC) as $automaticAtisRow) {
+            $automaticAtis[strtoupper(trim((string)$automaticAtisRow['airport_icao']))] = $automaticAtisRow;
+        }
+    } catch (Throwable $ignored) {
+        $automaticAtis = [];
+    }
+    try {
+        $atisStatement = $pdo->query(
+            "SELECT s.airport_icao, s.frequency, s.airport_name,
+                    s.latitude, s.longitude, a.callsign AS controller_callsign,
+                    a.station_code, a.position_code, a.frequency AS controller_frequency,
+                    a.radar_boundary_code, a.is_gca,
+                    a.user_id, a.is_invisible, u.op_permission AS controller_op_permission,
+                    COALESCE(NULLIF(TRIM(u.real_name), ''), u.username) AS controller_name
+             FROM atc_session_atis_airports s
+             INNER JOIN atc_sessions a ON a.id = s.session_id
+             INNER JOIN users u ON u.id = a.user_id
+             WHERE a.is_active = 1 AND a.is_spectator = 0
+               AND a.last_seen_at >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
+             ORDER BY s.airport_icao, a.callsign"
+        );
+        foreach ($atisStatement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $atisControllerVisible = (int)($row['is_invisible'] ?? 0) !== 1
+                || ($viewerUserId > 0 && (int)($row['user_id'] ?? 0) === $viewerUserId)
+                || ($viewerOpPermission >= 1
+                    && $viewerOpPermission >= (int)($row['controller_op_permission'] ?? 0));
+            if (!$atisControllerVisible) {
+                continue;
+            }
+            $icao = strtoupper(trim((string)$row['airport_icao']));
+            if (!isset($atisAirports[$icao])) {
+                $atisAirports[$icao] = [
+                    'airport_icao' => $icao,
+                    'frequency' => (string)$row['frequency'],
+                    'airport_name' => (string)$row['airport_name'],
+                    'latitude' => $row['latitude'] !== null ? (float)$row['latitude'] : null,
+                    'longitude' => $row['longitude'] !== null ? (float)$row['longitude'] : null,
+                    'info_letter' => (string)($automaticAtis[$icao]['info_letter'] ?? ''),
+                    'active_runway' => (string)($automaticAtis[$icao]['active_runway'] ?? ''),
+                    'updated_at' => (string)($automaticAtis[$icao]['updated_at'] ?? ''),
+                    'is_active' => isset($automaticAtis[$icao]),
+                    'controllers' => [],
+                ];
+            }
+            $atisAirports[$icao]['controllers'][] = [
+                'callsign' => (string)$row['controller_callsign'],
+                'is_gca' => (int)($row['is_gca'] ?? 0) === 1,
+                'station_code' => (string)$row['station_code'],
+                'position_code' => (string)$row['position_code'],
+                'frequency' => (string)$row['controller_frequency'],
+                'radar_boundary_code' => (string)$row['radar_boundary_code'],
+                'controller_name' => (string)$row['controller_name'],
+            ];
+        }
+    } catch (Throwable $ignored) {
+        $atisAirports = [];
+    }
+    foreach ($automaticAtis as $icao => $automaticAtisRow) {
+        if (isset($atisAirports[$icao])) {
+            continue;
+        }
+        $atisAirports[$icao] = [
+            'airport_icao' => $icao,
+            'frequency' => (string)($automaticAtisRow['frequency'] ?? ''),
+            'airport_name' => (string)($automaticAtisRow['airport_name'] ?? ''),
+            'latitude' => $automaticAtisRow['latitude'] !== null
+                ? (float)$automaticAtisRow['latitude'] : null,
+            'longitude' => $automaticAtisRow['longitude'] !== null
+                ? (float)$automaticAtisRow['longitude'] : null,
+            'info_letter' => (string)($automaticAtisRow['info_letter'] ?? ''),
+            'active_runway' => (string)($automaticAtisRow['active_runway'] ?? ''),
+            'updated_at' => (string)($automaticAtisRow['updated_at'] ?? ''),
+            'is_active' => true,
+            'controllers' => [],
+        ];
+    }
+    foreach ($atcs as &$atc) {
+        $station = strtoupper(trim((string)($atc['station_code'] ?? '')));
+        $atc['atis_frequency'] = (string)($atisAirports[$station]['frequency'] ?? '');
+        $atc['atis_info_letter'] = (string)($atisAirports[$station]['info_letter'] ?? '');
+        $atc['atis_active_runway'] = (string)($atisAirports[$station]['active_runway'] ?? '');
+        $atc['atis_updated_at'] = (string)($atisAirports[$station]['updated_at'] ?? '');
+        $atc['atis_active'] = isset($atisAirports[$station]);
+    }
+    unset($atc);
+
     echo json_encode([
         "success" => true,
-
-        "message" =>
-            "Aktive Piloten geladen.",
-
-        "visible_count" =>
-            count($visiblePilots),
-
-        "invisible_count" =>
-            $invisibleCount,
-
-        "total_count" =>
-            $regularPilotCount,
-
-        "count" =>
-            $regularPilotCount,
-
-        "pilots" =>
-            $visiblePilots
-    ]);
+        "message" => "Aktive Netzwerk-Teilnehmer geladen.",
+        "pilots" => [
+            "visible_count" => count($visiblePilots),
+            "invisible_count" => $invisibleCount,
+            "total_count" => $regularPilotCount,
+            "count" => $regularPilotCount,
+            "items" => $visiblePilots,
+        ],
+        "atcs" => [
+            "count" => count(array_filter($atcs, static fn(array $atc): bool => empty($atc['is_trainer']))),
+            "active_count" => count(array_filter($atcs, static fn(array $atc): bool => empty($atc['is_trainer']))),
+            "items" => $atcs,
+            "atis_airports" => array_values($atisAirports),
+        ],
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
 } catch (Exception $e) {
 

@@ -107,6 +107,7 @@ try {
                 'ta'=>$transitionAltitude, 'approach'=>$approach, 'remarks'=>$remarks
             ]);
         }
+
     }
 
     $stmt = $pdo->prepare(

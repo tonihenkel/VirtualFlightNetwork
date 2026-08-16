@@ -1191,6 +1191,7 @@ if ($statusMessage !== '') {
                 "atc_positions" => t("map_atc_positions"),
                 "atc_none" => t("map_atc_none"),
                 "atc_controller" => t("map_atc_controller"),
+                "atc_trainer" => t("map_atc_trainer"),
                 "atc_frequency" => t("map_atc_frequency"),
                 "atc_radar_sector" => t("map_atc_radar_sector"),
                 "atc_information" => t("map_atc_information"),
@@ -1532,10 +1533,16 @@ if ($statusMessage !== '') {
         return sectorBoundaryCache[key];
     }
 
+    function displayedAtcCallsign(position)
+    {
+        const callsign = String(position?.callsign || '');
+        return callsign + (position?.is_gca ? ' (GCA)' : '');
+    }
+
     function atcPositionTooltip(position)
     {
         return '<div class="atc-map-tooltip"><strong>'
-            + escapeHtml(position.callsign || '') + '</strong><br>'
+            + escapeHtml(displayedAtcCallsign(position)) + '</strong><br>'
             + escapeHtml(position.controller_name || '')
             + (position.frequency ? '<br>' + escapeHtml(position.frequency) + ' MHz' : '')
             + '</div>';
@@ -1548,6 +1555,7 @@ if ($statusMessage !== '') {
                 + escapeHtml(MAP_TEXT.atc_none) + '</div>';
         }
         const positionCards = positions.map(position => {
+            const trainer = Number(position.is_trainer || 0) === 1;
             const tag = clickable ? 'button' : 'div';
             const attributes = clickable
                 ? ' type="button" data-airport-atc-station="'
@@ -1556,17 +1564,18 @@ if ($statusMessage !== '') {
                 : '';
             return '<' + tag + ' class="atc-info-card"' + attributes + '>'
             + '<span class="atc-position-code">'
-            + escapeHtml(position.position_code || '') + '</span>'
-            + '<strong>' + escapeHtml(position.callsign || '') + '</strong>'
+            + escapeHtml(trainer ? MAP_TEXT.atc_trainer : (position.position_code || '')) + '</span>'
+            + '<strong>' + escapeHtml(displayedAtcCallsign(position)) + '</strong>'
             + '<div class="atc-info-meta">'
             + escapeHtml(MAP_TEXT.atc_controller) + ': '
             + escapeHtml(position.controller_name || '–')
-            + (position.frequency ? '<br>' + escapeHtml(MAP_TEXT.atc_frequency)
+            + (!trainer && position.frequency ? '<br>' + escapeHtml(MAP_TEXT.atc_frequency)
                 + ': ' + escapeHtml(position.frequency) + ' MHz' : '')
             + '</div></' + tag + '>';
         }).join('');
         const airportPosition = positions.find(position =>
-            String(position.position_code || '').toUpperCase() !== 'CTR');
+            Number(position.is_trainer || 0) !== 1
+            && String(position.position_code || '').toUpperCase() !== 'CTR');
         const atisFrequency = String(airportPosition?.atis_frequency || '');
         if (!includeAtis || !airportPosition || !atisFrequency) return positionCards;
         const station = String(airportPosition.station_code || '').toUpperCase();
@@ -1860,12 +1869,19 @@ if ($statusMessage !== '') {
         Object.keys(grouped).forEach(key => {
             const items = grouped[key];
             const symbols = [];
-            items.forEach(item => {
+            items.filter(item => Number(item.is_trainer || 0) !== 1).forEach(item => {
                 const symbol = String(item.position_code || '').toLowerCase();
                 if (!symbols.includes(symbol)) symbols.push(symbol);
             });
             const symbolOrder = {dep:1,app:2,twr:3,gnd:4,del:5,info:6};
             symbols.sort((left,right) => (symbolOrder[left]||9)-(symbolOrder[right]||9));
+            if (!symbols.length) {
+                if (atcAirportMarkers[key]) {
+                    map.removeLayer(atcAirportMarkers[key]);
+                    delete atcAirportMarkers[key];
+                }
+                return;
+            }
             const html = '<div class="atc-airport-stack">'
                 + symbols.map(symbol => '<span class="atc-position-symbol '
                     + escapeHtml(symbol) + '"></span>').join('')
@@ -1898,7 +1914,8 @@ if ($statusMessage !== '') {
     async function renderAtcTraconPositions(positions)
     {
         const approachPositions = positions.filter(position =>
-            ['APP','DEP'].includes(String(position.position_code || '').toUpperCase()));
+            Number(position.is_trainer || 0) !== 1
+            && ['APP','DEP'].includes(String(position.position_code || '').toUpperCase()));
         if (!approachPositions.length) {
             Object.keys(atcTraconLayers).forEach(key => {
                 map.removeLayer(atcTraconLayers[key]);
@@ -1978,6 +1995,7 @@ if ($statusMessage !== '') {
     {
         const grouped = {};
         positions.forEach(position => {
+            if (Number(position.is_trainer || 0) === 1) return;
             const key = String(position.station_code || '').toUpperCase();
             if (!grouped[key]) grouped[key] = [];
             grouped[key].push(position);
@@ -2064,13 +2082,13 @@ if ($statusMessage !== '') {
         if (atcPositionLoadInProgress) return;
         atcPositionLoadInProgress = true;
         try {
-            const response = await fetch('execute/get_atc_positions.php?time=' + Date.now());
+            const response = await fetch('/execute/get_pilots.php?time=' + Date.now() + '&protection=<?php echo rawurlencode((string)$getPilotsProtection); ?>');
             const data = await response.json();
             if (!response.ok || !data.success) throw new Error(data.message || 'ATC unavailable');
-            const positions = Array.isArray(data.positions) ? data.positions : [];
-            activeAtcCount = Number(data.count ?? positions.length ?? 0);
+            const positions = Array.isArray(data.atcs?.items) ? data.atcs.items : [];
+            activeAtcCount = Number(data.atcs?.count ?? positions.length ?? 0);
             latestAtcPositions = positions;
-            latestAtisAirports = Array.isArray(data.atis_airports) ? data.atis_airports : [];
+            latestAtisAirports = Array.isArray(data.atcs?.atis_airports) ? data.atcs.atis_airports : [];
             renderAtisAirportMarkers(latestAtisAirports);
             refreshOpenAtcInfoPanel();
             const airportPositions = positions.filter(position =>
@@ -3072,7 +3090,8 @@ if ($statusMessage !== '') {
             return '<button type="button" class="pilot-directory-item"'
                 + ' data-atc-index="' + index + '">'
                 + '<div class="pilot-directory-callsign">ATC '
-                + escapeHtml(position.callsign || position.station_code || '') + '</div>'
+                + escapeHtml(displayedAtcCallsign(position)
+                    || position.station_code || '') + '</div>'
                 + '<div class="pilot-directory-meta">'
                 + escapeHtml([
                     position.controller_name,
@@ -4836,7 +4855,7 @@ if ($statusMessage !== '') {
             }
 
             const activeCallsigns = [];
-            latestPilots = (data.pilots || []).filter(function(pilot) {
+            latestPilots = ((data.pilots && data.pilots.items) || []).filter(function(pilot) {
                 return !hideInvisiblePilots
                     || !hideInvisiblePilots.checked
                     || !pilot.is_invisible;
@@ -5005,10 +5024,10 @@ if ($statusMessage !== '') {
             renderPilotDirectory();
 
             const totalCount =
-                Number(data.total_count ?? data.count ?? 0);
+                Number(data.pilots?.total_count ?? data.pilots?.count ?? 0);
 
             const invisibleCount =
-                Number(data.invisible_count ?? 0);
+                Number(data.pilots?.invisible_count ?? 0);
 
             let statusText =
                 MAP_TEXT.active_pilots

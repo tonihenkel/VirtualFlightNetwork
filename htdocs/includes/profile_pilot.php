@@ -88,3 +88,31 @@ $flights = $flightStmt->fetchAll(PDO::FETCH_ASSOC);
 .flight-pagination{display:flex;gap:6px;flex-wrap:wrap;margin-top:18px}.flight-pagination a{padding:7px 10px;border:1px solid #285475;border-radius:4px;color:#9ed4ff;text-decoration:none}
 .flight-pagination a.active{background:#176dcc;color:#fff}
 </style>
+
+<?php
+$atcLogStmt = $pdo->prepare(
+    "SELECT callsign,station_code,position_code,connected_at,disconnected_at,duration_seconds
+     FROM atc_session_history WHERE user_id=:user_id
+     ORDER BY connected_at DESC LIMIT 100"
+);
+$atcLogStmt->execute(['user_id'=>$profileUserId]);
+$atcLog = $atcLogStmt->fetchAll(PDO::FETCH_ASSOC);
+?>
+<div class="card" id="atc-logbook" style="margin-top:18px">
+    <div class="card-title"><?php echo h(t('profile_atc_logbook')); ?></div>
+    <div class="card-body">
+        <?php if (!$atcLog): ?>
+            <div class="flight-empty"><?php echo h(t('profile_no_atc_sessions')); ?></div>
+        <?php else: ?>
+            <div class="flight-table-scroll"><table class="flight-table">
+                <thead><tr><th><?php echo h(t('profile_flight_date')); ?></th><th><?php echo h(t('profile_flight_callsign')); ?></th><th><?php echo h(t('profile_atc_position')); ?></th><th><?php echo h(t('profile_flight_duration')); ?></th></tr></thead>
+                <tbody><?php foreach ($atcLog as $session): ?><tr>
+                    <td><?php echo h(date('d.m.Y H:i', strtotime($session['connected_at']))); ?></td>
+                    <td><?php echo h($session['callsign']); ?></td>
+                    <td><?php echo h($session['station_code'] . ' / ' . $session['position_code']); ?></td>
+                    <td><?php echo h(formatFlightTime((int)$session['duration_seconds'])); ?></td>
+                </tr><?php endforeach; ?></tbody>
+            </table></div>
+        <?php endif; ?>
+    </div>
+</div>

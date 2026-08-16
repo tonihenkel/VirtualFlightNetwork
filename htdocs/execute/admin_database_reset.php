@@ -172,6 +172,39 @@ try {
         }
     }
 
+    // Imported flight plans are currently parsed directly from PHP's temporary
+    // upload and are not retained. Keep this cleanup in place for existing or
+    // future persisted imports so a test reset removes both database rows and
+    // uploaded flight-plan files.
+    $flightplanUploadDirectory =
+        dirname(__DIR__) . DIRECTORY_SEPARATOR . 'uploads'
+        . DIRECTORY_SEPARATOR . 'flightplans';
+    if (is_dir($flightplanUploadDirectory)) {
+        $flightplanFiles = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator(
+                $flightplanUploadDirectory,
+                FilesystemIterator::SKIP_DOTS
+            ),
+            RecursiveIteratorIterator::CHILD_FIRST
+        );
+        foreach ($flightplanFiles as $flightplanFile) {
+            $path = $flightplanFile->getPathname();
+            if ($flightplanFile->isDir()) {
+                if (!rmdir($path)) {
+                    throw new RuntimeException(
+                        'Flight-plan upload directory could not be removed during database reset: '
+                        . $flightplanFile->getFilename()
+                    );
+                }
+            } elseif (!unlink($path)) {
+                throw new RuntimeException(
+                    'Flight-plan upload could not be removed during database reset: '
+                    . $flightplanFile->getFilename()
+                );
+            }
+        }
+    }
+
     // Voice test audio lives in voice-service/test-audio and is deliberately
     // outside the database-reset scope. Only profile avatars are reset here.
 

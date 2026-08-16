@@ -9,6 +9,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/../includes/web_session.php';
 require_once __DIR__ . '/../includes/atc_schema.php';
 require_once __DIR__ . '/../includes/chat_system.php';
+require_once __DIR__ . '/../includes/flightplan_schema.php';
 
 function atcFplReply(bool $success, array $extra = [], int $status = 200): void
 {
@@ -29,6 +30,7 @@ try {
         atcFplReply(false, ['message' => 'login_required'], 401);
     }
     ensureAtcSchema($pdo);
+    ensurePilotFlightplanCommunicationColumn($pdo);
     $sessionToken = (string)($_SESSION['atc_session_token'] ?? '');
     $sessionStatement = $pdo->prepare(
         "SELECT id,user_id FROM atc_sessions
@@ -60,7 +62,7 @@ try {
     if (!$target) atcFplReply(false, ['message' => 'pilot_not_online'], 404);
 
     $fields = [
-        'flight_rules', 'flight_type', 'departure_airport', 'arrival_airport',
+        'flight_rules', 'flight_type', 'communication_mode', 'departure_airport', 'arrival_airport',
         'alternate1_airport', 'alternate2_airport', 'route_text',
         'cruising_level', 'cruising_speed', 'remarks',
     ];
@@ -72,8 +74,9 @@ try {
     $flightplan = $flightplanStatement->fetch(PDO::FETCH_ASSOC);
     if (!$flightplan) {
         $flightplan = [
-            'flight_rules' => 'IFR',
+            'flight_rules' => 'I',
             'flight_type' => 'G',
+            'communication_mode' => 'VOICE',
             'departure_airport' => 'ZZZZ',
             'arrival_airport' => 'ZZZZ',
             'alternate1_airport' => 'ZZZZ',
@@ -86,6 +89,16 @@ try {
     }
 
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        $storedRules = strtoupper(trim((string)($flightplan['flight_rules'] ?? '')));
+        if ($storedRules === 'IFR') {
+            $flightplan['flight_rules'] = 'I';
+        } elseif ($storedRules === 'VFR') {
+            $flightplan['flight_rules'] = 'V';
+        } elseif (in_array($storedRules, ['I', 'V', 'Y', 'Z'], true)) {
+            $flightplan['flight_rules'] = $storedRules;
+        } else {
+            $flightplan['flight_rules'] = 'I';
+        }
         $ownership=$pdo->prepare("SELECT atc_session_id,atc_callsign FROM atc_assumed_aircraft WHERE pilot_session_token=:token LIMIT 1");
         $ownership->execute(['token'=>(string)$target['session_token']]);$owner=$ownership->fetch(PDO::FETCH_ASSOC);
         atcFplReply(true, ['callsign' => $callsign, 'flightplan' => $flightplan, 'assumed_by_me'=>$owner&&(int)$owner['atc_session_id']===(int)$atcSession['id'], 'assumed_by'=>(string)($owner['atc_callsign']??'')]);
@@ -98,10 +111,19 @@ try {
     $values = [];
     foreach ($fields as $field) $values[$field] = trim((string)($_POST[$field] ?? ''));
     $values['flight_rules'] = strtoupper(substr($values['flight_rules'], 0, 3));
-    if (!in_array($values['flight_rules'], ['IFR', 'VFR', 'Y', 'Z'], true)) {
+    if ($values['flight_rules'] === 'IFR') {
+        $values['flight_rules'] = 'I';
+    } elseif ($values['flight_rules'] === 'VFR') {
+        $values['flight_rules'] = 'V';
+    }
+    if (!in_array($values['flight_rules'], ['I', 'V', 'Y', 'Z'], true)) {
         atcFplReply(false, ['message' => 'invalid_flight_rules'], 422);
     }
     $values['flight_type'] = strtoupper(substr($values['flight_type'], 0, 4));
+    $values['communication_mode'] = strtoupper($values['communication_mode']);
+    if (!in_array($values['communication_mode'], ['VOICE', 'RECEIVE_ONLY', 'TEXT_ONLY'], true)) {
+        $values['communication_mode'] = 'VOICE';
+    }
     foreach (['departure_airport','arrival_airport','alternate1_airport','alternate2_airport'] as $field) {
         $values[$field] = strtoupper(substr($values[$field], 0, 8));
     }
@@ -117,15 +139,15 @@ try {
     $values['callsign'] = $callsign;
     $update = $pdo->prepare(
         "INSERT INTO pilot_flightplans
-            (session_token,callsign,flight_rules,flight_type,departure_airport,
+            (session_token,callsign,flight_rules,flight_type,communication_mode,departure_airport,
              arrival_airport,alternate1_airport,alternate2_airport,route_text,
              cruising_level,cruising_speed,remarks)
          VALUES
-            (:token,:callsign,:flight_rules,:flight_type,:departure_airport,
+            (:token,:callsign,:flight_rules,:flight_type,:communication_mode,:departure_airport,
              :arrival_airport,:alternate1_airport,:alternate2_airport,:route_text,
              :cruising_level,:cruising_speed,:remarks)
          ON DUPLICATE KEY UPDATE callsign=VALUES(callsign),
-             flight_rules=VALUES(flight_rules),flight_type=VALUES(flight_type),
+             flight_rules=VALUES(flight_rules),flight_type=VALUES(flight_type),communication_mode=VALUES(communication_mode),
              departure_airport=VALUES(departure_airport),arrival_airport=VALUES(arrival_airport),
              alternate1_airport=VALUES(alternate1_airport),alternate2_airport=VALUES(alternate2_airport),
              route_text=VALUES(route_text),cruising_level=VALUES(cruising_level),

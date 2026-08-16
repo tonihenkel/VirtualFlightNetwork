@@ -159,9 +159,10 @@
 
                             <div>
                                 <div class="stats-section-title atc"><?php echo htmlspecialchars(t('profile_atc')); ?></div>
-                                <div class="stat-row"><span>🗼 <?php echo htmlspecialchars(t('profile_controller_hours')); ?></span><strong>----</strong></div>
-                                <div class="stat-row"><span>📋 <?php echo htmlspecialchars(t('profile_atc_sessions')); ?></span><strong>----</strong></div>
-                                <div class="stat-row"><span>📍 <?php echo htmlspecialchars(t('profile_favorite_position')); ?></span><strong>----</strong></div>
+                                <div class="stat-row"><span>🗼 <?php echo htmlspecialchars(t('profile_controller_hours')); ?></span><strong><?php echo h(formatFlightTime($atcControllerSeconds)); ?></strong></div>
+                                <div class="stat-row"><span>📋 <?php echo htmlspecialchars(t('profile_atc_sessions')); ?></span><strong><?php echo h(number_format($atcSessionCount, 0, ',', '.')); ?></strong></div>
+                                <div class="stat-row"><span>📍 <?php echo htmlspecialchars(t('profile_favorite_position')); ?></span><strong><?php echo h($profileFavoriteAtcPosition); ?></strong></div>
+                                <div class="stat-row"><span><?php echo htmlspecialchars(t('profile_last_atc_position')); ?></span><strong><?php echo h($profileLastAtcPosition); ?></strong></div>
                             </div>
                         </div>
                     </div>

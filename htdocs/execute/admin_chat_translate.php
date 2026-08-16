@@ -16,7 +16,8 @@ try {
     }
     $text = trim(mb_substr((string)($_POST['text'] ?? ''), 0, 255));
     $target = strtolower(trim((string)($_POST['target'] ?? '')));
-    if ($text === '' || !in_array($target, ['de', 'en'], true)) {
+    require_once __DIR__ . '/../includes/languages.php';
+    if ($text === '' || !in_array($target, vfnLanguageCodes(), true)) {
         http_response_code(422);
         throw new RuntimeException('invalid_translation');
     }

@@ -88,7 +88,88 @@ function metarWatchReport(SimpleXMLElement $node): array
         'raw' => metarWatchValue($node, 'raw_text'),
         'latitude' => metarWatchValue($node, 'latitude'),
         'longitude' => metarWatchValue($node, 'longitude'),
+        'metar_available' => true,
     ];
+}
+
+function metarWatchGeometryBounds(array $geometry): ?array
+{
+    $minimumLatitude = 90.0; $maximumLatitude = -90.0;
+    $minimumLongitude = 180.0; $maximumLongitude = -180.0;
+    $found = false;
+    $visit = static function ($coordinates) use (&$visit, &$minimumLatitude, &$maximumLatitude, &$minimumLongitude, &$maximumLongitude, &$found): void {
+        if (!is_array($coordinates)) return;
+        if (count($coordinates) >= 2 && is_numeric($coordinates[0]) && is_numeric($coordinates[1])) {
+            $longitude = (float)$coordinates[0]; $latitude = (float)$coordinates[1];
+            $minimumLatitude = min($minimumLatitude, $latitude); $maximumLatitude = max($maximumLatitude, $latitude);
+            $minimumLongitude = min($minimumLongitude, $longitude); $maximumLongitude = max($maximumLongitude, $longitude);
+            $found = true; return;
+        }
+        foreach ($coordinates as $child) $visit($child);
+    };
+    $visit($geometry['coordinates'] ?? []);
+    return $found ? [$minimumLatitude, $maximumLatitude, $minimumLongitude, $maximumLongitude] : null;
+}
+
+function metarWatchScopeAirports(PDO $pdo, string $station, string $position, array $features, ?array $fallbackCenter): array
+{
+    if (!in_array($position, ['APP', 'DEP', 'CTR'], true)) {
+        $stmt = $pdo->prepare(
+            "SELECT ident,icao_code,gps_code,name,type,latitude_deg,longitude_deg FROM airports
+             WHERE UPPER(ident)=:a OR UPPER(icao_code)=:b OR UPPER(gps_code)=:c LIMIT 1"
+        );
+        $stmt->execute(['a' => $station, 'b' => $station, 'c' => $station]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } else {
+        $bounds = null;
+        foreach ($features as $feature) {
+            $current = metarWatchGeometryBounds($feature['geometry'] ?? []);
+            if (!$current) continue;
+            $bounds = $bounds === null ? $current : [
+                min($bounds[0], $current[0]), max($bounds[1], $current[1]),
+                min($bounds[2], $current[2]), max($bounds[3], $current[3]),
+            ];
+        }
+        if ($bounds === null && $fallbackCenter) {
+            $latitude = (float)$fallbackCenter['latitude_deg']; $longitude = (float)$fallbackCenter['longitude_deg'];
+            $latitudeDelta = 150.0 / 60.0;
+            $longitudeDelta = $latitudeDelta / max(0.2, cos(deg2rad($latitude)));
+            $bounds = [$latitude - $latitudeDelta, $latitude + $latitudeDelta, $longitude - $longitudeDelta, $longitude + $longitudeDelta];
+        }
+        if ($bounds === null) return [];
+        $stmt = $pdo->prepare(
+            "SELECT ident,icao_code,gps_code,name,type,latitude_deg,longitude_deg FROM airports
+             WHERE latitude_deg BETWEEN :min_lat AND :max_lat
+               AND longitude_deg BETWEEN :min_lon AND :max_lon
+               AND COALESCE(type,'')<>'closed_airport'"
+        );
+        $stmt->execute(['min_lat' => $bounds[0], 'max_lat' => $bounds[1], 'min_lon' => $bounds[2], 'max_lon' => $bounds[3]]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+    $airports = [];
+    foreach ($rows as $row) {
+        if (strtolower(trim((string)($row['type'] ?? ''))) === 'heliport') continue;
+        $ident = strtoupper(trim((string)($row['ident'] ?? '')));
+        if (!preg_match('/^[A-Z]{4}$/', $ident)) continue;
+        $latitude = (float)$row['latitude_deg']; $longitude = (float)$row['longitude_deg'];
+        if ($features) {
+            $inside = false;
+            foreach ($features as $feature) {
+                if (pointInAtisGeometry($longitude, $latitude, $feature['geometry'] ?? [])) { $inside = true; break; }
+            }
+            if (!$inside) continue;
+        } elseif ($fallbackCenter && in_array($position, ['APP', 'DEP'], true)
+            && atisDistanceNm((float)$fallbackCenter['latitude_deg'], (float)$fallbackCenter['longitude_deg'], $latitude, $longitude) > 150.0) {
+            continue;
+        }
+        $code = strtoupper(trim((string)($row['icao_code'] ?: $row['gps_code'] ?: $row['ident'])));
+        if ($code === '') continue;
+        $airports[$code] = [
+            'icao' => $code, 'name' => (string)($row['name'] ?? ''),
+            'latitude' => $latitude, 'longitude' => $longitude,
+        ];
+    }
+    return $airports;
 }
 
 try {
@@ -176,6 +257,21 @@ try {
                 }
             }
         }
+    }
+    // The watch is also the airport overview for the controlled area. Keep
+    // airports without a published METAR visible instead of silently dropping
+    // them (for example EDAB in the EDMM_MEI sector).
+    $scopeAirports = metarWatchScopeAirports($pdo, $station, $position, $features, $fallbackCenter);
+    $reportCodes = array_fill_keys(array_column($reports, 'icao'), true);
+    foreach ($scopeAirports as $code => $airport) {
+        if (isset($reportCodes[$code])) continue;
+        $reports[] = [
+            'icao' => $code, 'name' => $airport['name'], 'observed_at' => '–', 'age_minutes' => null,
+            'wind' => '-', 'wind_direction' => '-', 'wind_speed' => '-', 'wind_gust' => '-',
+            'visibility' => '-', 'weather' => '-', 'clouds' => '-', 'temperature' => '',
+            'dewpoint' => '', 'qnh' => '-', 'raw' => '', 'latitude' => $airport['latitude'],
+            'longitude' => $airport['longitude'], 'metar_available' => false,
+        ];
     }
     if ($reports) {
         $runwayMap = [];

@@ -17,6 +17,7 @@
 #include "XPLMDisplay.h"
 #include "XPLMGraphics.h"
 #include "XPLMNavigation.h"
+#include "XPLMScenery.h"
 
 #include "XPWidgets.h"
 #include "XPStandardWidgets.h"
@@ -75,6 +76,22 @@ static std::string gMessageSoundPath;
 static std::string gCurrentLanguage = "en";
 static std::string gConfiguredLanguage = "";
 
+struct PluginLanguageOption { const char* code; const char* label; const char* flag; };
+static const PluginLanguageOption gPluginLanguages[] = {
+    {"ar","Arabic","sa"},{"bn","Bengali","bd"},{"zh","Chinese (Mandarin)","cn"},{"nl","Nederlands","nl"},
+    {"en","English","gb"},{"fr","Francais","fr"},{"de","Deutsch","de"},{"hi","Hindi","in"},
+    {"id","Bahasa Indonesia","id"},{"it","Italiano","it"},{"ja","Japanese","jp"},{"ko","Korean","kr"},
+    {"pl","Polski","pl"},{"pt","Portugues","pt"},{"ru","Russian","ru"},{"es","Espanol","es"},{"tr","Turkce","tr"}
+};
+static const int gPluginLanguageCount = (int)(sizeof(gPluginLanguages) / sizeof(gPluginLanguages[0]));
+
+bool IsSupportedPluginLanguage(const std::string& code)
+{
+    for (int index = 0; index < gPluginLanguageCount; ++index)
+        if (code == gPluginLanguages[index].code) return true;
+    return false;
+}
+
 static std::map<std::string, std::string> gText;
 const char* T(const std::string& key);
 
@@ -89,8 +106,7 @@ struct TextureImage
     bool loaded;
 };
 
-static TextureImage gGermanFlagTexture = { 0, 0, 0, false };
-static TextureImage gEnglishFlagTexture = { 0, 0, 0, false };
+static std::map<std::string, TextureImage> gLanguageFlagTextures;
 
 
 
@@ -115,6 +131,9 @@ gServerAddress + "/execute/position_update.php";
 
 static const std::string gFlightplanUrl =
 gServerAddress + "/execute/flightplan_update.php";
+
+static const std::string gWebFlightplanUrl =
+gServerAddress + "/execute/web_flightplan_selected.php";
 
 static const std::string gSetInvisibleUrl =
 gServerAddress + "/execute/set_invisible.php";
@@ -320,11 +339,20 @@ public:
         colLabel[3] = 1.00f;
     }
 
+    ~VfnTrafficAircraft() override
+    {
+        if (groundProbe != nullptr)
+        {
+            XPLMDestroyProbe(groundProbe);
+            groundProbe = nullptr;
+        }
+    }
+
     void SetTarget(
         const std::string& callsign,
         double latitude,
         double longitude,
-        double altitudeMeters,
+        double altitudeFeet,
         float heading,
         float pitch,
         float roll,
@@ -354,7 +382,8 @@ public:
         const std::string& aircraftIcao,
         const std::string& departureAirport,
         const std::string& arrivalAirport,
-        float distanceNm
+        float distanceNm,
+        const std::string& positionSampleId
     )
     {
         displayCallsign = callsign.empty() ? "----" : callsign;
@@ -377,9 +406,9 @@ public:
         }
         const float receivedAt =
             XPLMGetElapsedTime();
-        const double altitudeFeet =
-            altitudeMeters * 3.28083989501312;
-
+        const bool isNewPositionSample =
+            positionSampleId.empty()
+            || positionSampleId != lastPositionSampleId;
         if (!hasPosition)
         {
             currentLatitude = latitude;
@@ -390,7 +419,7 @@ public:
             currentRoll = roll;
             hasPosition = true;
         }
-        else
+        else if (isNewPositionSample)
         {
             const double sampleSeconds =
                 static_cast<double>(
@@ -412,15 +441,53 @@ public:
             }
         }
 
-        targetLatitude = latitude;
-        targetLongitude = longitude;
-        targetAltitudeFeet = altitudeFeet;
-        targetHeading = heading;
-        targetPitch = pitch;
-        targetRoll = roll;
-        targetAirspeed = airspeed;
-        targetVerticalSpeed = verticalSpeed;
-        targetOnGround = onGround;
+        if (isNewPositionSample || lastPositionSampleId.empty())
+        {
+            targetLatitude = latitude;
+            targetLongitude = longitude;
+            targetAltitudeFeet = altitudeFeet;
+            targetHeading = heading;
+            targetPitch = pitch;
+            targetRoll = roll;
+            targetAirspeed = airspeed;
+            targetVerticalSpeed = verticalSpeed;
+            targetOnGround = onGround;
+            targetReceivedAt = receivedAt;
+            lastPositionSampleId = positionSampleId;
+
+            double sampleTime = static_cast<double>(receivedAt);
+            if (!positionSampleId.empty())
+            {
+                try
+                {
+                    sampleTime = std::stod(positionSampleId);
+                }
+                catch (...)
+                {
+                    sampleTime = static_cast<double>(receivedAt);
+                }
+            }
+            if (
+                positionSamples.empty()
+                || sampleTime > positionSamples.back().sampleTime
+            )
+            {
+                positionSamples.push_back({
+                    sampleTime,
+                    latitude,
+                    longitude,
+                    altitudeFeet,
+                    heading,
+                    pitch,
+                    roll
+                });
+                while (positionSamples.size() > 8)
+                {
+                    positionSamples.pop_front();
+                }
+                latestPositionSampleReceivedAt = receivedAt;
+            }
+        }
         targetGearRatio = std::clamp(gearRatio, 0.0f, 1.0f);
         targetFlapRatio = std::clamp(flapRatio, 0.0f, 1.0f);
         targetSpeedbrakeRatio =
@@ -499,7 +566,6 @@ public:
             displayCallsign.c_str(),
             _TRUNCATE
         );
-        targetReceivedAt = receivedAt;
         missedPolls = 0;
     }
 
@@ -525,7 +591,70 @@ public:
         double predictedLongitude = targetLongitude;
         double predictedAltitudeFeet = targetAltitudeFeet;
 
-        if (hasNetworkVelocity)
+        bool usedBufferedPosition = false;
+        if (positionSamples.size() >= 2)
+        {
+            // Render slightly behind the newest received network sample. This
+            // keeps two real positions available for interpolation and avoids
+            // the accelerate/coast rhythm caused by irregular HTTP arrival
+            // times. A small, constant visual delay is much less noticeable
+            // than repeatedly changing the aircraft's ground speed.
+            if (!hasPlaybackSampleTime)
+            {
+                playbackSampleTime =
+                    positionSamples.back().sampleTime
+                    - interpolationDelaySeconds;
+                hasPlaybackSampleTime = true;
+            }
+            else
+            {
+                // Advance at a constant real-time rate. Varying this rate to
+                // refill the buffer was visible as periodic braking whenever
+                // an HTTP position update arrived late.
+                playbackSampleTime += static_cast<double>(elapsed);
+            }
+            const double renderSampleTime = playbackSampleTime;
+
+            while (
+                positionSamples.size() > 2
+                && positionSamples[1].sampleTime < renderSampleTime
+            )
+            {
+                positionSamples.pop_front();
+            }
+
+            const NetworkPositionSample& left = positionSamples[0];
+            const NetworkPositionSample& right = positionSamples[1];
+            const double duration =
+                (std::max)(0.001, right.sampleTime - left.sampleTime);
+            const double blend = std::clamp(
+                (renderSampleTime - left.sampleTime) / duration,
+                0.0,
+                4.0
+            );
+            predictedLatitude =
+                left.latitude + (right.latitude - left.latitude) * blend;
+            predictedLongitude =
+                left.longitude + (right.longitude - left.longitude) * blend;
+            predictedAltitudeFeet =
+                left.altitudeFeet
+                + (right.altitudeFeet - left.altitudeFeet) * blend;
+
+            auto interpolateAngle = [blend](float from, float to)
+            {
+                const float difference =
+                    std::fmod(to - from + 540.0f, 360.0f) - 180.0f;
+                return from + difference * static_cast<float>(blend);
+            };
+            targetHeading = interpolateAngle(left.heading, right.heading);
+            targetPitch = left.pitch
+                + (right.pitch - left.pitch) * static_cast<float>(blend);
+            targetRoll = left.roll
+                + (right.roll - left.roll) * static_cast<float>(blend);
+            usedBufferedPosition = true;
+        }
+
+        if (!usedBufferedPosition && hasNetworkVelocity)
         {
             // Move continuously in every rendered frame based on the last two
             // actual network samples. The next sample only corrects drift.
@@ -536,7 +665,7 @@ public:
             predictedAltitudeFeet +=
                 velocityAltitudeFeetPerSecond * predictionSeconds;
         }
-        else
+        else if (!usedBufferedPosition)
         {
             // First sample: use the reported aircraft data until a second
             // network position allows calculating the real movement vector.
@@ -570,12 +699,21 @@ public:
                 / 60.0;
         }
 
-        currentLatitude +=
-            (predictedLatitude - currentLatitude) * factor;
-        currentLongitude +=
-            (predictedLongitude - currentLongitude) * factor;
-        currentAltitudeFeet +=
-            (predictedAltitudeFeet - currentAltitudeFeet) * factor;
+        if (usedBufferedPosition)
+        {
+            currentLatitude = predictedLatitude;
+            currentLongitude = predictedLongitude;
+            currentAltitudeFeet = predictedAltitudeFeet;
+        }
+        else
+        {
+            currentLatitude +=
+                (predictedLatitude - currentLatitude) * factor;
+            currentLongitude +=
+                (predictedLongitude - currentLongitude) * factor;
+            currentAltitudeFeet +=
+                (predictedAltitudeFeet - currentAltitudeFeet) * factor;
+        }
 
         auto smoothAngle = [factor](float current, float target)
         {
@@ -602,6 +740,61 @@ public:
             targetOnGround,
             touchDown ? 1.0f : NAN
         );
+
+        // A network altitude is based on the sender's scenery and aircraft
+        // reference point. Even a small scenery/elevation difference makes a
+        // remote CSL aircraft visibly hover. XPMP2's built-in clamp only
+        // raises aircraft that are below the terrain; it deliberately does
+        // not lower aircraft that are above it. While the sender explicitly
+        // reports on_ground, probe the receiver's local scenery and place the
+        // CSL reference point at terrain height plus its model-specific
+        // vertical offset.
+        if (targetOnGround)
+        {
+            const float now = XPLMGetElapsedTime();
+            if (
+                !hasGroundProbeHeight
+                || now - lastGroundProbeAt >= 0.35f
+            )
+            {
+                if (groundProbe == nullptr)
+                {
+                    groundProbe = XPLMCreateProbe(xplm_ProbeY);
+                }
+
+                if (groundProbe != nullptr)
+                {
+                    XPLMProbeInfo_t probeInfo = {};
+                    probeInfo.structSize = sizeof(probeInfo);
+                    const XPLMProbeResult result = XPLMProbeTerrainXYZ(
+                        groundProbe,
+                        drawInfo.x,
+                        drawInfo.y + 1000.0f,
+                        drawInfo.z,
+                        &probeInfo
+                    );
+                    if (result == xplm_ProbeHitTerrain)
+                    {
+                        groundLocalY = probeInfo.locationY;
+                        hasGroundProbeHeight = true;
+                    }
+                }
+                lastGroundProbeAt = now;
+            }
+
+            if (hasGroundProbeHeight)
+            {
+                SetLocalLoc(
+                    drawInfo.x,
+                    groundLocalY + GetVertOfs(),
+                    drawInfo.z
+                );
+            }
+        }
+        else
+        {
+            hasGroundProbeHeight = false;
+        }
         lastRenderedOnGround = targetOnGround;
         hasRenderedGroundState = true;
         SetHeading(currentHeading);
@@ -761,6 +954,17 @@ public:
     }
 
 private:
+    struct NetworkPositionSample
+    {
+        double sampleTime = 0.0;
+        double latitude = 0.0;
+        double longitude = 0.0;
+        double altitudeFeet = 0.0;
+        float heading = 0.0f;
+        float pitch = 0.0f;
+        float roll = 0.0f;
+    };
+
     bool hasPosition = false;
     double currentLatitude = 0.0;
     double currentLongitude = 0.0;
@@ -806,6 +1010,20 @@ private:
     float targetTireRotationRadSec = 0.0f;
     bool hasRenderedGroundState = false;
     bool lastRenderedOnGround = false;
+    XPLMProbeRef groundProbe = nullptr;
+    bool hasGroundProbeHeight = false;
+    float groundLocalY = 0.0f;
+    float lastGroundProbeAt = -1000.0f;
+    std::string lastPositionSampleId;
+    std::deque<NetworkPositionSample> positionSamples;
+    float latestPositionSampleReceivedAt = 0.0f;
+    // Keep a fixed reserve from the first usable pair of samples. Dynamically
+    // changing this delay either moved the playback clock backwards or made
+    // the remote aircraft visibly accelerate and brake while refilling the
+    // buffer. 6.5 seconds also covers the occasional six-second HTTP gap.
+    double interpolationDelaySeconds = 6.5;
+    bool hasPlaybackSampleTime = false;
+    double playbackSampleTime = 0.0;
     std::string displayCallsign = "----";
     std::string displayAircraftIcao = "----";
     std::string displayDepartureAirport = "ZZZZ";
@@ -827,6 +1045,18 @@ struct NearbyPlayerEntry
     int opPermission = 0;
 };
 static std::vector<NearbyPlayerEntry> gNearbyPlayers;
+struct NearbyAtcEntry
+{
+    int userId = 0;
+    std::string callsign;
+    std::string frequency;
+    std::string stationCode;
+    std::string positionCode;
+    float distanceNm = 0.0f;
+    int opPermission = 0;
+    std::string controllerName;
+};
+static std::vector<NearbyAtcEntry> gNearbyAtcs;
 static int gFollowedTrafficUserId = 0;
 static double gFollowCameraDistance = 85.0;
 static double gFollowCameraElevation = 16.0;
@@ -853,6 +1083,7 @@ static const float gMinPositionUpdateFailureSeconds = 60.0f;
 
 static int gSelectedFlightRulesIndex = 0;
 static int gSelectedFlightTypeIndex = 2;
+static int gSelectedCommunicationModeIndex = 0;
 
 static XPLMMenuID gMenuId = nullptr;
 static int gLoginMenuItem = 0;
@@ -881,6 +1112,8 @@ static int gPlayersWindowDragOffsetX = 0;
 static int gPlayersWindowDragOffsetY = 0;
 static int gPlayersContextUserId = 0;
 static int gPlayersScrollOffset = 0;
+static int gAtcContextUserId = 0;
+static int gAtcScrollOffset = 0;
 static bool gWindowsChatMouseDown = false;
 static char gLastCompactKey = 0;
 static char gLastCompactVirtualKey = 0;
@@ -1022,11 +1255,27 @@ enum CustomFlightplanField
     CustomFlightplanFieldRoute,
     CustomFlightplanFieldCruisingLevel,
     CustomFlightplanFieldCruisingSpeed,
-    CustomFlightplanFieldRemarks
+    CustomFlightplanFieldRemarks,
+    CustomFlightplanFieldWebSearch
 };
 
 static CustomFlightplanField gCustomFlightplanFocusedField =
     CustomFlightplanFieldNone;
+
+struct WebFlightplanListItem
+{
+    int id;
+    std::string callsign;
+    std::string departure;
+    std::string arrival;
+};
+
+static std::vector<WebFlightplanListItem> gWebFlightplanList;
+static XPLMWindowID gWebFlightplanSelectorWindow = nullptr;
+static bool gWebFlightplanSelectorPoppedOut = false;
+static bool gWebFlightplanSelectorDragging = false;
+static int gWebFlightplanSelectorDragOffsetX = 0;
+static int gWebFlightplanSelectorDragOffsetY = 0;
 
 static XPWidgetID gFlightplanWindow = nullptr;
 static XPLMWindowID gCustomFlightplanWindow = nullptr;
@@ -1077,6 +1326,7 @@ static std::string gFlightplanRouteText = "";
 static std::string gFlightplanCruisingLevelText = "FL350";
 static std::string gFlightplanCruisingSpeedText = "";
 static std::string gFlightplanRemarksText = "";
+static std::string gWebFlightplanSearchText = "";
 static std::string gFlightplanStatusText = "";
 
 static XPWidgetID gFlightRulesLabel = nullptr;
@@ -1827,6 +2077,7 @@ void SetFlightplanStatus(
     const std::string& value
 );
 void SyncCustomFlightplanToWidgets();
+void ShowWebFlightplanSelectorWindow();
 void SetCustomLoginStatus(
     const std::string& value
 );
@@ -2358,6 +2609,8 @@ void LoadInternalEnglishLanguage()
     gText["button.logout"] = "Logout";
     gText["button.send"] = "Send";
     gText["button.send_flightplan"] = "Send Flightplan";
+    gText["button.load_web_flightplan"] = "Load web flightplan";
+    gText["label.web_flightplan_search"] = "Search web flightplan:";
     gText["button.paste_route"] = "Paste Route";
     gText["button.clear_route"] = "Clear Route";
     gText["button.set_frequency"] = "Set Frequency";
@@ -2474,6 +2727,9 @@ void LoadInternalEnglishLanguage()
     gText["option.flight_type.general_aviation"] = "General Aviation";
     gText["option.flight_type.military"] = "Military";
     gText["option.flight_type.other"] = "Other";
+    gText["option.communication.voice"] = "Voice";
+    gText["option.communication.receive_only"] = "Receive only / reply by text";
+    gText["option.communication.text_only"] = "Text only";
 
     gText["checkbox.close_after_send.off"] = "[ ] Close after send";
     gText["checkbox.close_after_send.on"] = "[X] Close after send";
@@ -2484,6 +2740,12 @@ void LoadInternalEnglishLanguage()
     gText["flightplan.error"] = "Flightplan error: ";
     gText["flightplan.saved_log"] = "Flight Radar Plugin: Flightplan saved.\n";
     gText["flightplan.failed_log"] = "Flight Radar Plugin: Flightplan could not be saved.\n";
+    gText["flightplan.web_loading"] = "Loading selected web flightplan...";
+    gText["flightplan.web_loaded"] = "Web flightplan loaded. Review it, then send it.";
+    gText["flightplan.web_missing"] = "No web flightplan selected.";
+    gText["flightplan.web_selector_title"] = "Select saved web flightplan";
+    gText["flightplan.web_choose"] = "Select a saved flightplan from the list.";
+    gText["flightplan.web_no_results"] = "No saved flightplans found.";
 
     gText["chat.award_unlocked"] = "Award unlocked";
     gText["award_first_flight"] = "First Flight";
@@ -2661,6 +2923,8 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "button.logout=Logout\n";
             enFile << "button.send=Send\n";
             enFile << "button.send_flightplan=Send Flightplan\n";
+            enFile << "button.load_web_flightplan=Load web flightplan\n";
+            enFile << "label.web_flightplan_search=Search web flightplan:\n";
             enFile << "button.paste_route=Paste Route\n";
             enFile << "button.clear_route=Clear Route\n";
             enFile << "button.set_frequency=Set Frequency\n";
@@ -2759,6 +3023,9 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "option.flight_type.general_aviation=General Aviation\n";
             enFile << "option.flight_type.military=Military\n";
             enFile << "option.flight_type.other=Other\n";
+            enFile << "option.communication.voice=Voice\n";
+            enFile << "option.communication.receive_only=Receive only / reply by text\n";
+            enFile << "option.communication.text_only=Text only\n";
             enFile << "checkbox.close_after_send.off=[ ] Close after send\n";
             enFile << "checkbox.close_after_send.on=[X] Close after send\n";
             enFile << "flightplan.ready=Flightplan ready.\n";
@@ -2767,6 +3034,12 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "flightplan.error=Flightplan error: \n";
             enFile << "flightplan.saved_log=Flight Radar Plugin: Flightplan saved.\\n\n";
             enFile << "flightplan.failed_log=Flight Radar Plugin: Flightplan could not be saved.\\n\n";
+            enFile << "flightplan.web_loading=Loading selected web flightplan...\n";
+            enFile << "flightplan.web_loaded=Web flightplan loaded. Review it, then send it.\n";
+            enFile << "flightplan.web_missing=No web flightplan selected.\n";
+            enFile << "flightplan.web_selector_title=Select saved web flightplan\n";
+            enFile << "flightplan.web_choose=Select a saved flightplan from the list.\n";
+            enFile << "flightplan.web_no_results=No saved flightplans found.\n";
             enFile << "chat.connected=Connected to VFN Network.\n";
             enFile << "chat.rank_status=Pilot Rank: {pilot} / ATC Rank: {atc}\n";
             enFile << "chat.ready=Ready for network operations.\n";
@@ -2836,6 +3109,8 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "button.logout=Logout\n";
             deFile << "button.send=Senden\n";
             deFile << "button.send_flightplan=Flugplan senden\n";
+            deFile << "button.load_web_flightplan=Web-Flugplan laden\n";
+            deFile << "label.web_flightplan_search=Web-Flugplan suchen:\n";
             deFile << "button.paste_route=Route einfuegen\n";
             deFile << "button.clear_route=Route leeren\n";
             deFile << "button.set_frequency=Frequenz setzen\n";
@@ -2934,6 +3209,9 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "option.flight_type.general_aviation=General Aviation\n";
             deFile << "option.flight_type.military=Militär\n";
             deFile << "option.flight_type.other=Sonstige\n";
+            deFile << "option.communication.voice=Voice\n";
+            deFile << "option.communication.receive_only=Nur empfangen / per Text antworten\n";
+            deFile << "option.communication.text_only=Nur Text\n";
             deFile << "checkbox.close_after_send.off=[ ] Nach Senden schließen\n";
             deFile << "checkbox.close_after_send.on=[X] Nach Senden schließen\n";
             deFile << "flightplan.ready=Flugplan bereit.\n";
@@ -2942,6 +3220,12 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "flightplan.error=Flugplan Fehler: \n";
             deFile << "flightplan.saved_log=Flight Radar Plugin: Flugplan gespeichert.\\n\n";
             deFile << "flightplan.failed_log=Flight Radar Plugin: Flugplan konnte nicht gespeichert werden.\\n\n";
+            deFile << "flightplan.web_loading=Ausgewählter Web-Flugplan wird geladen...\n";
+            deFile << "flightplan.web_loaded=Web-Flugplan geladen. Bitte prüfen und anschließend senden.\n";
+            deFile << "flightplan.web_missing=Kein Web-Flugplan ausgewählt.\n";
+            deFile << "flightplan.web_selector_title=Gespeicherten Web-Flugplan auswählen\n";
+            deFile << "flightplan.web_choose=Bitte einen gespeicherten Flugplan aus der Liste auswählen.\n";
+            deFile << "flightplan.web_no_results=Keine gespeicherten Flugpläne gefunden.\n";
             deFile << "chat.connected=Mit dem VFN Netzwerk verbunden.\n";
             deFile << "chat.rank_status=Pilotenrang: {pilot} / ATC-Rang: {atc}\n";
             deFile << "chat.ready=Bereit fuer den Netzwerkbetrieb.\n";
@@ -3133,18 +3417,14 @@ void LoadLanguage()
     std::string detectedLanguage =
         ReadXPlaneLanguage();
 
-    if (
-        detectedLanguage != "de" &&
-        detectedLanguage != "en"
-        )
+    if (!IsSupportedPluginLanguage(detectedLanguage))
     {
         detectedLanguage = "en";
     }
 
     gCurrentLanguage =
         (
-            gConfiguredLanguage == "de" ||
-            gConfiguredLanguage == "en"
+            IsSupportedPluginLanguage(gConfiguredLanguage)
         )
         ? gConfiguredLanguage
         : detectedLanguage;
@@ -3207,7 +3487,7 @@ void InitializePluginPaths()
         gPluginDirectory + "\\config.txt";
 
     gLanguageDirectory =
-        gPluginDirectory + "\\languages";
+        gPluginDirectory + "\\resources\\languages";
 
     XPLMDebugString(T("debug.plugin_path"));
     XPLMDebugString(gPluginDirectory.c_str());
@@ -3405,6 +3685,10 @@ std::string GetFlagImagePath(
 
     candidates.push_back(
         gPluginDirectory + "\\images\\flags\\" + code + ".png"
+    );
+
+    candidates.push_back(
+        gPluginDirectory + "\\resources\\images\\flags\\" + code + ".png"
     );
 
     candidates.push_back(
@@ -3628,15 +3912,12 @@ void DrawTextureImage(
 
 void LoadFlagTextures()
 {
-    LoadPngTexture(
-        GetFlagImagePath("de"),
-        gGermanFlagTexture
-    );
-
-    LoadPngTexture(
-        GetFlagImagePath("gb"),
-        gEnglishFlagTexture
-    );
+    for (int index = 0; index < gPluginLanguageCount; ++index)
+    {
+        TextureImage texture = { 0, 0, 0, false };
+        LoadPngTexture(GetFlagImagePath(gPluginLanguages[index].flag), texture);
+        gLanguageFlagTextures[gPluginLanguages[index].code] = texture;
+    }
 }
 
 
@@ -3727,10 +4008,7 @@ void LoadConfig()
         {
             gDebugEnabled = false;
         }
-        else if (
-            line == "language=de" ||
-            line == "language=en"
-        ) {
+        else if (line.rfind("language=", 0) == 0 && IsSupportedPluginLanguage(line.substr(9))) {
             gConfiguredLanguage =
                 line.substr(9);
         }
@@ -4325,8 +4603,7 @@ void SaveConfig()
     configFile << "debug=" << (gDebugEnabled ? "true" : "false") << "\n";
     configFile << "language="
         << (
-            gConfiguredLanguage == "de" ||
-            gConfiguredLanguage == "en"
+            IsSupportedPluginLanguage(gConfiguredLanguage)
             ? gConfiguredLanguage
             : "auto"
         )
@@ -4981,6 +5258,7 @@ void ProcessTrafficPollResult()
         ++item.second->missedPolls;
     }
     gNearbyPlayers.clear();
+    gNearbyAtcs.clear();
 
     std::istringstream responseStream(response);
     std::string line;
@@ -4995,6 +5273,26 @@ void ProcessTrafficPollResult()
 
         const std::vector<std::string> fields =
             SplitString(line, '\t');
+
+        if (fields.size() >= 9 && fields[0] == "ATCROW")
+        {
+            try
+            {
+                gNearbyAtcs.push_back({
+                    std::stoi(fields[1]), fields[2], fields[3], fields[4],
+                    fields[5], std::stof(fields[6]), std::stoi(fields[7]),
+                    fields[8]
+                });
+            }
+            catch (const std::exception&)
+            {
+            }
+            continue;
+        }
+        if (fields.size() >= 1 && fields[0] == "ATC")
+        {
+            continue;
+        }
 
         if (fields.size() < 12)
         {
@@ -5072,7 +5370,8 @@ void ProcessTrafficPollResult()
                 fields.size() > 25 ? fields[25] : fields[2],
                 fields.size() > 26 ? fields[26] : "ZZZZ",
                 fields.size() > 27 ? fields[27] : "ZZZZ",
-                fields.size() > 28 ? std::stof(fields[28]) : 0.0f
+                fields.size() > 28 ? std::stof(fields[28]) : 0.0f,
+                fields.size() > 38 ? fields[38] : ""
             );
         }
         catch (const std::exception& error)
@@ -5117,6 +5416,7 @@ void UpdateTrafficPolling(float elapsed)
     {
         gTrafficPollElapsed = 0.0f;
         gNearbyPlayers.clear();
+        gNearbyAtcs.clear();
         gFollowedTrafficUserId = 0;
         XPLMDontControlCamera();
         ClearMultiplayerTraffic();
@@ -6014,6 +6314,12 @@ std::string GetSelectedFlightTypeCode()
     }
 }
 
+std::string GetSelectedCommunicationModeCode()
+{
+    return gSelectedCommunicationModeIndex == 1 ? "RECEIVE_ONLY" :
+           gSelectedCommunicationModeIndex == 2 ? "TEXT_ONLY" : "VOICE";
+}
+
 
 std::string GetSelectedFlightRulesCaption()
 {
@@ -6059,6 +6365,15 @@ std::string GetSelectedFlightTypeCaption()
     default:
         return std::string(T("option.flight_type.general_aviation")) + "  v";
     }
+}
+
+std::string GetSelectedCommunicationModeCaption()
+{
+    if (gSelectedCommunicationModeIndex == 1)
+        return std::string(T("option.communication.receive_only")) + "  v";
+    if (gSelectedCommunicationModeIndex == 2)
+        return std::string(T("option.communication.text_only")) + "  v";
+    return std::string(T("option.communication.voice")) + "  v";
 }
 
 
@@ -6252,6 +6567,11 @@ void UpdateFlightplanWindowState()
                 gCustomFlightplanWindow,
                 0
             );
+        }
+
+        if (gWebFlightplanSelectorWindow != nullptr)
+        {
+            XPLMSetWindowIsVisible(gWebFlightplanSelectorWindow, 0);
         }
     }
 }
@@ -6749,8 +7069,10 @@ void ProcessPositionUpdateResult()
             gFlightplanServerRevision = flightplanRevision;
             std::string rules = ToUpperString(ExtractJsonStringValue(response, "flight_rules"));
             std::string type = ToUpperString(ExtractJsonStringValue(response, "flight_type"));
+            std::string communicationMode = ToUpperString(ExtractJsonStringValue(response, "communication_mode"));
             gSelectedFlightRulesIndex = rules == "V" || rules == "VFR" ? 1 : rules == "Y" ? 2 : rules == "Z" ? 3 : 0;
             gSelectedFlightTypeIndex = type == "S" ? 0 : type == "N" ? 1 : type == "M" ? 3 : type == "X" ? 4 : 2;
+            gSelectedCommunicationModeIndex = communicationMode == "RECEIVE_ONLY" ? 1 : communicationMode == "TEXT_ONLY" ? 2 : 0;
             gFlightplanDepartureTimeText = ExtractJsonStringValue(response, "departure_time");
             gFlightplanDepartureAirportText = ExtractJsonStringValue(response, "departure_airport");
             gFlightplanArrivalAirportText = ExtractJsonStringValue(response, "arrival_airport");
@@ -7665,7 +7987,8 @@ void SendPositionUpdate()
         "&aircraft_icao=" + UrlEncode(aircraftICAO) +
         "&latitude=" + UrlEncode(DoubleToString(latitude)) +
         "&longitude=" + UrlEncode(DoubleToString(longitude)) +
-        "&altitude=" + UrlEncode(FloatToString(altitude)) +
+        "&altitude=" + UrlEncode(FloatToString(altitude * 3.28083989501312f)) +
+        "&altitude_unit=ft" +
         "&heading=" + UrlEncode(FloatToString(heading)) +
         "&airspeed=" + UrlEncode(FloatToString(airspeed)) +
         "&pitch=" + UrlEncode(FloatToString(pitch)) +
@@ -7735,6 +8058,7 @@ void SendFlightplan()
 
     std::string flightType =
         GetSelectedFlightTypeCode();
+    std::string communicationMode = GetSelectedCommunicationModeCode();
 
     std::string departureTime =
         gFlightplanDepartureTimeText;
@@ -7786,6 +8110,7 @@ void SendFlightplan()
         "&callsign=" + UrlEncode(gCurrentCallsign) +
         "&flight_rules=" + UrlEncode(flightRules) +
         "&flight_type=" + UrlEncode(flightType) +
+        "&communication_mode=" + UrlEncode(communicationMode) +
         "&departure_time=" + UrlEncode(departureTime) +
         "&departure_airport=" + UrlEncode(departureAirport) +
         "&arrival_airport=" + UrlEncode(arrivalAirport) +
@@ -7881,6 +8206,99 @@ void SendFlightplan()
             T("flightplan.failed_log")
         );
     }
+}
+
+
+void ApplyWebFlightplanResponse(const std::string& response)
+{
+    std::string rules = ToUpperString(ExtractJsonStringValue(response, "flight_rules"));
+    std::string type = ToUpperString(ExtractJsonStringValue(response, "flight_type"));
+    std::string communicationMode = ToUpperString(ExtractJsonStringValue(response, "communication_mode"));
+    gSelectedFlightRulesIndex = rules == "V" || rules == "VFR" ? 1 : rules == "Y" ? 2 : rules == "Z" ? 3 : 0;
+    gSelectedFlightTypeIndex = type == "N" ? 1 : type == "G" ? 2 : type == "M" ? 3 : type == "X" ? 4 : 0;
+    gSelectedCommunicationModeIndex = communicationMode == "RECEIVE_ONLY" ? 1 : communicationMode == "TEXT_ONLY" ? 2 : 0;
+    gFlightplanDepartureTimeText = ExtractJsonStringValue(response, "departure_time");
+    gFlightplanDepartureAirportText = ExtractJsonStringValue(response, "departure_airport");
+    gFlightplanArrivalAirportText = ExtractJsonStringValue(response, "arrival_airport");
+    gFlightplanAlternate1AirportText = ExtractJsonStringValue(response, "alternate1_airport");
+    gFlightplanAlternate2AirportText = ExtractJsonStringValue(response, "alternate2_airport");
+    gFlightplanRouteText = ExtractJsonStringValue(response, "route_text");
+    gFlightplanCruisingLevelText = ExtractJsonStringValue(response, "cruising_level");
+    gFlightplanCruisingSpeedText = ExtractJsonStringValue(response, "cruising_speed");
+    gFlightplanRemarksText = ExtractJsonStringValue(response, "remarks");
+    UpdateFlightplanSelectionButtonCaptions();
+    SyncCustomFlightplanToWidgets();
+    SetFlightplanStatus(T("flightplan.web_loaded"));
+}
+
+
+void LoadSelectedWebFlightplan(int webFlightplanId = 0)
+{
+    if (!gLoggedIn || gAuthToken.empty())
+    {
+        SetFlightplanStatus(T("status.login_first"));
+        return;
+    }
+    if (gSpectatorMode)
+    {
+        SetFlightplanStatus("Spectator mode: flightplan disabled.");
+        return;
+    }
+
+    SetFlightplanStatus(T("flightplan.web_loading"));
+    std::string response = HttpPost(
+        gWebFlightplanUrl,
+        "token=" + UrlEncode(gAuthToken) +
+        "&search=" + UrlEncode(gWebFlightplanSearchText) +
+        (webFlightplanId > 0 ? "&id=" + std::to_string(webFlightplanId) : "")
+    );
+    if (!ResponseIsSuccess(response))
+    {
+        SetFlightplanStatus(T("flightplan.web_missing"));
+        return;
+    }
+
+    ApplyWebFlightplanResponse(response);
+    if (gWebFlightplanSelectorWindow != nullptr)
+    {
+        XPLMSetWindowIsVisible(gWebFlightplanSelectorWindow, 0);
+    }
+}
+
+
+void OpenWebFlightplanSelector()
+{
+    if (!gLoggedIn || gAuthToken.empty())
+    {
+        SetFlightplanStatus(T("status.login_first"));
+        return;
+    }
+    SetFlightplanStatus(T("flightplan.web_loading"));
+    std::string response = HttpPost(
+        gWebFlightplanUrl,
+        "token=" + UrlEncode(gAuthToken) + "&action=list&search=" + UrlEncode(gWebFlightplanSearchText)
+    );
+    if (!ResponseIsSuccess(response))
+    {
+        SetFlightplanStatus(T("flightplan.web_missing"));
+        return;
+    }
+    gWebFlightplanList.clear();
+    int planCount = ExtractJsonIntValue(response, "count", 0);
+    for (int index = 0; index < planCount; ++index)
+    {
+        std::string prefix = "plan_" + std::to_string(index) + "_";
+        int id = ExtractJsonIntValue(response, prefix + "id", 0);
+        if (id <= 0) continue;
+        gWebFlightplanList.push_back({
+            id,
+            ExtractJsonStringValue(response, prefix + "callsign"),
+            ExtractJsonStringValue(response, prefix + "departure"),
+            ExtractJsonStringValue(response, prefix + "arrival")
+        });
+    }
+    ShowWebFlightplanSelectorWindow();
+    SetFlightplanStatus(gWebFlightplanList.empty() ? T("flightplan.web_no_results") : T("flightplan.web_choose"));
 }
 
 
@@ -8078,7 +8496,11 @@ void ProcessNetworkStatusUpdateResult()
         pilotCount;
 
     gNetworkAtcOnline =
-        0;
+        ExtractJsonIntValue(
+            response,
+            "active_count",
+            0
+        );
 
     UpdateLoginNetworkLabels();
 }
@@ -8631,13 +9053,18 @@ CustomRect GetCustomFlightplanPopoutRect(int left, int top, int right)
 
 CustomRect GetCustomFlightplanRulesRect(int left, int top)
 {
-    return { left + 28, top - 92, left + 174, top - 122 };
+    return { left + 28, top - 92, left + 125, top - 122 };
 }
 
 
 CustomRect GetCustomFlightplanTypeRect(int left, int top)
 {
-    return { left + 198, top - 92, left + 360, top - 122 };
+    return { left + 130, top - 92, left + 245, top - 122 };
+}
+
+CustomRect GetCustomFlightplanCommunicationRect(int left, int top)
+{
+    return { left + 250, top - 92, left + 360, top - 122 };
 }
 
 
@@ -8713,9 +9140,23 @@ CustomRect GetCustomFlightplanCloseAfterSendRect(int left, int top)
 }
 
 
+CustomRect GetCustomFlightplanLoadWebRect(int left, int top, int right)
+{
+    int center = left + ((right - left) / 2);
+    return { center + 8, top - 508, right - 216, top - 540 };
+}
+
+
+CustomRect GetCustomFlightplanWebSearchRect(int left, int top, int right)
+{
+    int center = left + ((right - left) / 2);
+    return { left + 276, top - 508, center - 8, top - 540 };
+}
+
+
 CustomRect GetCustomFlightplanSendRect(int left, int top, int right)
 {
-    return { right - 260, top - 508, right - 28, top - 540 };
+    return { right - 200, top - 508, right - 28, top - 540 };
 }
 
 
@@ -8751,6 +9192,9 @@ std::string GetFlightplanFieldValue(
 
     case CustomFlightplanFieldRemarks:
         return gFlightplanRemarksText;
+
+    case CustomFlightplanFieldWebSearch:
+        return gWebFlightplanSearchText;
 
     default:
         return "";
@@ -8790,6 +9234,9 @@ std::string* GetFlightplanFieldPointer(
 
     case CustomFlightplanFieldRemarks:
         return &gFlightplanRemarksText;
+
+    case CustomFlightplanFieldWebSearch:
+        return &gWebFlightplanSearchText;
 
     default:
         return nullptr;
@@ -11279,10 +11726,15 @@ CustomRect GetSettingsLanguageOptionRect(
     CustomRect selectRect =
         GetSettingsLanguageSelectRect(left, top, right);
 
-    int optionTop =
-        selectRect.bottom - 4 - (index * 42);
+    const int rowsPerColumn = 9;
+    int column = index / rowsPerColumn;
+    int row = index % rowsPerColumn;
+    int gap = 4;
+    int columnWidth = (selectRect.right - selectRect.left - gap) / 2;
+    int optionLeft = selectRect.left + column * (columnWidth + gap);
+    int optionTop = selectRect.bottom - 4 - (row * 36);
 
-    return { selectRect.left, optionTop, selectRect.right, optionTop - 40 };
+    return { optionLeft, optionTop, optionLeft + columnWidth, optionTop - 34 };
 }
 
 
@@ -11331,6 +11783,14 @@ void DrawSettingsFlagBadge(
 
     int flagBottom =
         flag.top < flag.bottom ? flag.top : flag.bottom;
+
+    const auto texture = gLanguageFlagTextures.find(normalizedCode);
+    if (texture != gLanguageFlagTextures.end() && texture->second.loaded)
+    {
+        DrawTextureImage(texture->second, flag);
+        DrawRectOutline(flag, 0.85f, 0.90f, 0.95f, 0.75f);
+        return;
+    }
 
     if (normalizedCode == "de")
     {
@@ -11545,9 +12005,9 @@ std::string GetLanguageLabel(
     const std::string& code
 )
 {
-    return code == "de"
-        ? T("settings.language_de")
-        : T("settings.language_en");
+    for (int index = 0; index < gPluginLanguageCount; ++index)
+        if (code == gPluginLanguages[index].code) return gPluginLanguages[index].label;
+    return "English";
 }
 
 
@@ -11581,19 +12041,15 @@ void DrawSettingsLanguageSelect(
         return;
     }
 
-    DrawSettingsLanguageOption(
-        GetSettingsLanguageOptionRect(left, top, right, 0),
-        "de",
-        T("settings.language_de"),
-        gCurrentLanguage == "de"
-    );
-
-    DrawSettingsLanguageOption(
-        GetSettingsLanguageOptionRect(left, top, right, 1),
-        "en",
-        T("settings.language_en"),
-        gCurrentLanguage == "en"
-    );
+    for (int index = 0; index < gPluginLanguageCount; ++index)
+    {
+        DrawSettingsLanguageOption(
+            GetSettingsLanguageOptionRect(left, top, right, index),
+            gPluginLanguages[index].code,
+            gPluginLanguages[index].label,
+            gCurrentLanguage == gPluginLanguages[index].code
+        );
+    }
 }
 
 
@@ -11768,10 +12224,7 @@ void ApplyPluginLanguageSelection(
     const std::string& languageCode
 )
 {
-    if (
-        languageCode != "de" &&
-        languageCode != "en"
-    ) {
+    if (!IsSupportedPluginLanguage(languageCode)) {
         return;
     }
 
@@ -12640,30 +13093,17 @@ int SettingsHandleMouse(
             return 1;
         }
 
-        if (
-            gSettingsLanguageDropdownOpen &&
-            PointInWindowRect(x, y, GetSettingsLanguageOptionRect(left, top, right, 0), left, top, bottom)
-        )
+        if (gSettingsLanguageDropdownOpen)
         {
-            ApplyPluginLanguageSelection(
-                "de"
-            );
-
-            gSettingsLanguageDropdownOpen = false;
-            return 1;
-        }
-
-        if (
-            gSettingsLanguageDropdownOpen &&
-            PointInWindowRect(x, y, GetSettingsLanguageOptionRect(left, top, right, 1), left, top, bottom)
-        )
-        {
-            ApplyPluginLanguageSelection(
-                "en"
-            );
-
-            gSettingsLanguageDropdownOpen = false;
-            return 1;
+            for (int index = 0; index < gPluginLanguageCount; ++index)
+            {
+                if (PointInWindowRect(x, y, GetSettingsLanguageOptionRect(left, top, right, index), left, top, bottom))
+                {
+                    ApplyPluginLanguageSelection(gPluginLanguages[index].code);
+                    gSettingsLanguageDropdownOpen = false;
+                    return 1;
+                }
+            }
         }
 
         gSettingsLanguageDropdownOpen = false;
@@ -12865,6 +13305,24 @@ CustomRect GetAtcListRect(
     return { left + 18, top - 118, right - 18, bottom + 18 };
 }
 
+void PreparePlayerChatCommand(const std::string& command);
+
+const NearbyAtcEntry* FindNearbyAtc(int userId)
+{
+    for (const auto& atc : gNearbyAtcs)
+    {
+        if (atc.userId == userId) return &atc;
+    }
+    return nullptr;
+}
+
+int AtcAtWindowRow(int y, int top)
+{
+    const int firstRowTop = top - 126;
+    if (y > firstRowTop || y < firstRowTop - 36 * 4) return -1;
+    return gAtcScrollOffset + (firstRowTop - y) / 36;
+}
+
 
 void DrawAtcWindow(
     XPLMWindowID inWindowID,
@@ -13020,14 +13478,62 @@ void DrawAtcWindow(
         0.84f
     );
 
-    DrawText(
-        listRect.left + 18,
-        listRect.top - 32,
-        T("atc.empty"),
-        0.62f,
-        0.70f,
-        0.80f
-    );
+    if (gNearbyAtcs.empty())
+    {
+        DrawText(listRect.left + 18, listRect.top - 32,
+                 T("atc.empty"), 0.62f, 0.70f, 0.80f);
+    }
+    const int visibleRows = 4;
+    const int maximumOffset = (std::max)(
+        0, static_cast<int>(gNearbyAtcs.size()) - visibleRows);
+    gAtcScrollOffset = std::clamp(gAtcScrollOffset, 0, maximumOffset);
+    for (int visible = 0; visible < visibleRows; ++visible)
+    {
+        const int index = gAtcScrollOffset + visible;
+        if (index >= static_cast<int>(gNearbyAtcs.size())) break;
+        const auto& atc = gNearbyAtcs[index];
+        const int rowTop = top - 126 - visible * 36;
+        if (visible % 2 != 0)
+        {
+            DrawFilledRect({listRect.left + 2, rowTop,
+                            listRect.right - 2, rowTop - 35},
+                           0.025f, 0.075f, 0.105f, 0.8f);
+        }
+        DrawText(listRect.left + 10, rowTop - 16,
+                 TruncateForField(atc.callsign, 22),
+                 0.25f, 0.82f, 1.0f);
+        DrawText(listRect.left + 10, rowTop - 31,
+                 atc.frequency + " MHz",
+                 0.65f, 0.78f, 0.88f);
+        std::ostringstream distance;
+        distance << std::fixed << std::setprecision(1)
+                 << atc.distanceNm << " NM";
+        DrawText(listRect.right - 72, rowTop - 16,
+                 distance.str(), 0.70f, 0.82f, 0.90f);
+    }
+
+    const NearbyAtcEntry* context = FindNearbyAtc(gAtcContextUserId);
+    if (context != nullptr)
+    {
+        const int menuLeft = right - 176;
+        const bool mayModerate = gCurrentOpPermission >= 1
+            && context->opPermission < gCurrentOpPermission;
+        const int entries = mayModerate ? 4 : 1;
+        const int menuTop = top - 72;
+        const int menuBottom = menuTop - entries * 28;
+        DrawFilledRect({menuLeft, menuTop, right - 12, menuBottom},
+                       0.025f, 0.055f, 0.080f, 1.0f);
+        DrawRectOutline({menuLeft, menuTop, right - 12, menuBottom},
+                        0.12f, 0.50f, 0.88f, 1.0f);
+        const char* actions[4] = {
+            "players.message", "players.warn", "players.kick", "players.ban"
+        };
+        for (int index = 0; index < entries; ++index)
+        {
+            DrawText(menuLeft + 10, menuTop - 19 - index * 28,
+                     T(actions[index]), 0.86f, 0.92f, 1.0f);
+        }
+    }
 }
 
 
@@ -13051,6 +13557,10 @@ int AtcHandleMouseWheel(
     void* inRefcon
 )
 {
+    const int maximumOffset = (std::max)(
+        0, static_cast<int>(gNearbyAtcs.size()) - 4);
+    gAtcScrollOffset = std::clamp(
+        gAtcScrollOffset - clicks, 0, maximumOffset);
     return 1;
 }
 
@@ -13086,6 +13596,33 @@ int AtcHandleMouse(
             );
 
             return 1;
+        }
+
+        const NearbyAtcEntry* context = FindNearbyAtc(gAtcContextUserId);
+        if (context != nullptr)
+        {
+            const bool mayModerate = gCurrentOpPermission >= 1
+                && context->opPermission < gCurrentOpPermission;
+            const int entries = mayModerate ? 4 : 1;
+            const int menuLeft = right - 176;
+            const int menuTop = top - 72;
+            if (x >= menuLeft && x <= right - 12
+                && y <= menuTop && y >= menuTop - entries * 28)
+            {
+                const int action = (menuTop - y) / 28;
+                const std::string callsign = context->callsign;
+                gAtcContextUserId = 0;
+                if (action == 0) PreparePlayerChatCommand(
+                    "/msg " + callsign + " : ");
+                else if (action == 1) PreparePlayerChatCommand(
+                    "/warn " + callsign + " ");
+                else if (action == 2) PreparePlayerChatCommand(
+                    "/kick " + callsign + " ");
+                else if (action == 3) PreparePlayerChatCommand(
+                    "/ban " + callsign + " 1h ");
+                return 1;
+            }
+            gAtcContextUserId = 0;
         }
 
         if (y >= top - 38)
@@ -13129,6 +13666,20 @@ int AtcHandleMouse(
     return 1;
 }
 
+int AtcHandleRightClick(XPLMWindowID window, int, int y,
+                        XPLMMouseStatus status, void*)
+{
+    if (status != xplm_MouseDown) return 1;
+    int left, top, right, bottom;
+    XPLMGetWindowGeometry(window, &left, &top, &right, &bottom);
+    const int row = AtcAtWindowRow(y, top);
+    if (row >= 0 && row < static_cast<int>(gNearbyAtcs.size()))
+    {
+        gAtcContextUserId = gNearbyAtcs[row].userId;
+    }
+    return 1;
+}
+
 
 void CreateAtcWindow()
 {
@@ -13153,7 +13704,7 @@ void CreateAtcWindow()
         xplm_WindowDecorationRoundRectangle;
     params.layer =
         xplm_WindowLayerFloatingWindows;
-    params.handleRightClickFunc = AtcHandleMouse;
+    params.handleRightClickFunc = AtcHandleRightClick;
 
     gAtcWindow =
         XPLMCreateWindowEx(
@@ -18138,6 +18689,12 @@ void DrawCustomFlightplanWindow(
         false
     );
 
+    DrawCustomLoginButton(
+        GetCustomFlightplanCommunicationRect(left, top),
+        GetSelectedCommunicationModeCaption(),
+        false
+    );
+
     DrawCustomFlightplanInput(
         GetCustomFlightplanDepartureTimeRect(left, top),
         T("label.departure_time"),
@@ -18226,6 +18783,20 @@ void DrawCustomFlightplanWindow(
         false
     );
 
+    DrawCustomFlightplanInput(
+        GetCustomFlightplanWebSearchRect(left, top, right),
+        T("label.web_flightplan_search"),
+        CustomFlightplanFieldWebSearch,
+        24,
+        true
+    );
+
+    DrawCustomLoginButton(
+        GetCustomFlightplanLoadWebRect(left, top, right),
+        T("button.load_web_flightplan"),
+        false
+    );
+
     DrawCustomLoginButton(
         GetCustomFlightplanSendRect(left, top, right),
         T("button.send_flightplan"),
@@ -18245,6 +18816,206 @@ void DrawCustomFlightplanWindow(
             0.95f,
             0.45f
         );
+    }
+
+}
+
+
+CustomRect GetWebFlightplanSelectorPopoutRect(int left, int top, int right)
+{
+    return { right - 92, top - 38, right - 50, top - 4 };
+}
+
+
+CustomRect GetWebFlightplanSelectorCloseRect(int left, int top, int right)
+{
+    return { right - 46, top - 38, right - 4, top - 4 };
+}
+
+
+CustomRect GetWebFlightplanSelectorItemRect(int left, int top, int right, int index)
+{
+    int rowTop = top - 64 - (index * 42);
+    return { left + 18, rowTop, right - 18, rowTop - 34 };
+}
+
+
+void DrawWebFlightplanSelectorWindow(XPLMWindowID inWindowID, void* inRefcon)
+{
+    int left;
+    int top;
+    int right;
+    int bottom;
+    XPLMGetWindowGeometry(inWindowID, &left, &top, &right, &bottom);
+
+    gWebFlightplanSelectorPoppedOut = XPLMWindowIsPoppedOut(inWindowID) != 0;
+    XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0);
+
+    CustomRect windowRect = { left, top, right, bottom };
+    DrawFilledRect(windowRect, 0.055f, 0.063f, 0.071f, 1.00f);
+    DrawRectOutline(windowRect, 0.12f, 0.42f, 0.66f, 1.00f);
+    DrawFilledRect({ left + 2, top - 42, right - 2, top - 2 }, 0.015f, 0.055f, 0.080f, 1.00f);
+    DrawRectOutline({ left + 2, top - 42, right - 2, top - 2 }, 0.10f, 0.42f, 0.68f, 1.00f);
+
+    DrawText(left + 18, top - 27, T("flightplan.web_selector_title"), 0.90f, 0.96f, 1.00f);
+    DrawCustomLoginButton(
+        GetWebFlightplanSelectorPopoutRect(left, top, right),
+        gWebFlightplanSelectorPoppedOut ? "DOCK" : "POP",
+        false
+    );
+    DrawCustomLoginButton(
+        GetWebFlightplanSelectorCloseRect(left, top, right),
+        "X",
+        false
+    );
+
+    if (gWebFlightplanList.empty())
+    {
+        DrawText(left + 18, top - 82, T("flightplan.web_no_results"), 0.65f, 0.76f, 0.84f);
+        return;
+    }
+
+    int availableRows = (std::max)(1, (top - bottom - 76) / 42);
+    int visibleCount = static_cast<int>(std::min<size_t>(gWebFlightplanList.size(), availableRows));
+    for (int index = 0; index < visibleCount; ++index)
+    {
+        const WebFlightplanListItem& item = gWebFlightplanList[index];
+        CustomRect row = GetWebFlightplanSelectorItemRect(left, top, right, index);
+        DrawFilledRect(row, 0.075f, 0.090f, 0.105f, 1.00f);
+        DrawRectOutline(row, 0.12f, 0.42f, 0.66f, 0.95f);
+        std::string caption = "#" + std::to_string(item.id) + "  " + item.callsign + "  " + item.departure + " > " + item.arrival;
+        DrawText(row.left + 10, row.bottom + 11, TruncateForWidthFromStart(caption, row.right - row.left - 20), 0.88f, 0.95f, 1.00f);
+    }
+}
+
+
+void ToggleWebFlightplanSelectorPopout()
+{
+    if (gWebFlightplanSelectorWindow == nullptr) return;
+
+    if (XPLMWindowIsPoppedOut(gWebFlightplanSelectorWindow))
+    {
+        XPLMSetWindowPositioningMode(gWebFlightplanSelectorWindow, xplm_WindowPositionFree, -1);
+        XPLMSetWindowGeometry(gWebFlightplanSelectorWindow, 610, 760, 1190, 350);
+        gWebFlightplanSelectorPoppedOut = false;
+        return;
+    }
+
+    XPLMSetWindowPositioningMode(gWebFlightplanSelectorWindow, xplm_WindowPopOut, -1);
+    XPLMSetWindowResizingLimits(gWebFlightplanSelectorWindow, 520, 300, 900, 700);
+    gWebFlightplanSelectorPoppedOut = true;
+}
+
+
+int WebFlightplanSelectorHandleMouse(
+    XPLMWindowID inWindowID,
+    int x,
+    int y,
+    XPLMMouseStatus inMouse,
+    void* inRefcon
+)
+{
+    int left;
+    int top;
+    int right;
+    int bottom;
+    XPLMGetWindowGeometry(inWindowID, &left, &top, &right, &bottom);
+
+    if (inMouse == xplm_MouseDown)
+    {
+        if (PointInRect(x, y, GetWebFlightplanSelectorCloseRect(left, top, right)))
+        {
+            XPLMSetWindowIsVisible(inWindowID, 0);
+            return 1;
+        }
+        if (PointInRect(x, y, GetWebFlightplanSelectorPopoutRect(left, top, right)))
+        {
+            ToggleWebFlightplanSelectorPopout();
+            return 1;
+        }
+
+        int availableRows = (std::max)(1, (top - bottom - 76) / 42);
+        int visibleCount = static_cast<int>(std::min<size_t>(gWebFlightplanList.size(), availableRows));
+        for (int index = 0; index < visibleCount; ++index)
+        {
+            if (PointInRect(x, y, GetWebFlightplanSelectorItemRect(left, top, right, index)))
+            {
+                LoadSelectedWebFlightplan(gWebFlightplanList[index].id);
+                return 1;
+            }
+        }
+
+        if (!XPLMWindowIsPoppedOut(inWindowID) && y >= top - 42)
+        {
+            gWebFlightplanSelectorDragging = true;
+            gWebFlightplanSelectorDragOffsetX = x - left;
+            gWebFlightplanSelectorDragOffsetY = top - y;
+        }
+        return 1;
+    }
+
+    if (inMouse == xplm_MouseDrag && gWebFlightplanSelectorDragging)
+    {
+        int width = right - left;
+        int height = top - bottom;
+        int newLeft = x - gWebFlightplanSelectorDragOffsetX;
+        int newTop = y + gWebFlightplanSelectorDragOffsetY;
+        XPLMSetWindowGeometry(inWindowID, newLeft, newTop, newLeft + width, newTop - height);
+        return 1;
+    }
+
+    if (inMouse == xplm_MouseUp)
+    {
+        gWebFlightplanSelectorDragging = false;
+    }
+    return 1;
+}
+
+
+int WebFlightplanSelectorHandleCursor(XPLMWindowID, int, int, void*)
+{
+    return xplm_CursorDefault;
+}
+
+
+int WebFlightplanSelectorHandleMouseWheel(XPLMWindowID, int, int, int, int, void*)
+{
+    return 0;
+}
+
+
+void ShowWebFlightplanSelectorWindow()
+{
+    if (gWebFlightplanSelectorWindow == nullptr)
+    {
+        XPLMCreateWindow_t params = {};
+        params.structSize = sizeof(params);
+        params.left = 610;
+        params.top = 760;
+        params.right = 1190;
+        params.bottom = 350;
+        params.visible = 0;
+        params.drawWindowFunc = DrawWebFlightplanSelectorWindow;
+        params.handleMouseClickFunc = WebFlightplanSelectorHandleMouse;
+        params.handleKeyFunc = nullptr;
+        params.handleCursorFunc = WebFlightplanSelectorHandleCursor;
+        params.handleMouseWheelFunc = WebFlightplanSelectorHandleMouseWheel;
+        params.refcon = nullptr;
+        params.decorateAsFloatingWindow = xplm_WindowDecorationRoundRectangle;
+        params.layer = xplm_WindowLayerFloatingWindows;
+        params.handleRightClickFunc = WebFlightplanSelectorHandleMouse;
+        gWebFlightplanSelectorWindow = XPLMCreateWindowEx(&params);
+        if (gWebFlightplanSelectorWindow != nullptr)
+        {
+            XPLMSetWindowTitle(gWebFlightplanSelectorWindow, T("flightplan.web_selector_title"));
+            XPLMSetWindowResizingLimits(gWebFlightplanSelectorWindow, 520, 300, 900, 700);
+        }
+    }
+
+    if (gWebFlightplanSelectorWindow != nullptr)
+    {
+        XPLMSetWindowIsVisible(gWebFlightplanSelectorWindow, 1);
+        XPLMBringWindowToFront(gWebFlightplanSelectorWindow);
     }
 }
 
@@ -18532,6 +19303,12 @@ int CustomFlightplanHandleMouse(
             return 1;
         }
 
+        if (PointInWindowRect(x, y, GetCustomFlightplanCommunicationRect(left, top), left, top, bottom))
+        {
+            gSelectedCommunicationModeIndex = (gSelectedCommunicationModeIndex + 1) % 3;
+            return 1;
+        }
+
         if (PointInWindowRect(x, y, GetCustomFlightplanDepartureTimeRect(left, top), left, top, bottom))
         {
             FocusCustomFlightplanField(inWindowID, CustomFlightplanFieldDepartureTime);
@@ -18622,6 +19399,18 @@ int CustomFlightplanHandleMouse(
                 !gCloseFlightplanAfterSend;
 
             UpdateCloseAfterSendButtonCaption();
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCustomFlightplanWebSearchRect(left, top, right), left, top, bottom))
+        {
+            FocusCustomFlightplanField(inWindowID, CustomFlightplanFieldWebSearch);
+            return 1;
+        }
+
+        if (PointInWindowRect(x, y, GetCustomFlightplanLoadWebRect(left, top, right), left, top, bottom))
+        {
+            OpenWebFlightplanSelector();
             return 1;
         }
 
@@ -20479,6 +21268,12 @@ PLUGIN_API void XPluginStop(void)
         gCustomFlightplanWindow = nullptr;
     }
 
+    if (gWebFlightplanSelectorWindow != nullptr)
+    {
+        XPLMDestroyWindow(gWebFlightplanSelectorWindow);
+        gWebFlightplanSelectorWindow = nullptr;
+    }
+
     if (gCustomLoginWindow != nullptr)
     {
         XPLMDestroyWindow(
@@ -20576,8 +21371,8 @@ PLUGIN_API void XPluginStop(void)
         gLoginWindow = nullptr;
     }
 
-    DestroyTexture(gGermanFlagTexture);
-    DestroyTexture(gEnglishFlagTexture);
+    for (auto& entry : gLanguageFlagTextures) DestroyTexture(entry.second);
+    gLanguageFlagTextures.clear();
 
     if (gGdiplusToken != 0)
     {

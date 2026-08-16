@@ -682,21 +682,16 @@ if ($statusMessage !== '') {
     {
         try
         {
-            const responses = await Promise.all([
-                fetch('<?php echo htmlspecialchars($apiStatusUrl); ?>&time=' + Date.now()),
-                fetch('execute/get_atc_positions.php?time=' + Date.now())
-            ]);
-
-            const data = await responses[0].json();
-            const atcData = await responses[1].json();
+            const response = await fetch('<?php echo htmlspecialchars($apiStatusUrl); ?>&time=' + Date.now());
+            const data = await response.json();
 
             if (data.success)
             {
                 document.getElementById('activePilots').innerText =
-                    data.count;
+                    Number(data.pilots?.count || 0);
 
                 document.getElementById('activeAtc').innerText =
-                    atcData.success ? Number(atcData.count || 0) : '0';
+                    Number(data.atcs?.count || 0);
 
                 document.getElementById('apiStatus').innerText =
                     '<?php echo htmlspecialchars(t('status_online')); ?>';

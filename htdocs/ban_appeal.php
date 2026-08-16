@@ -6,17 +6,17 @@ require_once 'execute/config.php';
 require_once 'includes/auth_security.php';
 require_once 'includes/ban_status.php';
 require_once 'includes/language_preferences.php';
+require_once 'includes/language.php';
 
-$language = strtolower((string)(
+$language = vfnNormalizeLanguage(strtolower((string)(
     $_GET['lang']
     ?? $_POST['lang']
     ?? $_COOKIE[VFN_LANGUAGE_COOKIE]
     ?? $_SESSION['language']
     ?? 'de'
-)) === 'en' ? 'en' : 'de';
+))) ?: 'en';
 $_SESSION['language'] = $language;
 vfnStoreLanguageCookie($language);
-$de = $language === 'de';
 $message = '';
 $isError = false;
 
@@ -38,9 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         || mb_strlen($reason) > 2000
     ) {
         $isError = true;
-        $message = $de
-            ? 'Bitte alle Felder vollständig ausfüllen. Der Grund muss mindestens 10 Zeichen enthalten.'
-            : 'Please complete all fields. The reason must contain at least 10 characters.';
+        $message = t('appeal_invalid_form');
     } else {
         try {
             $pdo = new PDO(
@@ -102,22 +100,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             $pdo->commit();
             authRateClear($pdo, 'ban_appeal_identifier', $identifier);
-            $message = $de
-                ? 'Dein Entbannungsantrag wurde an das Moderationsteam gesendet.'
-                : 'Your ban appeal was sent to the moderation team.';
+            $message = t('appeal_sent');
         } catch (Throwable $e) {
             if (isset($pdo) && $pdo->inTransaction()) {
                 $pdo->rollBack();
             }
             $isError = true;
             $messages = [
-                'rate_limited' => $de ? 'Zu viele Anfragen. Bitte versuche es später erneut.' : 'Too many requests. Please try again later.',
-                'invalid_credentials' => $de ? 'Benutzername/E-Mail oder Passwort ist falsch.' : 'Username/email or password is incorrect.',
-                'not_banned' => $de ? 'Dieses Konto ist derzeit nicht gebannt.' : 'This account is not currently banned.',
-                'already_pending' => $de ? 'Für dieses Konto liegt bereits ein offener Antrag vor.' : 'This account already has a pending appeal.'
+                'rate_limited' => t('appeal_rate_limited'),
+                'invalid_credentials' => t('appeal_invalid_credentials'),
+                'not_banned' => t('appeal_not_banned'),
+                'already_pending' => t('appeal_already_pending')
             ];
             $message = $messages[$e->getMessage()]
-                ?? ($de ? 'Der Antrag konnte nicht gesendet werden.' : 'The appeal could not be sent.');
+                ?? t('appeal_failed');
         }
     }
 }
@@ -127,7 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title><?php echo $de ? 'Entbannungsantrag' : 'Ban appeal'; ?> – VFN</title>
+    <title><?php echo htmlspecialchars(t('appeal_title')); ?> – VFN</title>
     <style>
         body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:Arial,sans-serif;color:#d7e8ff;background:linear-gradient(135deg,#07101d,#071822 50%,#041016)}
         .appeal-card{box-sizing:border-box;width:min(560px,calc(100% - 32px));padding:28px;border:1px solid #285475;border-radius:10px;background:#0b1824;box-shadow:0 20px 70px #0008}
@@ -141,36 +137,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
 <main class="appeal-card">
-    <h1><?php echo $de ? 'Entbannungsantrag' : 'Ban appeal'; ?></h1>
-    <p class="hint"><?php echo $de
-        ? 'Melde dich zur Bestätigung mit deinen Kontodaten an und erläutere deinen Antrag.'
-        : 'Confirm your identity with your account credentials and explain your appeal.'; ?></p>
+    <h1><?php echo htmlspecialchars(t('appeal_title')); ?></h1>
+    <p class="hint"><?php echo htmlspecialchars(t('appeal_help')); ?></p>
     <?php if ($message !== ''): ?>
         <div class="message <?php echo $isError ? 'error' : ''; ?>"><?php echo htmlspecialchars($message); ?></div>
     <?php endif; ?>
     <form method="post" action="ban_appeal.php" id="banAppealForm" novalidate>
         <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['ban_appeal_csrf']); ?>">
         <input type="hidden" name="lang" value="<?php echo htmlspecialchars($language); ?>">
-        <label><?php echo $de ? 'Benutzername oder E-Mail' : 'Username or email'; ?></label>
+        <label><?php echo htmlspecialchars(t('recovery_identifier')); ?></label>
         <input name="identifier" value="<?php echo htmlspecialchars((string)($_POST['identifier'] ?? '')); ?>"
                autocomplete="username">
-        <label><?php echo $de ? 'Passwort' : 'Password'; ?></label>
+        <label><?php echo htmlspecialchars(t('login_password')); ?></label>
         <input type="password" name="password" autocomplete="current-password">
-        <label><?php echo $de ? 'Begründung des Antrags' : 'Reason for appeal'; ?></label>
+        <label><?php echo htmlspecialchars(t('appeal_reason')); ?></label>
         <textarea name="reason" maxlength="2000"><?php
             echo htmlspecialchars((string)($_POST['reason'] ?? ''));
         ?></textarea>
-        <button type="submit" id="banAppealSubmit"><?php echo $de ? 'Antrag absenden' : 'Submit appeal'; ?></button>
+        <button type="submit" id="banAppealSubmit"><?php echo htmlspecialchars(t('appeal_submit')); ?></button>
         <p id="banAppealProgress" class="hint" aria-live="polite"></p>
     </form>
-    <p><a href="index.php?lang=<?php echo urlencode($language); ?>"><?php echo $de ? 'Zurück zur Startseite' : 'Back to home'; ?></a></p>
+    <p><a href="index.php?lang=<?php echo urlencode($language); ?>"><?php echo htmlspecialchars(t('recovery_back_home')); ?></a></p>
 </main>
 <script>
 document.getElementById('banAppealForm').addEventListener('submit', function() {
     const button = document.getElementById('banAppealSubmit');
     button.disabled = true;
     document.getElementById('banAppealProgress').textContent =
-        <?php echo json_encode($de ? 'Antrag wird gesendet …' : 'Submitting appeal …'); ?>;
+        <?php echo json_encode(t('appeal_submitting'), JSON_UNESCAPED_UNICODE); ?>;
 });
 </script>
 </body>

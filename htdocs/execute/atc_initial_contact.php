@@ -9,6 +9,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/../includes/web_session.php';
 require_once __DIR__ . '/../includes/atc_schema.php';
 require_once __DIR__ . '/../includes/chat_system.php';
+require_once __DIR__ . '/../includes/plugin_messages.php';
 
 function contactReply(bool $success, string $message, int $status = 200): void
 {
@@ -30,7 +31,7 @@ try {
     if (!$languageColumn) {
         $pdo->exec(
             "ALTER TABLE user_sessions
-             ADD COLUMN plugin_language VARCHAR(2) NOT NULL DEFAULT 'en'"
+             ADD COLUMN plugin_language VARCHAR(10) NOT NULL DEFAULT 'en'"
         );
     }
     $stmt = $pdo->prepare(
@@ -46,7 +47,7 @@ try {
     $callsign = strtoupper(trim((string)($_POST['callsign'] ?? '')));
     $frequency = normalizeChatFrequency((string)($_POST['frequency'] ?? $atc['frequency'] ?? ''));
     $action = strtolower(trim((string)($_POST['action'] ?? 'initial-contact')));
-    if ($callsign === '' || ($frequency === null && !in_array($action, ['assume', 'assumed', 'unassume', 'un-assume'], true))) {
+    if ($callsign === '' || ($frequency === null && !in_array($action, ['assume', 'assumed', 'unassume', 'un-assume', 'handoff', 'handoff-accept', 'handoff-reject'], true))) {
         contactReply(false, 'invalid_data', 422);
     }
     $pilotStmt = $pdo->prepare(
@@ -62,9 +63,7 @@ try {
     if (!$pilot) contactReply(false, 'pilot_not_online', 404);
 
     $atcCallsign = strtoupper((string)$atc['callsign']);
-    $language = strtolower((string)($pilot['plugin_language'] ?? 'en')) === 'de'
-        ? 'de'
-        : 'en';
+    $language = strtolower((string)($pilot['plugin_language'] ?? 'en'));
     if (in_array($action, ['assume', 'assumed'], true)) {
         $ownerStatement=$pdo->prepare("SELECT atc_session_id,atc_callsign FROM atc_assumed_aircraft WHERE pilot_session_token=:pilot_token LIMIT 1");
         $ownerStatement->execute(['pilot_token'=>(string)$pilot['session_token']]);
@@ -89,16 +88,92 @@ try {
         $unassume->execute(['pilot_token'=>(string)$pilot['session_token'],'atc_session_id'=>(int)$atc['id']]);
         contactReply(true, 'aircraft_unassumed');
     }
+    if ($action === 'handoff') {
+        $targetCallsign = strtoupper(trim((string)($_POST['target_callsign'] ?? '')));
+        if ($targetCallsign === '' || $targetCallsign === $atcCallsign) {
+            contactReply(false, 'invalid_handoff_target', 422);
+        }
+        $ownerStatement = $pdo->prepare(
+            "SELECT atc_session_id FROM atc_assumed_aircraft
+             WHERE pilot_session_token=:pilot_token LIMIT 1"
+        );
+        $ownerStatement->execute(['pilot_token'=>(string)$pilot['session_token']]);
+        if ((int)$ownerStatement->fetchColumn() !== (int)$atc['id']) {
+            contactReply(false, 'aircraft_not_assumed_by_you', 409);
+        }
+        $targetStatement = $pdo->prepare(
+            "SELECT id,user_id,callsign FROM atc_sessions
+             WHERE UPPER(callsign)=:callsign AND is_active=1 AND is_spectator=0
+               AND can_control=1 AND last_seen_at>=DATE_SUB(NOW(),INTERVAL 30 SECOND)
+             LIMIT 1"
+        );
+        $targetStatement->execute(['callsign'=>$targetCallsign]);
+        $target = $targetStatement->fetch(PDO::FETCH_ASSOC);
+        if (!$target) contactReply(false, 'handoff_target_not_available', 404);
+        $pdo->prepare(
+            "UPDATE atc_handoff_requests SET status='cancelled',responded_at=NOW()
+             WHERE pilot_session_token=:pilot_token AND status='pending'"
+        )->execute(['pilot_token'=>(string)$pilot['session_token']]);
+        $handoff = $pdo->prepare(
+            "INSERT INTO atc_handoff_requests
+                (pilot_session_token,pilot_callsign,source_session_id,source_callsign,
+                 target_session_id,target_callsign,status)
+             VALUES (:pilot_token,:pilot_callsign,:source_id,:source_callsign,
+                     :target_id,:target_callsign,'pending')"
+        );
+        $handoff->execute([
+            'pilot_token'=>(string)$pilot['session_token'], 'pilot_callsign'=>$callsign,
+            'source_id'=>(int)$atc['id'], 'source_callsign'=>$atcCallsign,
+            'target_id'=>(int)$target['id'], 'target_callsign'=>(string)$target['callsign'],
+        ]);
+        contactReply(true, 'handoff_requested_to_' . (string)$target['callsign']);
+    }
+    if (in_array($action, ['handoff-accept', 'handoff-reject'], true)) {
+        $requestId = max(0, (int)($_POST['request_id'] ?? 0));
+        if ($requestId < 1) contactReply(false, 'invalid_handoff_request', 422);
+        $pdo->beginTransaction();
+        $requestStmt = $pdo->prepare(
+            "SELECT * FROM atc_handoff_requests
+             WHERE id=:id AND target_session_id=:target_id AND status='pending'
+             FOR UPDATE"
+        );
+        $requestStmt->execute(['id'=>$requestId,'target_id'=>(int)$atc['id']]);
+        $request = $requestStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$request) {
+            $pdo->rollBack();
+            contactReply(false, 'handoff_request_not_available', 409);
+        }
+        $accepted = $action === 'handoff-accept';
+        if ($accepted) {
+            $handoff = $pdo->prepare(
+                "UPDATE atc_assumed_aircraft
+                 SET atc_session_id=:target_id,atc_user_id=:target_user_id,
+                     atc_callsign=:target_callsign,updated_at=NOW()
+                 WHERE pilot_session_token=:pilot_token AND atc_session_id=:source_id"
+            );
+            $handoff->execute([
+                'target_id'=>(int)$atc['id'],'target_user_id'=>(int)$atc['user_id'],
+                'target_callsign'=>$atcCallsign,'pilot_token'=>(string)$request['pilot_session_token'],
+                'source_id'=>(int)$request['source_session_id'],
+            ]);
+            if ($handoff->rowCount() !== 1) {
+                $pdo->rollBack();
+                contactReply(false, 'handoff_conflict', 409);
+            }
+        }
+        $update = $pdo->prepare(
+            "UPDATE atc_handoff_requests SET status=:status,responded_at=NOW() WHERE id=:id"
+        );
+        $update->execute(['status'=>$accepted?'accepted':'rejected','id'=>$requestId]);
+        $pdo->commit();
+        contactReply(true, $accepted ? 'handoff_accepted' : 'handoff_rejected');
+    }
     if (in_array($action, ['release', 'leave-airspace'], true)) {
         $release=$pdo->prepare("DELETE FROM atc_assumed_aircraft WHERE pilot_session_token=:pilot_token AND atc_session_id=:atc_session_id");
         $release->execute(['pilot_token'=>(string)$pilot['session_token'],'atc_session_id'=>(int)$atc['id']]);
-        $text=$language==='de'
-            ? '⚠ RELEASE: Du verlässt meinen Luftraum. Wechsle auf UNICOM 122.800 MHz.'
-            : '⚠ RELEASE: You are leaving my airspace. Switch to UNICOM on 122.800 MHz.';
+        $text=vfnPluginContactMessage($language, 'release', '122.800', $atcCallsign);
     } else {
-        $text=$language==='de'
-            ? '⚠ FORCE ACT: Bitte wechsle auf '.$frequency.' MHz und melde dich bei '.$atcCallsign.'.'
-            : '⚠ FORCE ACT: Switch to '.$frequency.' MHz and contact '.$atcCallsign.'.';
+        $text=vfnPluginContactMessage($language, 'initial-contact', (string)$frequency, $atcCallsign);
     }
     insertChatMessage($pdo, null, (int)$pilot['user_id'], (int)$atc['user_id'],
         $atcCallsign, 'atc_contact', $text);

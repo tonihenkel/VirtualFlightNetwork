@@ -11,6 +11,7 @@ require_once __DIR__ . '/../includes/web_session.php';
 require_once __DIR__ . '/../includes/atc_schema.php';
 require_once __DIR__ . '/../includes/chat_system.php';
 require_once __DIR__ . '/../includes/activity_log.php';
+require_once __DIR__ . '/../includes/network_target.php';
 
 function atcChatModerationExpiry(string $duration): array
 {
@@ -81,8 +82,7 @@ try {
             }
             if (preg_match('/^\/msg\s+([A-Z0-9_-]+)\s*:?\s+(.+)$/i',$message,$m)) {
                 $target=strtoupper(trim($m[1])); $private=trim($m[2]);
-                $stmt=$pdo->prepare('SELECT user_id,callsign FROM user_sessions WHERE UPPER(callsign)=:callsign AND is_active=1 ORDER BY last_seen DESC LIMIT 1');
-                $stmt->execute(['callsign'=>$target]); $recipient=$stmt->fetch(PDO::FETCH_ASSOC);
+                $recipient=findOnlineNetworkTarget($pdo,$target);
                 if (!$recipient) $commandReply('Ziel nicht online.',false);
                 insertChatMessage($pdo,null,(int)$recipient['user_id'],$senderUserId,$senderCallsign,'system','[PM] '.$private);
                 $commandReply('An '.strtoupper((string)$recipient['callsign']).': '.$private);
@@ -108,17 +108,13 @@ try {
             }
             if (preg_match('/^\/kick\s+([A-Z0-9_-]+)(?:\s+(.+))?$/i',$message,$m)) {
                 if ($opPermission < 1) $commandReply('Keine Berechtigung.',false);
-                $stmt=$pdo->prepare('SELECT s.user_id,s.token,s.callsign,u.op_permission FROM user_sessions s JOIN users u ON u.id=s.user_id WHERE UPPER(s.callsign)=:v AND s.is_active=1 ORDER BY s.last_seen DESC LIMIT 1');
-                $stmt->execute(['v'=>strtoupper($m[1])]);$target=$stmt->fetch(PDO::FETCH_ASSOC);
+                $target=findOnlineNetworkTarget($pdo,(string)$m[1]);
                 if(!$target)$commandReply('Ziel nicht online.',false);
                 if((int)$target['user_id']===$senderUserId||(int)$target['op_permission'] >= $opPermission)$commandReply('Moderation dieses Spielers nicht erlaubt.',false);
                 $reason=trim((string)($m[2]??'')) ?: 'Kein Grund angegeben.';
                 insertChatMessage($pdo,null,(int)$target['user_id'],$senderUserId,'ADMIN','system','Du wurdest aus dem Netzwerk gekickt. Grund: '.$reason);
                 logActivity($pdo,(int)$target['user_id'],'system','activity_kicked','Grund: '.$reason,$senderUserId);
-                $pdo->prepare('UPDATE user_sessions SET is_active=0,last_seen=NOW() WHERE token=:token')->execute(['token'=>$target['token']]);
-                $pdo->prepare("UPDATE pilot_flights SET status='aborted',completed_at=NOW() WHERE session_token=:token AND status='active'")->execute(['token'=>$target['token']]);
-                $pdo->prepare('DELETE FROM pilot_positions WHERE session_token=:token')->execute(['token'=>$target['token']]);
-                $pdo->prepare('DELETE FROM pilot_tracks WHERE session_token=:token')->execute(['token'=>$target['token']]);
+                disconnectNetworkUser($pdo,(int)$target['user_id']);
                 $commandReply(strtoupper((string)$target['callsign']).' wurde gekickt. Grund: '.$reason);
             }
             if (preg_match('/^\/(warn|ban)\s+([A-Z0-9_-]+)\s+(?:(permanent|\d+(?:min|h|d|w|mo|y))\s+)?(.+)$/i',$message,$m)) {
@@ -127,8 +123,7 @@ try {
                 if($duration===''&&$action==='warn')$duration='permanent';
                 if($duration===''||$reason==='')$commandReply('Grund oder Dauer fehlt.',false);
                 try{[$expires,$durationLabel]=atcChatModerationExpiry($duration);}catch(InvalidArgumentException $e){$commandReply('Ungültige Dauer.',false);}
-                $stmt=$pdo->prepare('SELECT s.user_id,s.callsign,u.op_permission FROM user_sessions s JOIN users u ON u.id=s.user_id WHERE UPPER(s.callsign)=:v AND s.is_active=1 ORDER BY s.last_seen DESC LIMIT 1');
-                $stmt->execute(['v'=>strtoupper($m[2])]);$target=$stmt->fetch(PDO::FETCH_ASSOC);
+                $target=findOnlineNetworkTarget($pdo,(string)$m[2]);
                 if(!$target)$commandReply('Ziel nicht online.',false);
                 if((int)$target['user_id']===$senderUserId||(int)$target['op_permission'] >= $opPermission)$commandReply('Moderation dieses Spielers nicht erlaubt.',false);
                 if($action==='warn'){
@@ -138,9 +133,7 @@ try {
                 }else{
                     $pdo->prepare('UPDATE users SET is_banned=1,ban_reason=:reason,ban_expires_at=:expires,banned_at=NOW(),banned_by_user_id=:actor WHERE id=:uid')->execute(['reason'=>$reason,'expires'=>$expires,'actor'=>$senderUserId,'uid'=>$target['user_id']]);
                     logActivity($pdo,(int)$target['user_id'],'ban','activity_banned',$reason.' ['.$durationLabel.']',$senderUserId);
-                    $pdo->prepare('UPDATE user_sessions SET is_active=0,last_seen=NOW() WHERE user_id=:uid AND is_active=1')->execute(['uid'=>$target['user_id']]);
-                    $pdo->prepare("UPDATE pilot_flights SET status='aborted',completed_at=NOW() WHERE user_id=:uid AND status='active'")->execute(['uid'=>$target['user_id']]);
-                    $pdo->prepare('DELETE FROM pilot_positions WHERE user_id=:uid')->execute(['uid'=>$target['user_id']]);
+                    disconnectNetworkUser($pdo,(int)$target['user_id']);
                 }
                 $commandReply(strtoupper((string)$target['callsign']).($action==='warn'?' wurde verwarnt.':' wurde gebannt.'));
             }
@@ -234,11 +227,19 @@ try {
         "SELECT id, frequency, sender_callsign AS sender, message_type AS type,
                 message_text AS text, DATE_FORMAT(created_at,'%H:%i') AS time
          FROM chat_messages
-         WHERE id>:since_id AND id<=:max_id AND frequency=:frequency
-           AND recipient_user_id IS NULL
+         WHERE id>:since_id AND id<=:max_id
+           AND (
+                (frequency=:frequency AND recipient_user_id IS NULL)
+                OR recipient_user_id=:recipient_user_id
+           )
          ORDER BY id ASC LIMIT 100"
     );
-    $messageStmt->execute(['since_id'=>$sinceId, 'max_id'=>$maxId, 'frequency'=>$frequency]);
+    $messageStmt->execute([
+        'since_id'=>$sinceId,
+        'max_id'=>$maxId,
+        'frequency'=>$frequency,
+        'recipient_user_id'=>(int)$session['user_id'],
+    ]);
     echo json_encode([
         'success'=>true,
         'last_id'=>$maxId,

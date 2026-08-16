@@ -215,7 +215,7 @@ function divisionStatistics(PDO $pdo, string $code): array
         'flight_hours_total' => number_format(((int)($totals['total_seconds'] ?? 0)) / 3600, 1, '.', ''),
         'flight_nm_total' => number_format((float)($totals['total_nm'] ?? 0), 1, '.', ''),
         'landings_total' => (int)($totals['total_landings'] ?? 0),
-        'top_pilot_name' => (string)($top['real_name'] ?: ($top['username'] ?? '-')),
+        'top_pilot_name' => (string)(($top['real_name'] ?? '') ?: ($top['username'] ?? '-')),
         'top_pilot_hours' => number_format(((int)($top['total_flight_seconds'] ?? 0)) / 3600, 1, '.', ''),
         'top_pilot_id' => (int)($top['id'] ?? 0)
     ];

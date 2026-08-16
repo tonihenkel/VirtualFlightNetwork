@@ -5,6 +5,7 @@ startVfnWebSession();
 
 require_once 'execute/config.php';
 require_once 'includes/language_preferences.php';
+require_once 'includes/language.php';
 
 $language = strtolower(trim(
     $_GET['lang']
@@ -13,10 +14,9 @@ $language = strtolower(trim(
     ?? $_SESSION['language']
     ?? 'de'
 ));
-$language = $language === 'en' ? 'en' : 'de';
+$language = vfnNormalizeLanguage($language) ?: 'en';
 $_SESSION['language'] = $language;
 vfnStoreLanguageCookie($language);
-$isGerman = $language === 'de';
 $token = trim((string)($_GET['token'] ?? $_POST['token'] ?? ''));
 $message = '';
 $success = false;
@@ -58,19 +58,13 @@ try {
         $passwordRepeat = (string)($_POST['password_repeat'] ?? '');
 
         if (!hash_equals((string)$_SESSION['password_change_csrf'], $csrf)) {
-            $message = $isGerman ? 'Ungültige Anfrage.' : 'Invalid request.';
+            $message = t('recovery_invalid_request');
         } elseif (!$reset) {
-            $message = $isGerman
-                ? 'Der Link ist ungültig oder abgelaufen.'
-                : 'This link is invalid or has expired.';
+            $message = t('recovery_invalid_link');
         } elseif (strlen($password) < 8) {
-            $message = $isGerman
-                ? 'Das Passwort muss mindestens 8 Zeichen lang sein.'
-                : 'The password must be at least 8 characters long.';
+            $message = t('recovery_password_short');
         } elseif ($password !== $passwordRepeat) {
-            $message = $isGerman
-                ? 'Die Passwörter stimmen nicht überein.'
-                : 'The passwords do not match.';
+            $message = t('recovery_password_mismatch');
         } else {
             $pdo->beginTransaction();
             $pdo->prepare(
@@ -91,15 +85,11 @@ try {
             )->execute(['user_id' => $reset['user_id']]);
             $pdo->commit();
             $success = true;
-            $message = $isGerman
-                ? 'Dein Passwort wurde geändert. Du kannst dich jetzt wieder anmelden.'
-                : 'Your password has been changed. You can now sign in again.';
+            $message = t('recovery_password_changed');
             unset($_SESSION['password_change_csrf']);
         }
     } elseif (!$reset) {
-        $message = $isGerman
-            ? 'Der Link ist ungültig oder abgelaufen.'
-            : 'This link is invalid or has expired.';
+        $message = t('recovery_invalid_link');
     }
 } catch (Throwable $error) {
     if (isset($pdo) && $pdo->inTransaction()) {
@@ -107,7 +97,7 @@ try {
     }
     error_log('Password reset failed: ' . $error->getMessage());
     $reset = null;
-    $message = $isGerman ? 'Serverfehler.' : 'Server error.';
+    $message = t('recovery_server_error');
 }
 
 ?>
@@ -116,7 +106,7 @@ try {
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title><?php echo $isGerman ? 'Neues Passwort' : 'New password'; ?> – VFN</title>
+    <title><?php echo htmlspecialchars(t('recovery_new_password_title')); ?> – VFN</title>
     <style>
         *{box-sizing:border-box} body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px;
         font-family:Arial,sans-serif;color:#eaf4ff;background:radial-gradient(circle at top,#12335a,#07111f 50%,#02050a)}
@@ -131,21 +121,21 @@ try {
 <body>
 <main class="card">
     <div class="brand">VFN NETWORK</div>
-    <h1><?php echo $isGerman ? 'Neues Passwort' : 'Choose a new password'; ?></h1>
+    <h1><?php echo htmlspecialchars(t('recovery_new_password_heading')); ?></h1>
     <?php if ($message !== ''): ?><div class="message"><?php echo htmlspecialchars($message); ?></div><?php endif; ?>
     <?php if (!$success && !empty($reset)): ?>
         <form method="post">
             <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['password_change_csrf']); ?>">
             <input type="hidden" name="token" value="<?php echo htmlspecialchars($token); ?>">
             <input type="hidden" name="lang" value="<?php echo htmlspecialchars($language); ?>">
-            <label for="password"><?php echo $isGerman ? 'Neues Passwort' : 'New password'; ?></label>
+            <label for="password"><?php echo htmlspecialchars(t('recovery_new_password_title')); ?></label>
             <input id="password" type="password" name="password" minlength="8" autocomplete="new-password" required>
-            <label for="password_repeat"><?php echo $isGerman ? 'Passwort wiederholen' : 'Repeat password'; ?></label>
+            <label for="password_repeat"><?php echo htmlspecialchars(t('recovery_repeat_password')); ?></label>
             <input id="password_repeat" type="password" name="password_repeat" minlength="8" autocomplete="new-password" required>
-            <button type="submit"><?php echo $isGerman ? 'Passwort speichern' : 'Save password'; ?></button>
+            <button type="submit"><?php echo htmlspecialchars(t('recovery_save_password')); ?></button>
         </form>
     <?php endif; ?>
-    <p><a href="/"><?php echo $isGerman ? 'Zurück zur Startseite' : 'Back to home'; ?></a></p>
+    <p><a href="/"><?php echo htmlspecialchars(t('recovery_back_home')); ?></a></p>
 </main>
 </body>
 </html>

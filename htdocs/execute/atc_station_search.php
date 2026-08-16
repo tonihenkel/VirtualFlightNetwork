@@ -24,13 +24,23 @@ try {
         throw new RuntimeException('login_required');
     }
     $userStmt = $pdo->prepare(
-        "SELECT rating_atc, rating_special, division_code
+        "SELECT rating_atc, rating_special, division_code, op_permission
          FROM users WHERE id = :id LIMIT 1"
     );
     $userStmt->execute(['id' => (int)$_SESSION['web_user_id']]);
     $user = $userStmt->fetch(PDO::FETCH_ASSOC) ?: [];
-    $spectator = (string)($_GET['spectator'] ?? '0') === '1';
-    if (!$spectator && !canUseAtcClient(
+    ensureDivisionManagementSchema($pdo);
+    $trainer = (string)($_GET['trainer'] ?? '0') === '1';
+    $spectator = !$trainer && (string)($_GET['spectator'] ?? '0') === '1';
+    $observer = $spectator || $trainer;
+    $trainerRole = $pdo->prepare("SELECT 1 FROM division_staff WHERE user_id=:user_id AND is_active=1 LIMIT 1");
+    $trainerRole->execute(['user_id'=>(int)$_SESSION['web_user_id']]);
+    $isDivisionTrainer = (bool)$trainerRole->fetchColumn();
+    if ($trainer && (int)($user['op_permission'] ?? 0) < 1 && !$isDivisionTrainer) {
+        http_response_code(403);
+        throw new RuntimeException('atc_trainer_denied');
+    }
+    if (!$observer && !canUseAtcClient(
         (int)($user['rating_atc'] ?? 0),
         (int)($user['rating_special'] ?? 0)
     )) {
@@ -40,14 +50,15 @@ try {
 
     $rating = (int)($user['rating_atc'] ?? 0);
     $specialRating = (int)($user['rating_special'] ?? 0);
-    $globalStationAccess = $spectator || $specialRating > 0;
+    $globalStationAccess = $spectator || $specialRating > 0
+        || ($trainer && (int)($user['op_permission'] ?? 0) >= 1);
     $divisionCode = strtoupper(trim((string)($user['division_code'] ?? '')));
-    $gcaDivisions = ($spectator || $rating < 5) ? [] : getApprovedGcaDivisions($pdo, (int)$_SESSION['web_user_id']);
+    $gcaDivisions = ($observer || $rating < 5) ? [] : getApprovedGcaDivisions($pdo, (int)$_SESSION['web_user_id']);
     $searchAllCountries = $globalStationAccess || !empty($gcaDivisions);
     $permissions = getAtcPositionPermissions($rating, $specialRating);
     $gcaEffectiveRating = getGcaEffectiveAtcRating($rating);
     $gcaAllowedPositions = getGcaAllowedAtcPositions($rating);
-    if ($spectator) {
+    if ($observer) {
         foreach ($permissions as &$permission) $permission['allowed'] = true;
         unset($permission);
     }
@@ -124,7 +135,7 @@ try {
         if (!$globalStationAccess && $airportDivision !== $divisionCode && !in_array($airportDivision, $gcaDivisions, true)) continue;
         $airportPermissions = (!$globalStationAccess && $airportDivision !== $divisionCode)
             ? getAtcPositionPermissions($gcaEffectiveRating, 0) : $permissions;
-        $eligiblePositions = $spectator
+        $eligiblePositions = $observer
             ? getSpectatorAirportPositions($airport, $classification)
             : $classification['positions'];
         if (!$globalStationAccess && $airportDivision !== $divisionCode) {
@@ -154,7 +165,7 @@ try {
 
     $sourcePath = dirname(__DIR__) . '/data/atc/VATSpy.dat';
     $divisionPrefixes = getDivisionAtcPrefixes($divisionCode);
-    $canUseRadar = $spectator
+    $canUseRadar = $observer
         || canOccupyAtcPosition($rating, 'CTR', $specialRating);
     if (!$canUseRadar && $gcaDivisions) $canUseRadar = in_array('CTR', $gcaAllowedPositions, true);
     $seenRadarPositions = [];

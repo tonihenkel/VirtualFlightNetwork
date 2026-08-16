@@ -5,6 +5,8 @@ require_once 'config.php';
 require_once '../includes/chat_system.php';
 require_once '../includes/activity_log.php';
 require_once '../includes/chat_spam_protection.php';
+require_once '../includes/atc_schema.php';
+require_once '../includes/network_target.php';
 
 function pluginModerationExpiry(string $duration): array
 {
@@ -395,23 +397,8 @@ try {
             exit;
         }
 
-        $targetStmt = $pdo->prepare(
-            "SELECT
-                s.user_id,
-                s.callsign
-             FROM user_sessions s
-             WHERE UPPER(s.callsign) = :callsign
-               AND s.is_active = 1
-             ORDER BY s.last_seen DESC
-             LIMIT 1"
-        );
-
-        $targetStmt->execute([
-            'callsign' => $targetCallsign
-        ]);
-
-        $targetSession =
-            $targetStmt->fetch(PDO::FETCH_ASSOC);
+        ensureAtcSchema($pdo);
+        $targetSession=findOnlineNetworkTarget($pdo,$targetCallsign);
 
         if (!$targetSession) {
             insertUserChatSystemMessage(
@@ -552,15 +539,8 @@ try {
             echo json_encode(['success' => false, 'message' => 'Ungueltige Dauer.']);
             exit;
         }
-        $targetStmt = $pdo->prepare(
-            "SELECT s.user_id, s.callsign, u.op_permission
-             FROM user_sessions s
-             INNER JOIN users u ON u.id = s.user_id
-             WHERE UPPER(s.callsign) = :callsign AND s.is_active = 1
-             ORDER BY s.last_seen DESC LIMIT 1"
-        );
-        $targetStmt->execute(['callsign' => $targetCallsign]);
-        $target = $targetStmt->fetch(PDO::FETCH_ASSOC);
+        ensureAtcSchema($pdo);
+        $target=findOnlineNetworkTarget($pdo,$targetCallsign);
         if (!$target) {
             echo json_encode(['success' => false, 'message' => 'Ziel nicht online.']);
             exit;
@@ -601,16 +581,7 @@ try {
             ]);
             logActivity($pdo, $targetUserId, 'ban', 'activity_banned',
                 $reason . ' [' . $durationLabel . ']', $senderUserId);
-            $pdo->prepare(
-                "UPDATE user_sessions SET is_active = 0, last_seen = NOW()
-                 WHERE user_id = :user_id AND is_active = 1"
-            )->execute(['user_id' => $targetUserId]);
-            $pdo->prepare(
-                "UPDATE pilot_flights SET status = 'aborted', completed_at = NOW()
-                 WHERE user_id = :user_id AND status = 'active'"
-            )->execute(['user_id' => $targetUserId]);
-            $pdo->prepare("DELETE FROM pilot_positions WHERE user_id = :user_id")
-                ->execute(['user_id' => $targetUserId]);
+            disconnectNetworkUser($pdo,$targetUserId);
         }
         insertUserChatSystemMessage(
             $pdo, $senderUserId, 'system',
@@ -651,26 +622,8 @@ try {
         $kickReason =
             mb_substr($kickReason, 0, 160);
 
-        $targetStmt = $pdo->prepare(
-            "SELECT
-                s.user_id,
-                s.token,
-                s.callsign,
-                u.op_permission
-             FROM user_sessions s
-             INNER JOIN users u ON u.id = s.user_id
-             WHERE UPPER(s.callsign) = :callsign
-               AND s.is_active = 1
-             ORDER BY s.last_seen DESC
-             LIMIT 1"
-        );
-
-        $targetStmt->execute([
-            'callsign' => $targetCallsign
-        ]);
-
-        $targetSession =
-            $targetStmt->fetch(PDO::FETCH_ASSOC);
+        ensureAtcSchema($pdo);
+        $targetSession=findOnlineNetworkTarget($pdo,$targetCallsign);
 
         if (!$targetSession) {
             insertUserChatSystemMessage(
@@ -710,9 +663,6 @@ try {
             exit;
         }
 
-        $kickToken =
-            (string)$targetSession['token'];
-
         $targetUserId =
             (int)$targetSession['user_id'];
 
@@ -741,34 +691,7 @@ try {
             $senderUserId
         );
 
-        $pdo->prepare(
-            "UPDATE user_sessions
-             SET is_active = 0, last_seen = NOW()
-             WHERE token = :token
-             LIMIT 1"
-        )->execute([
-            'token' => $kickToken
-        ]);
-
-        $pdo->prepare(
-            "UPDATE pilot_flights
-             SET status = 'aborted', completed_at = NOW()
-             WHERE session_token = :token AND status = 'active'"
-        )->execute(['token' => $kickToken]);
-
-        $pdo->prepare(
-            "DELETE FROM pilot_positions
-             WHERE session_token = :token"
-        )->execute([
-            'token' => $kickToken
-        ]);
-
-        $pdo->prepare(
-            "DELETE FROM pilot_tracks
-             WHERE session_token = :token"
-        )->execute([
-            'token' => $kickToken
-        ]);
+        disconnectNetworkUser($pdo,$targetUserId);
 
         insertChatMessage(
             $pdo,

@@ -3,6 +3,7 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: public, max-age=60');
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/../includes/atc_schema.php';
 
 $period = (int)($_GET['days'] ?? 30);
 if (!in_array($period, [1, 7, 30, 90, 365], true)) {
@@ -25,6 +26,10 @@ $aircraftSort = (string)($_GET['aircraft_sort'] ?? 'flights');
 $aircraftSortColumns = ['flights'=>'flights','distance'=>'distance_nm','hours'=>'duration_seconds','airports'=>'airports'];
 if (!isset($aircraftSortColumns[$aircraftSort])) $aircraftSort = 'flights';
 $aircraftOrderColumn = $aircraftSortColumns[$aircraftSort];
+$atcSort = (string)($_GET['atc_sort'] ?? 'hours');
+$atcSortColumns = ['hours' => 'duration_seconds', 'sessions' => 'sessions', 'average' => 'average_duration_seconds'];
+if (!isset($atcSortColumns[$atcSort])) $atcSort = 'hours';
+$atcOrderColumn = $atcSortColumns[$atcSort];
 
 try {
     $pdo = new PDO(
@@ -33,6 +38,40 @@ try {
         $dbPass,
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
     );
+    ensureAtcSchema($pdo);
+
+    $atcWhere = $userId > 0 ? 'user_id=:atc_user_id AND ' : '';
+    $atcParams = $userId > 0 ? ['atc_user_id'=>$userId] : [];
+    $atcSummaryStmt = $pdo->prepare(
+        "SELECT COUNT(*) sessions,COUNT(DISTINCT user_id) controllers,
+                COUNT(DISTINCT callsign) positions,COUNT(DISTINCT station_code) stations,
+                COALESCE(SUM(duration_seconds),0) duration_seconds,
+                COALESCE(AVG(duration_seconds),0) average_duration_seconds
+         FROM atc_session_history WHERE {$atcWhere}disconnected_at>=DATE_SUB(NOW(),INTERVAL $period DAY)"
+    );
+    $atcSummaryStmt->execute($atcParams);
+    $atcSummary = $atcSummaryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $atcPositionStmt = $pdo->prepare(
+        "SELECT callsign,station_code,position_code,COUNT(*) sessions,
+                COALESCE(SUM(duration_seconds),0) duration_seconds,
+                COALESCE(AVG(duration_seconds),0) average_duration_seconds
+         FROM atc_session_history WHERE {$atcWhere}disconnected_at>=DATE_SUB(NOW(),INTERVAL $period DAY)
+         GROUP BY callsign,station_code,position_code ORDER BY $atcOrderColumn DESC,duration_seconds DESC,sessions DESC,callsign LIMIT 10"
+    );
+    $atcPositionStmt->execute($atcParams);
+    $topAtcPositions = $atcPositionStmt->fetchAll(PDO::FETCH_ASSOC);
+    $topControllers = [];
+    if ($userId === 0) {
+        $topControllers = $pdo->query(
+            "SELECT h.user_id,u.username,u.real_name,u.country_code,COUNT(*) sessions,
+                    COALESCE(SUM(h.duration_seconds),0) duration_seconds,
+                    COALESCE(AVG(h.duration_seconds),0) average_duration_seconds
+             FROM atc_session_history h JOIN users u ON u.id=h.user_id
+             WHERE h.disconnected_at>=DATE_SUB(NOW(),INTERVAL $period DAY)
+             GROUP BY h.user_id,u.username,u.real_name,u.country_code
+             ORDER BY $atcOrderColumn DESC,duration_seconds DESC,sessions DESC,u.username LIMIT 10"
+        )->fetchAll(PDO::FETCH_ASSOC);
+    }
 
     if ($userId > 0) {
         $userStmt=$pdo->prepare('SELECT id,username,real_name,country_code FROM users WHERE id=:id AND is_active=1 LIMIT 1');
@@ -46,7 +85,7 @@ try {
         $airportStmt->execute(['u1'=>$userId,'u2'=>$userId]);$personalAirports=$airportStmt->fetchAll(PDO::FETCH_ASSOC);
         $countryStmt=$pdo->prepare("SELECT COALESCE(UPPER(NULLIF(a.iso_country,'')),'--') code,COUNT(*) movements,COUNT(DISTINCT m.code) airports FROM (SELECT departure_airport code FROM pilot_flights WHERE user_id=:u1 AND status='completed' AND completed_at>=DATE_SUB(NOW(),INTERVAL $period DAY) UNION ALL SELECT arrival_airport code FROM pilot_flights WHERE user_id=:u2 AND status='completed' AND completed_at>=DATE_SUB(NOW(),INTERVAL $period DAY))m LEFT JOIN airports a ON a.ident=m.code OR a.icao_code=m.code OR a.gps_code=m.code WHERE m.code IS NOT NULL AND m.code<>'' AND m.code<>'ZZZZ' GROUP BY COALESCE(UPPER(NULLIF(a.iso_country,'')),'--') ORDER BY movements DESC,airports DESC,code LIMIT 10");
         $countryStmt->execute(['u1'=>$userId,'u2'=>$userId]);$personalCountries=$countryStmt->fetchAll(PDO::FETCH_ASSOC);
-        echo json_encode(['success'=>true,'mode'=>'player','user'=>['id'=>(int)$selectedUser['id'],'username'=>$selectedUser['username'],'real_name'=>$selectedUser['real_name'],'country_code'=>$selectedUser['country_code']],'period_days'=>$period,'summary'=>['flights'=>(int)$personalSummary['flights'],'pilots'=>1,'distance_nm'=>round((float)$personalSummary['distance_nm'],1),'duration_seconds'=>(int)$personalSummary['duration_seconds']],'top_aircraft'=>$personalAircraft,'top_airports'=>$personalAirports,'top_movement_countries'=>$personalCountries,'top_pilot_countries'=>[],'top_pilots'=>[],'aircraft_sort'=>$aircraftSort,'heatmap'=>[]],JSON_UNESCAPED_UNICODE); exit;
+        echo json_encode(['success'=>true,'mode'=>'player','user'=>['id'=>(int)$selectedUser['id'],'username'=>$selectedUser['username'],'real_name'=>$selectedUser['real_name'],'country_code'=>$selectedUser['country_code']],'period_days'=>$period,'summary'=>['flights'=>(int)$personalSummary['flights'],'pilots'=>1,'distance_nm'=>round((float)$personalSummary['distance_nm'],1),'duration_seconds'=>(int)$personalSummary['duration_seconds']],'atc_summary'=>$atcSummary,'top_atc_positions'=>$topAtcPositions,'top_controllers'=>[],'top_aircraft'=>$personalAircraft,'top_airports'=>$personalAirports,'top_movement_countries'=>$personalCountries,'top_pilot_countries'=>[],'top_pilots'=>[],'aircraft_sort'=>$aircraftSort,'heatmap'=>[]],JSON_UNESCAPED_UNICODE); exit;
     }
 
     $aircraftStmt = $pdo->query(
@@ -243,6 +282,10 @@ try {
         'top_movement_countries' => $movementCountries,
         'pilot_sort' => $pilotSort,
         'top_pilots' => $topPilots,
+        'atc_summary' => $atcSummary,
+        'top_atc_positions' => $topAtcPositions,
+        'top_controllers' => $topControllers,
+        'atc_sort' => $atcSort,
         'heatmap' => $heatmap
     ], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {

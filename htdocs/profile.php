@@ -21,6 +21,7 @@ require_once 'includes/ratings.php';
 require_once 'includes/two_factor.php';
 require_once 'includes/web_session.php';
 require_once 'includes/division_schema.php';
+require_once 'includes/atc_schema.php';
 
 if (!validateVfnWebSession(new PDO(
     "mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4",
@@ -84,6 +85,20 @@ try {
         ]
     );
 
+    // Keep existing installations compatible when this feature is deployed
+    // before the accompanying migration is run manually.
+    $unitColumns = [
+        'altitude_unit' => "ENUM('ft','m') NOT NULL DEFAULT 'ft'",
+        'distance_unit' => "ENUM('nm','km') NOT NULL DEFAULT 'nm'",
+        'speed_unit' => "ENUM('kt','kmh') NOT NULL DEFAULT 'kt'"
+    ];
+    foreach ($unitColumns as $column => $definition) {
+        $columnCheck = $pdo->query("SHOW COLUMNS FROM users LIKE " . $pdo->quote($column));
+        if (!$columnCheck->fetch(PDO::FETCH_ASSOC)) {
+            $pdo->exec("ALTER TABLE users ADD COLUMN `{$column}` {$definition}");
+        }
+    }
+
     $stmt = $pdo->prepare(
         "SELECT
             id,
@@ -101,7 +116,10 @@ try {
             total_flight_seconds,
             total_flight_miles,
             total_landings,
-            map_waypoint_labels_mode
+            map_waypoint_labels_mode,
+            altitude_unit,
+            distance_unit,
+            speed_unit
          FROM users
          WHERE id = :id
          LIMIT 1"
@@ -119,6 +137,7 @@ try {
         exit;
     }
     ensureDivisionManagementSchema($pdo);
+    ensureAtcSchema($pdo);
     $gcaStmt = $pdo->prepare(
         "SELECT g.division_code,g.status,g.requested_at,g.reviewed_at,d.name division_name
          FROM guest_controller_approvals g LEFT JOIN divisions d ON d.code=g.division_code
@@ -317,6 +336,27 @@ $totalFlightSeconds =
 $totalFlightMiles =
     (float)($profileUser['total_flight_miles'] ?? 0);
 
+$atcSummaryStmt = $pdo->prepare(
+    "SELECT COUNT(*) AS sessions, COALESCE(SUM(duration_seconds),0) AS duration_seconds
+     FROM atc_session_history WHERE user_id=:user_id"
+);
+$atcSummaryStmt->execute(['user_id'=>$profileUserId]);
+$atcSummary = $atcSummaryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+$atcSessionCount = (int)($atcSummary['sessions'] ?? 0);
+$atcControllerSeconds = (int)($atcSummary['duration_seconds'] ?? 0);
+$profileLastAtcPosition = '----';
+$lastAtcStmt = $pdo->prepare("SELECT callsign FROM atc_session_history WHERE user_id=:user_id ORDER BY disconnected_at DESC,id DESC LIMIT 1");
+$lastAtcStmt->execute(['user_id'=>$profileUserId]);
+if (($lastAtc = $lastAtcStmt->fetchColumn()) !== false) $profileLastAtcPosition = (string)$lastAtc;
+$profileFavoriteAtcPosition = '----';
+$favoriteAtcStmt = $pdo->prepare(
+    "SELECT callsign,COUNT(*) AS sessions,COALESCE(SUM(duration_seconds),0) AS seconds
+     FROM atc_session_history WHERE user_id=:user_id GROUP BY callsign
+     ORDER BY seconds DESC,sessions DESC,callsign ASC LIMIT 1"
+);
+$favoriteAtcStmt->execute(['user_id'=>$profileUserId]);
+if (($favoriteAtc = $favoriteAtcStmt->fetch(PDO::FETCH_ASSOC))) $profileFavoriteAtcPosition = (string)$favoriteAtc['callsign'];
+
 $memberSince =
     !empty($profileUser['created_at'])
     ? date('d.m.Y', strtotime($profileUser['created_at']))
@@ -346,15 +386,15 @@ $profileTopAirport = '----';
 $profileTopCountry = '----';
 $profileTopRoute = '----';
 $profileLongestFlight = '----';
-$topAirportStmt=$pdo->prepare("SELECT code,COUNT(*) visits FROM (SELECT departure_airport code FROM pilot_flights WHERE user_id=:u1 AND status='completed' UNION ALL SELECT arrival_airport code FROM pilot_flights WHERE user_id=:u2 AND status='completed')x WHERE code IS NOT NULL AND code<>'' AND code<>'ZZZZ' GROUP BY code ORDER BY visits DESC,code LIMIT 1");
+$topAirportStmt=$pdo->prepare("SELECT code,COUNT(*) visits FROM (SELECT departure_airport code FROM pilot_flights WHERE user_id=:u1 AND status IN ('completed','wrong_destination') UNION ALL SELECT COALESCE(NULLIF(landed_airport,''),arrival_airport) code FROM pilot_flights WHERE user_id=:u2 AND status IN ('completed','wrong_destination'))x WHERE code IS NOT NULL AND code<>'' AND code<>'ZZZZ' GROUP BY code ORDER BY visits DESC,code LIMIT 1");
 $topAirportStmt->execute(['u1'=>$profileUserId,'u2'=>$profileUserId]);
 if($row=$topAirportStmt->fetch(PDO::FETCH_ASSOC))$profileTopAirport=(string)$row['code'];
-$topCountryStmt=$pdo->prepare("SELECT UPPER(a.iso_country) code,COUNT(*) visits FROM (SELECT departure_airport code FROM pilot_flights WHERE user_id=:u1 AND status='completed' UNION ALL SELECT arrival_airport code FROM pilot_flights WHERE user_id=:u2 AND status='completed')x JOIN airports a ON a.ident=x.code OR a.icao_code=x.code OR a.gps_code=x.code WHERE a.iso_country IS NOT NULL AND a.iso_country<>'' GROUP BY UPPER(a.iso_country) ORDER BY visits DESC,code LIMIT 1");
+$topCountryStmt=$pdo->prepare("SELECT UPPER(a.iso_country) code,COUNT(*) visits FROM (SELECT departure_airport code FROM pilot_flights WHERE user_id=:u1 AND status IN ('completed','wrong_destination') UNION ALL SELECT COALESCE(NULLIF(landed_airport,''),arrival_airport) code FROM pilot_flights WHERE user_id=:u2 AND status IN ('completed','wrong_destination'))x JOIN airports a ON a.ident=x.code OR a.icao_code=x.code OR a.gps_code=x.code WHERE a.iso_country IS NOT NULL AND a.iso_country<>'' GROUP BY UPPER(a.iso_country) ORDER BY visits DESC,code LIMIT 1");
 $topCountryStmt->execute(['u1'=>$profileUserId,'u2'=>$profileUserId]);
 if($row=$topCountryStmt->fetch(PDO::FETCH_ASSOC))$profileTopCountry=$countries[(string)$row['code']]??(string)$row['code'];
-$topRouteStmt=$pdo->prepare("SELECT departure_airport,arrival_airport,COUNT(*) flights FROM pilot_flights WHERE user_id=:uid AND status='completed' AND departure_airport<>'ZZZZ' AND arrival_airport<>'ZZZZ' GROUP BY departure_airport,arrival_airport ORDER BY flights DESC,departure_airport,arrival_airport LIMIT 1");
+$topRouteStmt=$pdo->prepare("SELECT departure_airport,COALESCE(NULLIF(landed_airport,''),arrival_airport) actual_arrival,COUNT(*) flights FROM pilot_flights WHERE user_id=:uid AND status IN ('completed','wrong_destination') AND departure_airport<>'ZZZZ' AND COALESCE(NULLIF(landed_airport,''),arrival_airport)<>'ZZZZ' GROUP BY departure_airport,actual_arrival ORDER BY flights DESC,departure_airport,actual_arrival LIMIT 1");
 $topRouteStmt->execute(['uid'=>$profileUserId]);
-if($row=$topRouteStmt->fetch(PDO::FETCH_ASSOC))$profileTopRoute=$row['departure_airport'].' → '.$row['arrival_airport'];
+if($row=$topRouteStmt->fetch(PDO::FETCH_ASSOC))$profileTopRoute=$row['departure_airport'].' → '.$row['actual_arrival'];
 $longestStmt=$pdo->prepare("SELECT departure_airport,arrival_airport,distance_nm FROM pilot_flights WHERE user_id=:uid AND status='completed' ORDER BY distance_nm DESC LIMIT 1");
 $longestStmt->execute(['uid'=>$profileUserId]);
 if($row=$longestStmt->fetch(PDO::FETCH_ASSOC))$profileLongestFlight=($row['departure_airport']?:'ZZZZ').' → '.($row['arrival_airport']?:'ZZZZ').' · '.number_format((float)$row['distance_nm'],0,',','.').' NM';
@@ -996,7 +1036,7 @@ $awardImages = [
             <a
                 class="side-link <?php echo $activeTab === 'pilot' ? 'active' : ''; ?>"
                 href="<?php echo $profileBaseUrl; ?>&a=pilot">
-                ✈ <?php echo htmlspecialchars(t('profile_pilot')); ?>
+                📖 <?php echo htmlspecialchars(t('profile_logbook')); ?>
             </a>
 
             <?php if ($isOwnProfile): ?>
@@ -1016,7 +1056,7 @@ $awardImages = [
             <?php endif; ?>
 
             <!--
-            <a class="side-link" href="#">✈ <?php echo htmlspecialchars(t('profile_pilot')); ?></a>
+            <a class="side-link" href="#">📖 <?php echo htmlspecialchars(t('profile_logbook')); ?></a>
             <a class="side-link" href="#">🗼 <?php echo htmlspecialchars(t('profile_atc')); ?></a>
             <a class="side-link" href="#">🛡 <?php echo htmlspecialchars(t('profile_ratings_badges')); ?></a>
             <a class="side-link" href="#">⚙ <?php echo htmlspecialchars(t('profile_settings')); ?></a>

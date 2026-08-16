@@ -7,6 +7,7 @@ require_once 'includes/activity_log.php';
 require_once 'includes/auth_security.php';
 require_once 'includes/csrf.php';
 require_once 'execute/send_mail.php';
+require_once 'includes/language_preferences.php';
 
 $registerLanguage =
     $_POST['language']
@@ -19,10 +20,8 @@ $registerLanguage =
         trim($registerLanguage)
     );
 
-if (
-    $registerLanguage !== 'de' &&
-    $registerLanguage !== 'en'
-) {
+$registerLanguage = vfnNormalizeLanguage($registerLanguage);
+if ($registerLanguage === '') {
     $registerLanguage = 'en';
 }
 

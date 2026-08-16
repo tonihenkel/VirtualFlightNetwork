@@ -229,12 +229,19 @@ function routeAirportProcedures(string $airport, string $type): array
  * Some providers omit one character from a seven-character operational name;
  * such a correction is accepted only when it yields one unique procedure.
  */
-function routePrepareProcedures(string $departure, string $arrival, string $routeText): array
+function routePrepareProcedures(
+    string $departure,
+    string $arrival,
+    string $routeText,
+    string $requestedDepartureRunway = ''
+): array
 {
     $tokens = preg_split('/\s+/', trim($routeText)) ?: [];
     $departureRunway = '';
     $arrivalRunway = '';
     $aliases = [];
+    $runwayMismatch = null;
+    $requestedDepartureRunway = strtoupper(trim($requestedDepartureRunway));
     $catalogues = [
         'SID' => routeAirportProcedures($departure, 'SID'),
         'STAR' => routeAirportProcedures($arrival, 'STAR'),
@@ -253,6 +260,25 @@ function routePrepareProcedures(string $departure, string $arrival, string $rout
                 continue;
             }
             $candidate = strtoupper(trim((string)$matches[0]['identifier']));
+            // The procedure listing already carries its runway transition. Use
+            // it as an immediate fallback so a failed/stale detail request can
+            // never silently accept a SID for the wrong runway.
+            $listedTransition = preg_replace(
+                '/^(?:RWY?|RUNWAY)\s*/',
+                '',
+                strtoupper(trim((string)($matches[0]['transition'] ?? '')))
+            );
+            if ($type === 'SID' && $requestedDepartureRunway !== ''
+                && preg_match('/^\d{2}[LCR]?$/', $listedTransition)
+                && $listedTransition !== $requestedDepartureRunway) {
+                $runwayMismatch = [
+                    'procedure' => $clean,
+                    'airac_procedure' => $candidate,
+                    'requested_runway' => $requestedDepartureRunway,
+                    'available_runways' => [$listedTransition],
+                ];
+                continue 2;
+            }
             $url = VFN_ROUTE_AIRAC_BASE_URL . '/procedures/'
                 . rawurlencode($airport) . '/' . rawurlencode($candidate);
             $response = routeCachedFetch('procedure_' . $airport . '_' . $candidate, $url);
@@ -261,10 +287,28 @@ function routePrepareProcedures(string $departure, string $arrival, string $rout
                 continue;
             }
             $procedure = $response['data'];
-            $tokens[$index] = str_replace($clean, $candidate, strtoupper(trim($token)));
-            $aliases[$candidate] = $clean;
             $runways = is_array($procedure['available_runways'] ?? null)
                 ? $procedure['available_runways'] : [];
+            $normalizedRunways = array_values(array_unique(array_filter(array_map(
+                static fn($value): string => preg_replace(
+                    '/^(?:RWY?|RUNWAY)\s*/',
+                    '',
+                    strtoupper(trim((string)$value))
+                ),
+                $runways
+            ))));
+            if ($type === 'SID' && $requestedDepartureRunway !== '' && $normalizedRunways
+                && !in_array($requestedDepartureRunway, $normalizedRunways, true)) {
+                $runwayMismatch = [
+                    'procedure' => $clean,
+                    'airac_procedure' => $candidate,
+                    'requested_runway' => $requestedDepartureRunway,
+                    'available_runways' => $normalizedRunways,
+                ];
+                continue 2;
+            }
+            $tokens[$index] = str_replace($clean, $candidate, strtoupper(trim($token)));
+            $aliases[$candidate] = $clean;
             $runway = strtoupper(trim((string)($runways[0] ?? '')));
             if ($type === 'SID' && $departureRunway === '') {
                 $departureRunway = $runway;
@@ -279,6 +323,7 @@ function routePrepareProcedures(string $departure, string $arrival, string $rout
         'departure_runway' => $departureRunway,
         'arrival_runway' => $arrivalRunway,
         'aliases' => $aliases,
+        'runway_mismatch' => $runwayMismatch,
     ];
 }
 
@@ -287,7 +332,13 @@ function routeParsedByAirac(string $departure, string $arrival, string $routeTex
     if ($routeText === '') {
         return null;
     }
-    $prepared = routePrepareProcedures($departure, $arrival, $routeText);
+    $prepared = routePrepareProcedures($departure, $arrival, $routeText, $departureRunway);
+    if (is_array($prepared['runway_mismatch'] ?? null)) {
+        return [
+            'error' => 'sid_runway_mismatch',
+            'details' => $prepared['runway_mismatch'],
+        ];
+    }
     if ($departureRunway !== '') {
         $prepared['departure_runway'] = $departureRunway;
     }
@@ -303,7 +354,11 @@ function routeParsedByAirac(string $departure, string $arrival, string $routeTex
         $parameters['arrival_runway'] = $prepared['arrival_runway'];
     }
     $url = VFN_ROUTE_AIRAC_BASE_URL . '/routes/parse?' . http_build_query($parameters);
-    $response = routeCachedFetch('parsed_' . $departure . '_' . $arrival . '_' . $routeText, $url);
+    $response = routeCachedFetch(
+        'parsed_' . $departure . '_' . $arrival . '_' . $prepared['route']
+            . '_' . $prepared['departure_runway'] . '_' . $prepared['arrival_runway'],
+        $url
+    );
     if (!is_array($response) || ($response['status'] ?? '') !== 'success') {
         return null;
     }
@@ -378,11 +433,31 @@ try {
         routeJson(['success' => false, 'message' => 'airport_not_found'], 404);
     }
 
+    if ((string)($_POST['validate_procedures_only'] ?? '') === '1') {
+        $prepared = routePrepareProcedures($departure, $arrival, $routeText, $departureRunway);
+        if (is_array($prepared['runway_mismatch'] ?? null)) {
+            routeJson([
+                'success' => false,
+                'message' => 'sid_runway_mismatch',
+                'details' => $prepared['runway_mismatch'],
+            ], 422);
+        }
+        routeJson(['success' => true, 'valid' => true]);
+    }
+
     $routeStartPoint = routeRunwayThreshold($departure, $departureRunway) ?: $departurePoint;
     $points = [$routeStartPoint];
     $resolvedIdentifiers = [];
     $directOnly = $routeText === '' || preg_match('/^DCT(?:\s+DCT)*$/', $routeText);
     $parsedRoute = !$directOnly ? routeParsedByAirac($departure, $arrival, $routeText, $departureRunway) : null;
+
+    if (is_array($parsedRoute) && ($parsedRoute['error'] ?? '') === 'sid_runway_mismatch') {
+        routeJson([
+            'success' => false,
+            'message' => 'sid_runway_mismatch',
+            'details' => $parsedRoute['details'] ?? [],
+        ], 422);
+    }
 
     if ($parsedRoute) {
         $points = $parsedRoute['points'];

@@ -7,7 +7,8 @@ $footerLanguage =
 $footerLanguage =
     strtolower(trim((string)$footerLanguage));
 
-if ($footerLanguage !== 'de' && $footerLanguage !== 'en') {
+$footerLanguage = function_exists('vfnNormalizeLanguage') ? vfnNormalizeLanguage($footerLanguage) : $footerLanguage;
+if ($footerLanguage === '') {
     $footerLanguage = 'en';
 }
 

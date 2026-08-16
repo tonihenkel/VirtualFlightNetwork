@@ -6,6 +6,7 @@ require_once 'config.php';
 require_once 'aircraft_types.php';
 require_once '../includes/awards_checks.php';
 require_once '../includes/track_maintenance.php';
+require_once '../includes/flightplan_schema.php';
 
 
 $token = trim($_POST["token"] ?? "");
@@ -135,6 +136,16 @@ $aircraft_category = getAircraftCategory($aircraft_icao);
 $latitude = $_POST["latitude"] ?? null;
 $longitude = $_POST["longitude"] ?? null;
 $altitude = $_POST["altitude"] ?? null;
+$altitudeUnit = strtolower(trim((string)($_POST['altitude_unit'] ?? 'm')));
+// X-Plane's elevation dataref is expressed in metres. New clients explicitly
+// submit feet; requests from older clients have no unit marker and therefore
+// remain backwards-compatible by being converted here.
+if ($altitude !== null && is_numeric($altitude)) {
+    $altitude = (float)$altitude;
+    if ($altitudeUnit !== 'ft') {
+        $altitude *= 3.28083989501312;
+    }
+}
 $heading = $_POST["heading"] ?? null;
 $airspeed = $_POST["airspeed"] ?? null;
 $pitch = $_POST["pitch"] ?? null;
@@ -536,6 +547,7 @@ try {
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
         ]
     );
+    ensurePilotFlightplanCommunicationColumn($pdo);
 
     try {
         vfnRunTrackMaintenance($pdo);
@@ -790,7 +802,8 @@ try {
         $positionStmt->fetch(PDO::FETCH_ASSOC);
 
     $pluginLanguage = strtolower(trim((string)($_POST['plugin_language'] ?? '')));
-    $pluginLanguage = in_array($pluginLanguage, ['de', 'en'], true)
+    require_once __DIR__ . '/../includes/languages.php';
+    $pluginLanguage = in_array($pluginLanguage, vfnLanguageCodes(), true)
         ? $pluginLanguage
         : (string)($session['plugin_language'] ?? 'en');
 
@@ -1467,10 +1480,10 @@ try {
     );
 
     $currentFlightplanStmt = $pdo->prepare(
-        "SELECT flight_rules,flight_type,departure_time,departure_airport,arrival_airport,
+        "SELECT flight_rules,flight_type,communication_mode,departure_time,departure_airport,arrival_airport,
                 alternate1_airport,alternate2_airport,route_text,cruising_level,
                 cruising_speed,remarks,
-                (CRC32(CONCAT_WS('|',flight_rules,flight_type,departure_time,
+                (CRC32(CONCAT_WS('|',flight_rules,flight_type,communication_mode,departure_time,
                     departure_airport,arrival_airport,alternate1_airport,
                     alternate2_airport,route_text,cruising_level,cruising_speed,remarks)) & 2147483647) AS revision
          FROM pilot_flightplans WHERE session_token=:token LIMIT 1"

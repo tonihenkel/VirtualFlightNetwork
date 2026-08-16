@@ -797,6 +797,21 @@ async function ensureAutoAtisSchema() {
        PRIMARY KEY (airport_icao), KEY idx_atc_atis_active (is_active)
      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
   );
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS atc_operational_events (
+       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+       airport_icao VARCHAR(12) NOT NULL,
+       event_type VARCHAR(40) NOT NULL,
+       old_value VARCHAR(160) NOT NULL DEFAULT '',
+       new_value VARCHAR(160) NOT NULL DEFAULT '',
+       created_by_user_id INT NULL,
+       created_by_callsign VARCHAR(40) NOT NULL DEFAULT '',
+       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+       PRIMARY KEY (id),
+       KEY idx_atc_event_airport_id (airport_icao, id),
+       KEY idx_atc_event_created (created_at)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+  );
 }
 
 async function reconcileAutoAtis() {
@@ -875,6 +890,19 @@ async function reconcileAutoAtis() {
           atis_text=VALUES(atis_text),is_active=1,updated_at=NOW()`,
         [station,frequency,infoIndex,letter,contentHash,metar.raw,runway,atisText]
       );
+      // Publish the operational event only after synthesis and the database
+      // update completed. Every controller in whose ATIS scope this airport
+      // lies receives the same event, independent of radio frequency.
+      const previousRunway = String(existing?.active_runway || '').trim().toUpperCase();
+      const publishedRunway = String(runway || '').trim().toUpperCase();
+      if (existing && previousRunway && publishedRunway && previousRunway !== publishedRunway) {
+        await pool.query(
+          `INSERT INTO atc_operational_events
+             (airport_icao,event_type,old_value,new_value,created_by_user_id,created_by_callsign)
+           VALUES (?,'atis_runway_changed',?,?,NULL,'AUTO_ATIS')`,
+          [station, previousRunway, publishedRunway]
+        );
+      }
       startAutoAtisAudio({
         station, frequency, letter, runway, contentHash, audioPath,
         latitude:Number(airport.latitude_deg), longitude:Number(airport.longitude_deg)
@@ -888,7 +916,7 @@ async function handleMonitor(client, payload) {
   let atcSession = null;
   if (client.userId) {
     const [rows] = await pool.query(
-      `SELECT callsign, is_spectator, can_transmit_voice
+      `SELECT callsign, station_code, radar_boundary_code, is_spectator, can_transmit_voice
        FROM atc_sessions
        WHERE user_id = ? AND is_active = 1
        ORDER BY last_seen_at DESC, id DESC
@@ -923,15 +951,27 @@ async function handleMonitor(client, payload) {
   client.monitorRangeNm = null;
   client.monitorLocationName = client.monitorGlobal ? 'UNICOM' : '';
   if (!client.monitorGlobal) {
-    const airport = await resolveAirport(payload.airportIcao);
     const rangeNm = Number(payload.rangeNm);
     if (![5, 10, 25, 50].includes(rangeNm)) {
       throw new Error('Invalid monitor range.');
     }
-    client.monitorLatitude = Number(airport.latitude_deg);
-    client.monitorLongitude = Number(airport.longitude_deg);
+    const sessionLatitude = Number(payload.latitude);
+    const sessionLongitude = Number(payload.longitude);
+    if (payload.atcSessionReference === true && (atcSession || client.opPermission >= 1) &&
+        Number.isFinite(sessionLatitude) && Number.isFinite(sessionLongitude)) {
+      client.monitorLatitude = sessionLatitude;
+      client.monitorLongitude = sessionLongitude;
+      client.monitorLocationName = String(
+        atcSession?.callsign || atcSession?.radar_boundary_code ||
+        atcSession?.station_code || payload.airportIcao || client.callsign || ''
+      ).toUpperCase();
+    } else {
+      const airport = await resolveAirport(payload.airportIcao);
+      client.monitorLatitude = Number(airport.latitude_deg);
+      client.monitorLongitude = Number(airport.longitude_deg);
+      client.monitorLocationName = String(airport.ident || '').toUpperCase();
+    }
     client.monitorRangeNm = rangeNm;
-    client.monitorLocationName = String(airport.ident || '').toUpperCase();
     // A staff transmission from the browser originates at the configured
     // receiver site and participates in the same regional channel lock.
     client.latitude = client.monitorLatitude;
@@ -1163,8 +1203,10 @@ wss.on('connection', (ws) => {
       }
     }).catch((error) => {
       console.error('Voice message processing failed:', error);
-      send(ws, { type: 'error', message: 'Voice server message error.' });
-      ws.close();
+      send(ws, {
+        type: 'error',
+        message: error && error.message ? String(error.message) : 'Voice server message error.'
+      });
     });
   });
 

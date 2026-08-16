@@ -118,6 +118,31 @@ try {
         settingsRedirect('success', 'settings_map_saved');
     }
 
+    if ($action === 'unit_preferences') {
+        $altitudeUnit = strtolower(trim((string)($_POST['altitude_unit'] ?? 'ft')));
+        $distanceUnit = strtolower(trim((string)($_POST['distance_unit'] ?? 'nm')));
+        $speedUnit = strtolower(trim((string)($_POST['speed_unit'] ?? 'kt')));
+        if (!in_array($altitudeUnit, ['ft', 'm'], true)
+            || !in_array($distanceUnit, ['nm', 'km'], true)
+            || !in_array($speedUnit, ['kt', 'kmh'], true)) {
+            settingsRedirect('error', 'settings_invalid_data');
+        }
+        $pdo->prepare(
+            "UPDATE users SET altitude_unit = :altitude_unit,
+             distance_unit = :distance_unit, speed_unit = :speed_unit,
+             updated_at = NOW() WHERE id = :id"
+        )->execute([
+            'altitude_unit' => $altitudeUnit,
+            'distance_unit' => $distanceUnit,
+            'speed_unit' => $speedUnit,
+            'id' => $userId
+        ]);
+        $_SESSION['altitude_unit'] = $altitudeUnit;
+        $_SESSION['distance_unit'] = $distanceUnit;
+        $_SESSION['speed_unit'] = $speedUnit;
+        settingsRedirect('success', 'settings_units_saved');
+    }
+
     if ($action === 'division') {
         $division = strtoupper(trim((string)($_POST['division_code'] ?? '')));
         $reason = trim((string)($_POST['reason'] ?? ''));

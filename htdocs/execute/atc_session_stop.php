@@ -22,6 +22,7 @@ try {
              SET is_active = 0, disconnected_at = NOW()
              WHERE user_id = :user_id AND is_active = 1"
         )->execute(['user_id' => (int)$_SESSION['web_user_id']]);
+        archiveAtcSessions($pdo, 'a.user_id=:history_user AND a.is_active=0', ['history_user'=>(int)$_SESSION['web_user_id']]);
         $voiceToken = (string)($_SESSION['web_voice_token'] ?? '');
         if ($voiceToken !== '') {
             $pdo->prepare(

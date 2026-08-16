@@ -10,7 +10,10 @@ function ensureAtcSchema(PDO $pdo): void
             callsign VARCHAR(40) NOT NULL,
             station_code VARCHAR(12) NOT NULL,
             position_code VARCHAR(8) NOT NULL,
+            is_gca TINYINT(1) NOT NULL DEFAULT 0,
             is_spectator TINYINT(1) NOT NULL DEFAULT 0,
+            is_trainer TINYINT(1) NOT NULL DEFAULT 0,
+            is_invisible TINYINT(1) NOT NULL DEFAULT 0,
             can_control TINYINT(1) NOT NULL DEFAULT 1,
             can_transmit_voice TINYINT(1) NOT NULL DEFAULT 1,
             scope_positions VARCHAR(100) NOT NULL DEFAULT '',
@@ -45,6 +48,23 @@ function ensureAtcSchema(PDO $pdo): void
     );
 
     $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS atc_session_history (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            atc_session_id BIGINT UNSIGNED NOT NULL,
+            user_id INT NOT NULL,
+            callsign VARCHAR(40) NOT NULL,
+            station_code VARCHAR(12) NOT NULL,
+            position_code VARCHAR(8) NOT NULL,
+            connected_at DATETIME NOT NULL,
+            disconnected_at DATETIME NOT NULL,
+            duration_seconds INT UNSIGNED NOT NULL DEFAULT 0,
+            PRIMARY KEY (id), UNIQUE KEY uq_atc_history_session (atc_session_id),
+            KEY idx_atc_history_user (user_id, disconnected_at),
+            KEY idx_atc_history_position (callsign, disconnected_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $pdo->exec(
         "CREATE TABLE IF NOT EXISTS atc_assumed_aircraft (
             pilot_session_token VARCHAR(128) NOT NULL,
             pilot_callsign VARCHAR(40) NOT NULL,
@@ -73,6 +93,45 @@ function ensureAtcSchema(PDO $pdo): void
             updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (pilot_session_token),
             KEY idx_atc_clearance_callsign (pilot_callsign)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS atc_operational_events (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            airport_icao VARCHAR(12) NOT NULL,
+            event_type VARCHAR(40) NOT NULL,
+            old_value VARCHAR(160) NOT NULL DEFAULT '',
+            new_value VARCHAR(160) NOT NULL DEFAULT '',
+            created_by_user_id INT NULL,
+            created_by_callsign VARCHAR(40) NOT NULL DEFAULT '',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_atc_event_airport_id (airport_icao, id),
+            KEY idx_atc_event_created (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS atc_handoff_requests (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            pilot_session_token VARCHAR(128) NOT NULL,
+            pilot_callsign VARCHAR(40) NOT NULL,
+            source_session_id BIGINT UNSIGNED NOT NULL,
+            source_callsign VARCHAR(40) NOT NULL,
+            target_session_id BIGINT UNSIGNED NOT NULL,
+            target_callsign VARCHAR(40) NOT NULL,
+            status ENUM('pending','accepted','rejected','cancelled') NOT NULL DEFAULT 'pending',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            responded_at DATETIME NULL,
+            PRIMARY KEY (id),
+            KEY idx_atc_handoff_target (target_session_id,status,id),
+            KEY idx_atc_handoff_source (source_session_id,status,id),
+            KEY idx_atc_handoff_pilot (pilot_session_token,status),
+            CONSTRAINT fk_atc_handoff_source FOREIGN KEY (source_session_id)
+                REFERENCES atc_sessions(id) ON DELETE CASCADE,
+            CONSTRAINT fk_atc_handoff_target FOREIGN KEY (target_session_id)
+                REFERENCES atc_sessions(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 
@@ -151,4 +210,46 @@ function ensureAtcSchema(PDO $pdo): void
             "ALTER TABLE atc_sessions ADD COLUMN atis_scope_ready TINYINT(1) NOT NULL DEFAULT 0 AFTER frequency"
         );
     }
+    $invisibleColumn = $pdo->query(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'atc_sessions'
+           AND COLUMN_NAME = 'is_invisible'"
+    )->fetchColumn();
+    if ((int)$invisibleColumn === 0) {
+        $pdo->exec(
+            "ALTER TABLE atc_sessions ADD COLUMN is_invisible TINYINT(1) NOT NULL DEFAULT 0 AFTER is_spectator"
+        );
+    }
+    $trainerColumn = $pdo->query(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'atc_sessions'
+           AND COLUMN_NAME = 'is_trainer'"
+    )->fetchColumn();
+    if ((int)$trainerColumn === 0) {
+        $pdo->exec(
+            "ALTER TABLE atc_sessions ADD COLUMN is_trainer TINYINT(1) NOT NULL DEFAULT 0 AFTER is_spectator"
+        );
+    }
+    $gcaColumn = $pdo->query(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'atc_sessions'
+           AND COLUMN_NAME = 'is_gca'"
+    )->fetchColumn();
+    if ((int)$gcaColumn === 0) {
+        $pdo->exec(
+            "ALTER TABLE atc_sessions ADD COLUMN is_gca TINYINT(1) NOT NULL DEFAULT 0 AFTER position_code"
+        );
+    }
+}
+
+function archiveAtcSessions(PDO $pdo, string $condition='1=1', array $params=[]): void
+{
+    $sql="INSERT IGNORE INTO atc_session_history
+          (atc_session_id,user_id,callsign,station_code,position_code,connected_at,disconnected_at,duration_seconds)
+          SELECT a.id,a.user_id,a.callsign,a.station_code,a.position_code,a.connected_at,
+                 COALESCE(a.disconnected_at,NOW()),
+                 GREATEST(0,TIMESTAMPDIFF(SECOND,a.connected_at,COALESCE(a.disconnected_at,NOW())))
+          FROM atc_sessions a
+          WHERE a.is_spectator=0 AND a.is_trainer=0 AND a.is_invisible=0 AND ($condition)";
+    $stmt=$pdo->prepare($sql); $stmt->execute($params);
 }

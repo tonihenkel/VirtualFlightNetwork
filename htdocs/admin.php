@@ -1390,8 +1390,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
     ], JSON_UNESCAPED_UNICODE); ?>;
     const ADMIN_CSRF = <?php echo json_encode((string)$_SESSION['admin_csrf']); ?>;
     const ADMIN_LANGUAGE = <?php echo json_encode(
-        in_array(($_SESSION['language'] ?? 'en'), ['de', 'en'], true)
-            ? $_SESSION['language'] : 'en'
+        vfnNormalizeLanguage($_SESSION['language'] ?? '') ?: 'en'
     ); ?>;
     const CAN_MANAGE_CHAT_FILTER = <?php echo $adminOpPermission >= 4 ? 'true' : 'false'; ?>;
     const CAN_MANAGE_MODERATION = <?php echo $adminOpPermission >= 4 ? 'true' : 'false'; ?>;
@@ -2525,7 +2524,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             const data = await response.json();
             const previous = select.value;
             select.innerHTML = '';
-            (data.pilots || []).forEach(function(pilot) {
+            ((data.pilots && data.pilots.items) || []).forEach(function(pilot) {
                 const option = document.createElement('option');
                 option.value = String(pilot.user_id);
                 option.textContent = pilot.callsign + ' — ' + pilot.com1 + ' / ' + pilot.com2;
@@ -3133,13 +3132,15 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
     function getVoiceMonitorPayload(frequency)
     {
         const isGlobalUnicom = frequency === '122.800';
+        const airportField = document.getElementById('voiceMonitorAirportIcao');
+        const savedAirport = localStorage.getItem('vfn_admin_voice_monitor_airport') || '';
         return {
             type: 'monitor',
             frequency,
             global: isGlobalUnicom,
             airportIcao: isGlobalUnicom
                 ? ''
-                : document.getElementById('voiceMonitorAirportIcao').value.trim().toUpperCase(),
+                : String(airportField && airportField.value ? airportField.value : savedAirport).trim().toUpperCase(),
             rangeNm: Number(document.getElementById('voiceMonitorRange').value)
         };
     }
@@ -3287,8 +3288,11 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 }
 
                 if (payload.type === 'error') {
+                    voiceShouldReconnect = false;
                     document.getElementById('voiceReceiverStatus').textContent =
                         String(payload.message || ADMIN_I18N.voiceConnectionFailed);
+                    clearTimeout(connectTimeout);
+                    finish(new Error(String(payload.message || ADMIN_I18N.voiceConnectionFailed)));
                 }
             });
 
@@ -3551,7 +3555,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         const data = await response.json();
         const previous = select.value;
         select.innerHTML = '';
-        (data.pilots || []).forEach(function(pilot) {
+        ((data.pilots && data.pilots.items) || []).forEach(function(pilot) {
             const option = document.createElement('option');
             option.value = String(pilot.user_id);
             option.textContent = String(pilot.callsign || pilot.username || pilot.user_id);
@@ -3846,6 +3850,13 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         { passive: true }
     );
 
+    const voiceMonitorAirportIcao = document.getElementById('voiceMonitorAirportIcao');
+    const voiceMonitorRange = document.getElementById('voiceMonitorRange');
+    voiceMonitorAirportIcao.value =
+        localStorage.getItem('vfn_admin_voice_monitor_airport') || '';
+    voiceMonitorRange.value =
+        localStorage.getItem('vfn_admin_voice_monitor_range') || '25';
+
     const savedVoiceFrequency =
         normalizeFrequency(
             localStorage.getItem('vfn_admin_voice_frequency')
@@ -3868,12 +3879,6 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
     }
 
 
-    const voiceMonitorAirportIcao = document.getElementById('voiceMonitorAirportIcao');
-    const voiceMonitorRange = document.getElementById('voiceMonitorRange');
-    voiceMonitorAirportIcao.value =
-        localStorage.getItem('vfn_admin_voice_monitor_airport') || '';
-    voiceMonitorRange.value =
-        localStorage.getItem('vfn_admin_voice_monitor_range') || '25';
     voiceMonitorAirportIcao.addEventListener('input', function() {
         this.value = this.value.toUpperCase();
         localStorage.setItem('vfn_admin_voice_monitor_airport', this.value.trim());

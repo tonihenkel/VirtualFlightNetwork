@@ -20,10 +20,7 @@ $defaultLanguage =
     Unterstützte Sprachen
 */
 
-$allowedLanguages = [
-    'en',
-    'de'
-];
+$allowedLanguages = vfnLanguageCodes();
 
 /*
     Sprache aus URL übernehmen
@@ -165,8 +162,9 @@ if (!file_exists($languageFile)) {
     Spracharray laden
 */
 
-$lang =
-    require $languageFile;
+$fallbackLang = require __DIR__ . '/../lang/' . $defaultLanguage . '.php';
+$selectedLang = require $languageFile;
+$lang = array_replace($fallbackLang, is_array($selectedLang) ? $selectedLang : []);
 
 /*
     Kleine Hilfsfunktion

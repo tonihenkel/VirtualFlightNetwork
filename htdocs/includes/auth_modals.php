@@ -97,17 +97,13 @@ foreach ($divisions as $divisionOption) {
         <p style="margin:14px 0 0;text-align:center;">
             <a href="forgot_password.php?lang=<?php echo urlencode($currentLanguage); ?>"
                style="color:#49adff;text-decoration:none;">
-                <?php echo $currentLanguage === 'de'
-                    ? 'Passwort vergessen?'
-                    : 'Forgot password?'; ?>
+                <?php echo htmlspecialchars(t('auth_forgot_password')); ?>
             </a>
         </p>
         <p style="margin:8px 0 0;text-align:center;">
             <a href="ban_appeal.php?lang=<?php echo urlencode($currentLanguage); ?>"
                style="color:#49adff;text-decoration:none;">
-                <?php echo $currentLanguage === 'de'
-                    ? 'Entbannungsantrag stellen'
-                    : 'Submit a ban appeal'; ?>
+                <?php echo htmlspecialchars(t('auth_ban_appeal')); ?>
             </a>
         </p>
 

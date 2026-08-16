@@ -122,6 +122,21 @@ $settingsMessageType = (string)($_GET['type'] ?? '');
 </div>
 
 <div class="settings-section">
+    <h2><?php echo h(t('settings_units_title')); ?></h2>
+    <p class="settings-note"><?php echo h(t('settings_units_help')); ?></p>
+    <form method="post" action="execute/profile_settings.php">
+        <input type="hidden" name="csrf" value="<?php echo h($csrf); ?>">
+        <input type="hidden" name="action" value="unit_preferences">
+        <div class="settings-grid">
+            <label class="settings-field"><?php echo h(t('settings_altitude_unit')); ?><select name="altitude_unit"><option value="ft" <?php echo ($profileUser['altitude_unit'] ?? 'ft') === 'ft' ? 'selected' : ''; ?>>ft</option><option value="m" <?php echo ($profileUser['altitude_unit'] ?? 'ft') === 'm' ? 'selected' : ''; ?>>m</option></select></label>
+            <label class="settings-field"><?php echo h(t('settings_distance_unit')); ?><select name="distance_unit"><option value="nm" <?php echo ($profileUser['distance_unit'] ?? 'nm') === 'nm' ? 'selected' : ''; ?>>NM</option><option value="km" <?php echo ($profileUser['distance_unit'] ?? 'nm') === 'km' ? 'selected' : ''; ?>>km</option></select></label>
+            <label class="settings-field"><?php echo h(t('settings_speed_unit')); ?><select name="speed_unit"><option value="kt" <?php echo ($profileUser['speed_unit'] ?? 'kt') === 'kt' ? 'selected' : ''; ?>>kt</option><option value="kmh" <?php echo ($profileUser['speed_unit'] ?? 'kt') === 'kmh' ? 'selected' : ''; ?>>km/h</option></select></label>
+        </div>
+        <button class="settings-button"><?php echo h(t('settings_save')); ?></button>
+    </form>
+</div>
+
+<div class="settings-section">
     <h2><?php echo h(t('settings_personal_title')); ?></h2>
     <form method="post" action="execute/profile_settings.php">
         <input type="hidden" name="csrf" value="<?php echo h($csrf); ?>">

@@ -3,10 +3,12 @@
 const VFN_LANGUAGE_COOKIE = 'vfn_language';
 const VFN_LANGUAGE_COOKIE_LIFETIME = 31536000; // 1 year
 
+require_once __DIR__ . '/languages.php';
+
 function vfnNormalizeLanguage($language): string
 {
     $language = strtolower(trim((string)$language));
-    return in_array($language, ['de', 'en'], true) ? $language : '';
+    return in_array($language, vfnLanguageCodes(), true) ? $language : '';
 }
 
 function vfnStoreLanguageCookie(string $language): void
@@ -35,7 +37,7 @@ function vfnEnsurePreferredLanguageColumn(PDO $pdo): void
         try {
             $pdo->exec(
                 "ALTER TABLE users
-                 ADD COLUMN preferred_language VARCHAR(2) NULL DEFAULT NULL
+                 ADD COLUMN preferred_language VARCHAR(10) NULL DEFAULT NULL
                  AFTER country_code"
             );
         } catch (Throwable $error) {
@@ -47,6 +49,9 @@ function vfnEnsurePreferredLanguageColumn(PDO $pdo): void
                 throw $error;
             }
         }
+    } elseif (preg_match('/varchar\((\d+)\)/i', (string)($column['Type'] ?? ''), $matches)
+        && (int)$matches[1] < 10) {
+        $pdo->exec("ALTER TABLE users MODIFY preferred_language VARCHAR(10) NULL DEFAULT NULL");
     }
 }
 

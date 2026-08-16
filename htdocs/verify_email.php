@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/session_bootstrap.php';
 startVfnWebSession();
+require_once __DIR__ . '/includes/language_preferences.php';
 
 $verifyLanguage =
     $_GET['lang']
@@ -12,10 +13,8 @@ $verifyLanguage =
         trim($verifyLanguage)
     );
 
-if (
-    $verifyLanguage !== 'de' &&
-    $verifyLanguage !== 'en'
-) {
+$verifyLanguage = vfnNormalizeLanguage($verifyLanguage);
+if ($verifyLanguage === '') {
     $verifyLanguage = 'en';
 }
 

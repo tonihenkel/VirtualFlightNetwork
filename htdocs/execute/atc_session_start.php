@@ -84,6 +84,7 @@ try {
         throw new RuntimeException('login_required');
     }
     ensureAtcSchema($pdo);
+    ensureDivisionManagementSchema($pdo);
     $stmt = $pdo->prepare(
         "SELECT id, rating_atc, rating_special, division_code, op_permission
          FROM users WHERE id = :id LIMIT 1"
@@ -96,7 +97,15 @@ try {
         throw new RuntimeException('atc_login_disabled');
     }
 
-    $spectator = (string)($_POST['spectator'] ?? '0') === '1';
+    $trainer = (string)($_POST['trainer'] ?? '0') === '1';
+    $spectator = $trainer || (string)($_POST['spectator'] ?? '0') === '1';
+    $trainerRole = $pdo->prepare("SELECT 1 FROM division_staff WHERE user_id=:user_id AND is_active=1 LIMIT 1");
+    $trainerRole->execute(['user_id'=>(int)$user['id']]);
+    $isDivisionTrainer = (bool)$trainerRole->fetchColumn();
+    if ($trainer && (int)($user['op_permission'] ?? 0) < 1 && !$isDivisionTrainer) {
+        http_response_code(403);
+        throw new RuntimeException('atc_trainer_denied');
+    }
     $station = strtoupper(trim((string)($_POST['station'] ?? '')));
     $position = strtoupper(trim((string)($_POST['position'] ?? '')));
     if (!preg_match('/^[A-Z0-9_-]{2,24}$/', $station)
@@ -107,7 +116,7 @@ try {
 
     $rating = (int)$user['rating_atc'];
     $special = (int)$user['rating_special'];
-    $globalStationAccess = $spectator || $special > 0;
+    $globalStationAccess = (!$trainer && $spectator) || $special > 0 || ($trainer && (int)($user['op_permission'] ?? 0) >= 1);
     if (!$spectator && !canOccupyAtcPosition($rating, $position, $special)) {
         http_response_code(403);
         throw new RuntimeException('atc_position_denied');
@@ -213,9 +222,26 @@ try {
             "UPDATE atc_sessions SET is_active = 0, disconnected_at = NOW()
              WHERE user_id = :user_id AND is_active = 1"
         )->execute(['user_id' => (int)$user['id']]);
+        archiveAtcSessions($pdo, 'a.user_id=:history_user AND a.is_active=0', ['history_user'=>(int)$user['id']]);
 
         $base = $station . '_' . $position;
-        if ($spectator) {
+        if ($trainer) {
+            if ($position === 'CTR') {
+                $parts = preg_split('/[_-]+/', $station, 2);
+                $callsign = (string)($parts[0] ?? $station) . '_X';
+                if (!empty($parts[1])) $callsign .= '_' . (string)$parts[1];
+            } else {
+                $callsign = $station . '_X_' . $position;
+            }
+            $wantedCallsign = $callsign;
+            $suffix = 2;
+            $occupiedStmt = $pdo->prepare("SELECT 1 FROM atc_sessions WHERE callsign=:callsign AND is_active=1 LIMIT 1");
+            while (true) {
+                $occupiedStmt->execute(['callsign'=>$callsign]);
+                if (!$occupiedStmt->fetchColumn()) break;
+                $callsign = $wantedCallsign . '_' . $suffix++;
+            }
+        } elseif ($spectator) {
             $activeStmt = $pdo->prepare(
                 "SELECT callsign FROM atc_sessions
                  WHERE station_code = :station AND position_code = :position
@@ -244,6 +270,14 @@ try {
         }
 
         $token = bin2hex(random_bytes(32));
+        // ATC visibility is independent from a simultaneously active pilot
+        // session. A controlling or training position starts visible and can
+        // only be hidden deliberately through the ATC option (OP level 1+).
+        $isInvisible = 0;
+        if ($spectator && !$trainer) {
+            $isInvisible = ((int)($user['op_permission'] ?? 0) >= 1
+                && (string)($_POST['invisible_spectator'] ?? '0') === '1') ? 1 : 0;
+        }
         $scope = atcScopeForPosition($position);
         $mapProfile = atcMapProfileForPosition($position);
         $availableFrequencies = findAtcFrequencies($pdo, $station, $position);
@@ -254,19 +288,22 @@ try {
         $insert = $pdo->prepare(
             "INSERT INTO atc_sessions
              (user_id, session_token, callsign, station_code, position_code,
-              is_spectator, can_control, can_transmit_voice, scope_positions,
+              is_gca, is_spectator, is_trainer, is_invisible, can_control, can_transmit_voice, scope_positions,
               map_profile, radar_boundary_code, frequency)
              VALUES
              (:user_id, :token, :callsign, :station, :position,
-              :spectator, :can_control, :can_voice, :scope, :map_profile,
+              :is_gca, :spectator, :trainer, :is_invisible, :can_control, :can_voice, :scope, :map_profile,
               :radar_boundary_code, :frequency)"
         );
         $insert->execute([
             'user_id' => (int)$user['id'], 'token' => $token,
             'callsign' => $callsign, 'station' => $station, 'position' => $position,
+            'is_gca' => $usesGca ? 1 : 0,
             'spectator' => $spectator ? 1 : 0,
+            'trainer' => $trainer ? 1 : 0,
+            'is_invisible' => $isInvisible,
             'can_control' => $spectator ? 0 : 1,
-            'can_voice' => $spectator ? 0 : 1,
+            'can_voice' => (!$spectator || $trainer) ? 1 : 0,
             'scope' => implode(',', $scope),
             'map_profile' => $mapProfile,
             'radar_boundary_code' => $radarBoundaryCode,
@@ -308,7 +345,7 @@ try {
                  SET callsign=:callsign, is_spectator=:spectator
                  WHERE user_id=:user_id AND token=:token AND is_active=1"
             )->execute([
-                'callsign'=>$callsign, 'spectator'=>$spectator ? 1 : 0,
+                'callsign'=>$callsign, 'spectator'=>($spectator && !$trainer) ? 1 : 0,
                 'user_id'=>(int)$user['id'], 'token'=>$voiceToken,
             ]);
         }
@@ -322,10 +359,15 @@ try {
         'callsign' => $callsign,
         'station_code' => $station,
         'position_code' => $position,
+        'is_gca' => $usesGca,
         'spectator' => $spectator,
+        'is_spectator' => $spectator,
+        'trainer' => $trainer,
+        'is_trainer' => $trainer,
+        'is_invisible' => $isInvisible,
         'can_control' => !$spectator,
-        'can_transmit_voice' => !$spectator,
-        'voice_mode' => $spectator ? 'receive_only' : 'transmit_receive',
+        'can_transmit_voice' => !$spectator || $trainer,
+        'voice_mode' => ($spectator && !$trainer) ? 'receive_only' : 'transmit_receive',
         'scope_positions' => $scope,
         'map_profile' => $mapProfile,
         'radar_boundary_code' => $radarBoundaryCode,

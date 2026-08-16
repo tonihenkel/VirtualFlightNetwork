@@ -2,10 +2,12 @@
 header('Content-Type: text/plain; charset=utf-8');
 
 require_once 'config.php';
+require_once __DIR__ . '/../includes/atc_atis_scope.php';
 
 const VFN_TRAFFIC_MAX_AIRCRAFT = 100;
 const VFN_TRAFFIC_MAX_DISTANCE_NM = 30.0;
 const VFN_TRAFFIC_ACTIVE_SECONDS = 10;
+const VFN_TRAFFIC_MAX_ATC_DISTANCE_NM = 250.0;
 
 function trafficDistanceNm(
     float $lat1,
@@ -112,6 +114,7 @@ try {
             p.thrust_reverser_ratio,
             p.nose_wheel_angle,
             p.tire_rotation_rad_sec,
+            UNIX_TIMESTAMP(p.last_update) AS position_sample_time,
             s.is_spectator,
             u.op_permission,
             fp.departure_airport,
@@ -204,6 +207,86 @@ try {
             number_format((float)$row['thrust_reverser_ratio'], 3, '.', ''),
             number_format((float)$row['nose_wheel_angle'], 2, '.', ''),
             number_format((float)$row['tire_rotation_rad_sec'], 2, '.', ''),
+            (string)(int)$row['position_sample_time'],
+        ]) . "\n";
+    }
+
+    $atcStmt = $pdo->query(
+        "SELECT a.user_id, a.callsign, a.station_code, a.position_code,
+                a.frequency, a.radar_boundary_code,
+                u.op_permission,
+                COALESCE(NULLIF(TRIM(u.real_name), ''), u.username) AS controller_name,
+                ap.latitude_deg, ap.longitude_deg
+         FROM atc_sessions a
+         INNER JOIN users u ON u.id = a.user_id
+         LEFT JOIN airports ap ON UPPER(ap.ident) = UPPER(a.station_code)
+         WHERE a.is_active = 1
+           AND a.is_spectator = 0
+           AND a.last_seen_at >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
+         ORDER BY a.callsign"
+    );
+    $nearbyAtcs = [];
+    foreach ($atcStmt->fetchAll(PDO::FETCH_ASSOC) as $atc) {
+        $positionCode = strtoupper(trim((string)$atc['position_code']));
+        $distanceNm = INF;
+
+        if (in_array($positionCode, ['APP', 'DEP', 'CTR'], true)) {
+            foreach (readAtisScopeFeatures($atc) as $feature) {
+                $geometry = is_array($feature['geometry'] ?? null)
+                    ? $feature['geometry'] : [];
+                $distanceNm = min(
+                    $distanceNm,
+                    pointInAtisGeometry(
+                        (float)$viewer['longitude'],
+                        (float)$viewer['latitude'],
+                        $geometry
+                    ) ? 0.0 : distanceToAtcGeometryNm(
+                        (float)$viewer['longitude'],
+                        (float)$viewer['latitude'],
+                        $geometry
+                    )
+                );
+            }
+        }
+
+        if (
+            !is_finite($distanceNm)
+            && $atc['latitude_deg'] !== null
+            && $atc['longitude_deg'] !== null
+        ) {
+            $distanceNm = trafficDistanceNm(
+                (float)$viewer['latitude'],
+                (float)$viewer['longitude'],
+                (float)$atc['latitude_deg'],
+                (float)$atc['longitude_deg']
+            );
+        }
+
+        if (!is_finite($distanceNm) || $distanceNm > VFN_TRAFFIC_MAX_ATC_DISTANCE_NM) {
+            continue;
+        }
+        $atc['distance_nm'] = $distanceNm;
+        $nearbyAtcs[] = $atc;
+    }
+    usort(
+        $nearbyAtcs,
+        static fn(array $a, array $b): int =>
+            $a['distance_nm'] <=> $b['distance_nm']
+            ?: strcmp((string)$a['callsign'], (string)$b['callsign'])
+    );
+
+    echo "ATC\t" . count($nearbyAtcs) . "\n";
+    foreach ($nearbyAtcs as $atc) {
+        echo implode("\t", [
+            'ATCROW',
+            (string)(int)$atc['user_id'],
+            trafficField((string)$atc['callsign']),
+            trafficField((string)$atc['frequency']),
+            trafficField((string)$atc['station_code']),
+            trafficField((string)$atc['position_code']),
+            number_format((float)$atc['distance_nm'], 1, '.', ''),
+            (string)(int)$atc['op_permission'],
+            trafficField((string)$atc['controller_name']),
         ]) . "\n";
     }
 } catch (Throwable $error) {

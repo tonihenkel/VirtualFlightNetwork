@@ -94,6 +94,11 @@ try {
     if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
 
     $features = readAtisScopeFeatures($session);
+    // Aerodrome positions use the local airport environment. Applying the
+    // parent sector polygon here could hide valid VFR reporting points.
+    if (in_array(strtoupper((string)$session['position_code']), ['INFO', 'DEL', 'GND', 'TWR'], true)) {
+        $features = [];
+    }
     $latitudes = [];
     $longitudes = [];
     foreach ($features as $feature) {
@@ -150,6 +155,56 @@ try {
                 'latitude' => (float)$lat,
                 'longitude' => (float)$lon,
                 'frequency' => $item['frequency'] ?? null,
+            ];
+        }
+    }
+    // German VFR entry/exit and reporting points (OpenAIP, CC BY-NC 4.0).
+    // They are stored locally so the operational radar does not depend on an
+    // additional external request. Add them once, on the first AIRAC page.
+    if ($page === 1) {
+        $vfrFile = dirname(__DIR__) . '/data/atc/de-vfr-reporting-points.json';
+        $vfrPayload = null;
+        if (is_file($vfrFile)) {
+            $vfrJson = (string)file_get_contents($vfrFile);
+            // json_decode() rejects an optional UTF-8 BOM on older PHP builds.
+            if (substr($vfrJson, 0, 3) === "\xEF\xBB\xBF") {
+                $vfrJson = substr($vfrJson, 3);
+            }
+            $vfrPayload = json_decode($vfrJson, true);
+        }
+        // Local VFR reporting points are a valid navigation source of their
+        // own. Keep them available even if the remote AIRAC endpoint has a
+        // temporary outage.
+        if (is_array($vfrPayload) && isset($vfrPayload['points'])) {
+            $sourceAvailable = true;
+        }
+        foreach ((array)($vfrPayload['points'] ?? []) as $item) {
+            $lat = $item['latitude'] ?? null;
+            $lon = $item['longitude'] ?? null;
+            if (!is_numeric($lat) || !is_numeric($lon)) continue;
+            $lat = (float)$lat;
+            $lon = (float)$lon;
+            if ($features) {
+                $inside = false;
+                foreach ($features as $feature) {
+                    if (pointInAtisGeometry($lon, $lat, $feature['geometry'] ?? [])) {
+                        $inside = true;
+                        break;
+                    }
+                }
+                if (!$inside) continue;
+            } elseif (atisDistanceNm($latitude, $longitude, $lat, $lon) > $radius) {
+                continue;
+            }
+            $identifier = strtoupper(trim((string)($item['name'] ?? '')));
+            if ($identifier === '') continue;
+            $key = 'vfr_reporting:' . $identifier . ':' . round($lat, 5) . ':' . round($lon, 5);
+            $points[$key] = [
+                'identifier' => $identifier,
+                'kind' => 'vfr_reporting',
+                'latitude' => $lat,
+                'longitude' => $lon,
+                'compulsory' => !empty($item['compulsory']),
             ];
         }
     }

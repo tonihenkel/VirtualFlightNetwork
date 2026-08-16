@@ -4,6 +4,7 @@ header("Content-Type: application/json; charset=utf-8");
 require_once 'config.php';
 require_once '../includes/activity_log.php';
 require_once '../includes/awards_checks.php';
+require_once '../includes/flightplan_schema.php';
 
 $token = trim($_POST["token"] ?? "");
 
@@ -11,6 +12,7 @@ $callsign = strtoupper(trim($_POST["callsign"] ?? ""));
 
 $flight_rules = strtoupper(trim($_POST["flight_rules"] ?? "I"));
 $flight_type = strtoupper(trim($_POST["flight_type"] ?? "G"));
+$communication_mode = strtoupper(trim($_POST["communication_mode"] ?? "VOICE"));
 
 $departure_time = trim($_POST["departure_time"] ?? "");
 
@@ -72,6 +74,9 @@ $validFlightTypes = ["S", "N", "G", "M", "X"];
 if (!in_array($flight_type, $validFlightTypes, true)) {
     $flight_type = "G";
 }
+if (!in_array($communication_mode, ["VOICE", "RECEIVE_ONLY", "TEXT_ONLY"], true)) {
+    $communication_mode = "VOICE";
+}
 
 if ($departure_airport === "") {
     $departure_airport = "ZZZZ";
@@ -130,6 +135,8 @@ try {
         ]
     );
 
+    ensurePilotFlightplanCommunicationColumn($pdo);
+
     /*
         Session pruefen.
     */
@@ -173,6 +180,7 @@ try {
             callsign,
             flight_rules,
             flight_type,
+            communication_mode,
             departure_time,
             departure_airport,
             arrival_airport,
@@ -189,6 +197,7 @@ try {
             :callsign,
             :flight_rules,
             :flight_type,
+            :communication_mode,
             :departure_time,
             :departure_airport,
             :arrival_airport,
@@ -203,6 +212,7 @@ try {
             callsign = VALUES(callsign),
             flight_rules = VALUES(flight_rules),
             flight_type = VALUES(flight_type),
+            communication_mode = VALUES(communication_mode),
             departure_time = VALUES(departure_time),
             departure_airport = VALUES(departure_airport),
             arrival_airport = VALUES(arrival_airport),
@@ -220,6 +230,7 @@ try {
         "callsign" => $callsign,
         "flight_rules" => $flight_rules,
         "flight_type" => $flight_type,
+        "communication_mode" => $communication_mode,
         "departure_time" => $departure_time,
         "departure_airport" => $departure_airport,
         "arrival_airport" => $arrival_airport,
@@ -270,6 +281,7 @@ try {
             "callsign" => $callsign,
             "flight_rules" => $flight_rules,
             "flight_type" => $flight_type,
+            "communication_mode" => $communication_mode,
             "departure_time" => $departure_time,
             "departure_airport" => $departure_airport,
             "arrival_airport" => $arrival_airport,

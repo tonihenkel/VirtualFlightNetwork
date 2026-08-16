@@ -14,9 +14,8 @@ $password = $_POST["password"] ?? "";
 $callsign = $_POST["callsign"] ?? "";
 $pluginVersion = trim((string)($_POST["plugin_version"] ?? ""));
 $pluginLanguage = strtolower(trim((string)($_POST["plugin_language"] ?? "")));
-$pluginLanguage = in_array($pluginLanguage, ["de", "en"], true)
-    ? $pluginLanguage
-    : "en";
+require_once __DIR__ . '/../includes/languages.php';
+$pluginLanguage = in_array($pluginLanguage, vfnLanguageCodes(), true) ? $pluginLanguage : 'en';
 $spectatorMode = (string)($_POST["spectator"] ?? "0") === "1";
 
 $username = trim($username);
@@ -63,7 +62,7 @@ try {
     if (!$languageColumn) {
         $pdo->exec(
             "ALTER TABLE user_sessions
-             ADD COLUMN plugin_language VARCHAR(2) NOT NULL DEFAULT 'en'"
+             ADD COLUMN plugin_language VARCHAR(10) NOT NULL DEFAULT 'en'"
         );
     }
 

@@ -17,9 +17,10 @@ try {
     }
     ensureAtcSchema($pdo);
     $pdo->exec("UPDATE atc_sessions SET is_active=0, disconnected_at=NOW() WHERE is_active=1 AND last_seen_at < DATE_SUB(NOW(), INTERVAL 30 SECOND)");
+    archiveAtcSessions($pdo, "a.is_active=0 AND a.disconnected_at IS NOT NULL");
     $token = (string)($_SESSION['atc_session_token'] ?? '');
     $stmt = $pdo->prepare(
-        "SELECT a.id, a.user_id, a.callsign, a.station_code, a.position_code, a.is_spectator,
+        "SELECT a.id, a.user_id, a.callsign, a.station_code, a.position_code, a.is_gca, a.is_spectator, a.is_trainer, a.is_invisible,
                 a.can_control, a.can_transmit_voice, a.scope_positions, a.map_profile, a.radar_boundary_code,
                 a.frequency, a.atis_scope_ready, a.connected_at, u.op_permission
          FROM atc_sessions a
@@ -65,15 +66,23 @@ try {
         (string)$session['position_code']
     );
     $pdo->prepare("UPDATE atc_sessions SET last_seen_at=NOW() WHERE id=:id")->execute(['id'=>(int)$session['id']]);
-    $active = $pdo->query(
-        "SELECT a.callsign, a.station_code, a.position_code, a.is_spectator,
+    $showInvisible = ((int)$session['op_permission'] >= 1
+        && (string)($_COOKIE['vfn_atc_hide_invisible'] ?? '1') === '0') ? 1 : 0;
+    $activeStmt = $pdo->prepare(
+        "SELECT a.user_id,a.callsign, a.station_code, a.position_code, a.is_gca, a.is_spectator, a.is_trainer, a.is_invisible,u.op_permission,
                 COALESCE(NULLIF(TRIM(u.real_name), ''), u.username) AS controller_name,
                 TIMESTAMPDIFF(SECOND, a.connected_at, NOW()) AS online_seconds
          FROM atc_sessions a
          INNER JOIN users u ON u.id = a.user_id
          WHERE a.is_active=1
+           AND (a.is_invisible=0 OR (:show_invisible=1 AND u.op_permission <= :viewer_op))
          ORDER BY a.station_code, a.position_code, a.callsign"
-    )->fetchAll(PDO::FETCH_ASSOC);
+    );
+    $activeStmt->execute([
+        'show_invisible'=>$showInvisible,
+        'viewer_op'=>(int)$session['op_permission'],
+    ]);
+    $active = $activeStmt->fetchAll(PDO::FETCH_ASSOC);
     echo json_encode(['success'=>true,'session'=>$session,'active_positions'=>$active], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
 } catch (Throwable $error) {
     if (http_response_code()<400) http_response_code(500);

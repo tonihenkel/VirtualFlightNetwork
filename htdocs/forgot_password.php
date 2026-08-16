@@ -7,6 +7,7 @@ require_once 'execute/config.php';
 require_once 'execute/send_mail.php';
 require_once 'includes/auth_security.php';
 require_once 'includes/language_preferences.php';
+require_once 'includes/language.php';
 
 $language = strtolower(trim(
     $_GET['lang']
@@ -15,10 +16,9 @@ $language = strtolower(trim(
     ?? $_SESSION['language']
     ?? 'de'
 ));
-$language = $language === 'en' ? 'en' : 'de';
+$language = vfnNormalizeLanguage($language) ?: 'en';
 $_SESSION['language'] = $language;
 vfnStoreLanguageCookie($language);
-$isGerman = $language === 'de';
 $message = '';
 $isError = false;
 
@@ -45,14 +45,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         || $identifier === ''
     ) {
         $isError = true;
-        $message = $isGerman
-            ? 'Bitte fülle das Feld vollständig aus.'
-            : 'Please complete the field.';
+        $message = t('recovery_complete_field');
     } else {
         // Always show the same result, whether an account exists or not.
-        $message = $isGerman
-            ? 'Falls ein passendes Konto existiert, wurde eine E-Mail versendet.'
-            : 'If a matching account exists, an email has been sent.';
+        $message = t('recovery_email_sent');
 
         try {
             $pdo = new PDO(
@@ -142,17 +138,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         . urlencode($plainToken)
                         . '&lang='
                         . urlencode($language);
-                    $subject = $isGerman
-                        ? 'Passwort zurücksetzen – Virtual Flight Network'
-                        : 'Reset your password – Virtual Flight Network';
+                    $subject = t('recovery_mail_subject');
                     $name = trim((string)($user['real_name'] ?? ''));
-                    $greeting = $isGerman ? 'Hallo' : 'Hello';
-                    $bodyText = $isGerman
-                        ? 'Über diesen Link kannst du innerhalb von 30 Minuten ein neues Passwort festlegen:'
-                        : 'Use this link within 30 minutes to choose a new password:';
-                    $ignoreText = $isGerman
-                        ? 'Falls du das nicht angefordert hast, kannst du diese E-Mail ignorieren.'
-                        : 'If you did not request this, you can ignore this email.';
+                    $greeting = t('recovery_mail_greeting');
+                    $bodyText = t('recovery_mail_body');
+                    $ignoreText = t('recovery_mail_ignore');
 
                     $html =
                         '<!doctype html><html><body style="font-family:Arial,sans-serif;background:#07111f;padding:24px;">'
@@ -162,7 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         . '<p>' . htmlspecialchars($bodyText) . '</p>'
                         . '<p style="margin:28px 0;"><a href="' . htmlspecialchars($resetUrl)
                         . '" style="background:#176dcc;color:#fff;padding:12px 18px;border-radius:6px;text-decoration:none;">'
-                        . ($isGerman ? 'Neues Passwort festlegen' : 'Choose new password')
+                        . htmlspecialchars(t('recovery_mail_button'))
                         . '</a></p><p style="word-break:break-all;">' . htmlspecialchars($resetUrl) . '</p>'
                         . '<p style="color:#667;font-size:13px;">' . htmlspecialchars($ignoreText) . '</p>'
                         . '</div></body></html>';
@@ -187,7 +177,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title><?php echo $isGerman ? 'Passwort vergessen' : 'Forgot password'; ?> – VFN</title>
+    <title><?php echo htmlspecialchars(t('recovery_forgot_title')); ?> – VFN</title>
     <style>
         *{box-sizing:border-box} body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px;
         font-family:Arial,sans-serif;color:#eaf4ff;background:radial-gradient(circle at top,#12335a,#07111f 50%,#02050a)}
@@ -203,21 +193,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
 <main class="card">
     <div class="brand">VFN NETWORK</div>
-    <h1><?php echo $isGerman ? 'Passwort vergessen?' : 'Forgot your password?'; ?></h1>
-    <p><?php echo $isGerman
-        ? 'Gib deinen Benutzernamen oder deine bestätigte E-Mail-Adresse ein.'
-        : 'Enter your username or verified email address.'; ?></p>
+    <h1><?php echo htmlspecialchars(t('recovery_forgot_heading')); ?></h1>
+    <p><?php echo htmlspecialchars(t('recovery_forgot_help')); ?></p>
     <?php if ($message !== ''): ?>
         <div class="message<?php echo $isError ? ' error' : ''; ?>"><?php echo htmlspecialchars($message); ?></div>
     <?php endif; ?>
     <form method="post">
         <input type="hidden" name="csrf" value="<?php echo htmlspecialchars($_SESSION['password_reset_csrf']); ?>">
         <input type="hidden" name="lang" value="<?php echo htmlspecialchars($language); ?>">
-        <label for="identifier"><?php echo $isGerman ? 'Benutzername oder E-Mail' : 'Username or email'; ?></label>
+        <label for="identifier"><?php echo htmlspecialchars(t('recovery_identifier')); ?></label>
         <input id="identifier" name="identifier" autocomplete="username" required>
-        <button type="submit"><?php echo $isGerman ? 'Reset-Link anfordern' : 'Request reset link'; ?></button>
+        <button type="submit"><?php echo htmlspecialchars(t('recovery_request_link')); ?></button>
     </form>
-    <p><a href="/"><?php echo $isGerman ? 'Zurück zur Startseite' : 'Back to home'; ?></a></p>
+    <p><a href="/"><?php echo htmlspecialchars(t('recovery_back_home')); ?></a></p>
 </main>
 </body>
 </html>
