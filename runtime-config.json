@@ -2,7 +2,7 @@
     "defaultTimezone": "UTC",
     "minimumInvisibleOpPermission": 1,
     "showRatings": true,
-    "maintenanceMode": false,
+    "maintenanceMode": true,
     "registrationEnabled": true,
     "atcLoginEnabled": true,
     "chatFrequencyRangeNm": 200,
