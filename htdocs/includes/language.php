@@ -170,6 +170,14 @@ $lang = array_replace($fallbackLang, is_array($selectedLang) ? $selectedLang : [
     Kleine Hilfsfunktion
 */
 
+require_once __DIR__ . '/compendium_translations.php';
+$lang = array_replace(vfnCompendiumTranslations($currentLanguage), $lang);
+require_once __DIR__ . '/compendium_admin_translations.php';
+$lang = array_replace($lang, vfnCompendiumAdminTranslations($currentLanguage));
+$lang['compendium_homepage'] = $lang['compendium_homepage'] ?? ($currentLanguage === 'de'
+    ? 'Als Kompendium-Hauptseite verwenden'
+    : 'Use as compendium home page');
+
 function t(string $key): string
 {
     global $lang;

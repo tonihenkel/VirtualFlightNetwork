@@ -3,6 +3,7 @@ require_once __DIR__ . '/../includes/atc_atis_scope.php';
 header("Content-Type: application/json; charset=utf-8");
 
 require_once 'config.php';
+require_once '../includes/maintenance_access.php';
 require_once 'aircraft_types.php';
 require_once '../includes/awards_checks.php';
 require_once '../includes/track_maintenance.php';
@@ -86,7 +87,49 @@ function findPositionAtcCallsign(
         $specificity = $a['specificity'] <=> $b['specificity'];
         return $specificity !== 0 ? $specificity : ($a['priority'] <=> $b['priority']);
     });
-    return (string)($matches[0]['callsign'] ?? '');
+    $controllerCallsign = (string)($matches[0]['callsign'] ?? '');
+    return $controllerCallsign !== ''
+        ? $controllerCallsign
+        : findPositionAtisCallsign($pdo, $frequency, $latitude, $longitude);
+}
+
+/** Return the geographically matching active automatic ATIS broadcast. */
+function findPositionAtisCallsign(
+    PDO $pdo,
+    string $frequency,
+    float $latitude,
+    float $longitude
+): string {
+    try {
+        $statement = $pdo->prepare(
+            "SELECT b.airport_icao,ap.latitude_deg,ap.longitude_deg
+             FROM auto_atis_broadcasts b
+             INNER JOIN airports ap ON UPPER(ap.ident)=UPPER(b.airport_icao)
+             WHERE b.is_active=1
+               AND ABS(CAST(b.frequency AS DECIMAL(7,3))-CAST(:frequency AS DECIMAL(7,3)))<0.001"
+        );
+        $statement->execute(['frequency' => $frequency]);
+        $bestCallsign = '';
+        $bestDistance = INF;
+        foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $broadcast) {
+            $distance = atisDistanceNm(
+                $latitude,
+                $longitude,
+                (float)$broadcast['latitude_deg'],
+                (float)$broadcast['longitude_deg']
+            );
+            // Keep this synchronized with AUTO_ATIS_RANGE_NM in voice-service.
+            if ($distance > 60.0 || $distance >= $bestDistance) continue;
+            $airport = strtoupper(trim((string)$broadcast['airport_icao']));
+            if ($airport === '') continue;
+            $bestDistance = $distance;
+            $bestCallsign = $airport . '_ATIS';
+        }
+        return $bestCallsign;
+    } catch (Throwable $ignored) {
+        // Automatic ATIS is optional and its table is created by voice-service.
+        return '';
+    }
 }
 
 /** Approximate distance to a sector boundary in NM (local equirectangular plane). */
@@ -675,10 +718,10 @@ try {
         exit;
     }
 
-    if (
-        !empty($maintenanceMode)
-        && (int)$session['op_permission'] < 5
-    ) {
+    if (!vfnCanAccessNetworkDuringMaintenance(
+        $maintenanceMode,
+        $session['op_permission'] ?? 0
+    )) {
         $pdo->beginTransaction();
         $pdo->prepare(
             "UPDATE pilot_flights
@@ -712,6 +755,7 @@ try {
     if (
         (int)($session['is_spectator'] ?? 0) !== 1
         && $aircraft_category === 'groundvehicle'
+        && (int)($session['op_permission'] ?? 0) < 5
         && (int)($session['rating_atc'] ?? 0) < 4
         && (int)($session['rating_special'] ?? 0) < 1
     ) {

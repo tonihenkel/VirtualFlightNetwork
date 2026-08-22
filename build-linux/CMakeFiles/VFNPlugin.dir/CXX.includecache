@@ -1,0 +1,246 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+../third_party/XPMP2/inc/XPMPAircraft.h
+XPMPMultiplayer.h
+../third_party/XPMP2/inc/XPMPMultiplayer.h
+XPLMInstance.h
+../third_party/XPMP2/inc/XPLMInstance.h
+XPLMCamera.h
+../third_party/XPMP2/inc/XPLMCamera.h
+XPLMMap.h
+../third_party/XPMP2/inc/XPLMMap.h
+cstdint
+-
+cmath
+-
+stdexcept
+-
+string
+-
+vector
+-
+list
+-
+
+../third_party/XPMP2/inc/XPMPExport.h
+
+../third_party/XPMP2/inc/XPMPMultiplayer.h
+string
+-
+cmath
+-
+XPLMDefs.h
+../third_party/XPMP2/inc/XPLMDefs.h
+XPMPExport.h
+../third_party/XPMP2/inc/XPMPExport.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/framework.h
+windows.h
+-
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/main.cpp
+pch.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/pch.h
+version_generated.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/version_generated.h
+XPLMPlugin.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/XPLMPlugin.h
+XPLMUtilities.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/XPLMUtilities.h
+XPLMDataAccess.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/XPLMDataAccess.h
+XPLMProcessing.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/XPLMProcessing.h
+XPLMMenus.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/XPLMMenus.h
+XPLMDisplay.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/XPLMDisplay.h
+XPLMGraphics.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/XPLMGraphics.h
+XPLMNavigation.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/XPLMNavigation.h
+XPLMScenery.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/XPLMScenery.h
+XPWidgets.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/XPWidgets.h
+XPStandardWidgets.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/XPStandardWidgets.h
+XPWidgetUtils.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/XPWidgetUtils.h
+XPMPAircraft.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/XPMPAircraft.h
+XPMPMultiplayer.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/XPMPMultiplayer.h
+algorithm
+-
+cctype
+-
+cmath
+-
+cstdio
+-
+ctime
+-
+fstream
+-
+filesystem
+-
+iomanip
+-
+string
+-
+sstream
+-
+map
+-
+memory
+-
+set
+-
+vector
+-
+deque
+-
+atomic
+-
+mutex
+-
+condition_variable
+-
+chrono
+-
+thread
+-
+cstring
+-
+windows.h
+-
+shellapi.h
+-
+mmsystem.h
+-
+mmdeviceapi.h
+-
+endpointvolume.h
+-
+functiondiscoverykeys_devpkey.h
+-
+objidl.h
+-
+olectl.h
+-
+winhttp.h
+-
+gdiplus.h
+-
+gl/GL.h
+-
+curl/curl.h
+-
+libwebsockets.h
+-
+AL/al.h
+-
+AL/alc.h
+-
+png.h
+-
+GL/gl.h
+-
+unistd.h
+-
+dlfcn.h
+-
+sys/stat.h
+-
+cerrno
+-
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/pch.h
+framework.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/framework.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/Flight Radar Sim Projekt/version_generated.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/Widgets/XPStandardWidgets.h
+XPWidgetDefs.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/Widgets/XPWidgetDefs.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/Widgets/XPWidgetDefs.h
+XPLMDefs.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/Widgets/XPLMDefs.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/Widgets/XPWidgetUtils.h
+XPWidgetDefs.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/Widgets/XPWidgetDefs.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/Widgets/XPWidgets.h
+XPWidgetDefs.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/Widgets/XPWidgetDefs.h
+XPLMDisplay.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/Widgets/XPLMDisplay.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMCamera.h
+XPLMDefs.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMDefs.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMDataAccess.h
+XPLMDefs.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMDefs.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMDefs.h
+windows.h
+-
+stdint.h
+-
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMDisplay.h
+XPLMDefs.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMDefs.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMGraphics.h
+XPLMDefs.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMDefs.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMInstance.h
+XPLMDefs.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMDefs.h
+XPLMScenery.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMScenery.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMMap.h
+XPLMDefs.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMDefs.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMMenus.h
+XPLMDefs.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMDefs.h
+XPLMUtilities.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMUtilities.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMNavigation.h
+XPLMDefs.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMDefs.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMPlugin.h
+XPLMDefs.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMDefs.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMProcessing.h
+XPLMDefs.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMDefs.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMScenery.h
+XPLMDefs.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMDefs.h
+
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMUtilities.h
+XPLMDefs.h
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMDefs.h
+

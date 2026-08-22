@@ -5,6 +5,8 @@ require_once 'config.php';
 require_once '../includes/activity_log.php';
 require_once '../includes/awards_checks.php';
 require_once '../includes/flightplan_schema.php';
+require_once '../includes/atc_schema.php';
+require_once '../includes/airport_code.php';
 
 $token = trim($_POST["token"] ?? "");
 
@@ -95,28 +97,6 @@ if ($alternate2_airport === "") {
 }
 
 /*
-    ICAO-Felder auf einfache sichere Zeichen begrenzen.
-    ZZZZ ist erlaubt und bedeutet: kein fest definierter Flughafen.
-*/
-$airportPattern = '/^[A-Z0-9]{3,10}$/';
-
-if (!preg_match($airportPattern, $departure_airport)) {
-    $departure_airport = "ZZZZ";
-}
-
-if (!preg_match($airportPattern, $arrival_airport)) {
-    $arrival_airport = "ZZZZ";
-}
-
-if (!preg_match($airportPattern, $alternate1_airport)) {
-    $alternate1_airport = "ZZZZ";
-}
-
-if (!preg_match($airportPattern, $alternate2_airport)) {
-    $alternate2_airport = "ZZZZ";
-}
-
-/*
     Textfelder begrenzen, damit nicht versehentlich riesige Datenmengen gespeichert werden.
 */
 $departure_time = mb_substr($departure_time, 0, 20, "UTF-8");
@@ -136,6 +116,12 @@ try {
     );
 
     ensurePilotFlightplanCommunicationColumn($pdo);
+    ensureAtcSchema($pdo);
+
+    $departure_airport = vfnNormalizeFlightplanAirport($pdo, $departure_airport);
+    $arrival_airport = vfnNormalizeFlightplanAirport($pdo, $arrival_airport);
+    $alternate1_airport = vfnNormalizeFlightplanAirport($pdo, $alternate1_airport);
+    $alternate2_airport = vfnNormalizeFlightplanAirport($pdo, $alternate2_airport);
 
     /*
         Session pruefen.
@@ -169,6 +155,12 @@ try {
         ]);
         exit;
     }
+
+    // Eine neue Pilotenplanung darf keine Standzuweisung des vorherigen Flugs übernehmen.
+    $pdo->prepare(
+        "UPDATE atc_aircraft_clearances SET cleared_gate='',updated_at=NOW()
+         WHERE pilot_session_token=:token"
+    )->execute(['token'=>$token]);
 
     /*
         Flightplan pro Session speichern oder aktualisieren.

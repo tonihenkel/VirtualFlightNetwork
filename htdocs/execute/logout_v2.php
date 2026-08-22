@@ -2,6 +2,7 @@
 
 header('Content-Type: application/json; charset=utf-8');
 require_once 'config.php';
+require_once '../includes/atc_schema.php';
 
 $token = trim((string)($_POST['token'] ?? ''));
 if ($token === '') {
@@ -16,6 +17,7 @@ try {
         $dbPass,
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
     );
+    ensureAtcSchema($pdo);
     $pdo->beginTransaction();
     $pdo->prepare(
         "UPDATE pilot_flights
@@ -26,6 +28,9 @@ try {
     // remains responsible for removing old tracks.
     $pdo->prepare(
         "DELETE FROM pilot_positions WHERE session_token = :token"
+    )->execute(['token' => $token]);
+    $pdo->prepare(
+        "DELETE FROM atc_aircraft_clearances WHERE pilot_session_token = :token"
     )->execute(['token' => $token]);
     $pdo->prepare(
         "UPDATE user_sessions

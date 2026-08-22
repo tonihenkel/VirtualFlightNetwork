@@ -8,6 +8,7 @@ header("Content-Type: application/json; charset=utf-8");
 require_once 'config.php';
 require_once '../includes/ratings.php';
 require_once '../includes/ban_status.php';
+require_once '../includes/maintenance_access.php';
 
 $username = $_POST["username"] ?? "";
 $password = $_POST["password"] ?? "";
@@ -117,10 +118,10 @@ try {
         exit;
     }
 
-    if (
-        !empty($maintenanceMode)
-        && (int)$user["op_permission"] < 5
-    ) {
+    if (!vfnCanAccessNetworkDuringMaintenance(
+        $maintenanceMode,
+        $user["op_permission"] ?? 0
+    )) {
         echo json_encode([
             "success" => false,
             "maintenance_mode" => true,
@@ -202,6 +203,8 @@ try {
 
     echo json_encode([
         "success" => true,
+        "maintenance_mode" => vfnMaintenanceModeIsActive($maintenanceMode),
+        "maintenance_access_granted" => true,
         "message" => "Login erfolgreich.",
         "user_id" => (int)$user["id"],
         "username" => $user["username"],

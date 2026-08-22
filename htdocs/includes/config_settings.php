@@ -5,6 +5,11 @@ function vfnRuntimeConfigPath(): string
     return dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'runtime-config.json';
 }
 
+function vfnRuntimeSecretsPath(): string
+{
+    return dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'runtime-secrets.json';
+}
+
 function vfnConfigDefinitions(): array
 {
     return [
@@ -34,6 +39,10 @@ function vfnConfigDefinitions(): array
             'type' => 'boolean',
             'category' => 'permissions'
         ],
+        'compendiumPublicEnabled' => [
+            'type' => 'boolean',
+            'category' => 'permissions'
+        ],
         'chatFrequencyRangeNm' => [
             'type' => 'number',
             'min' => 1,
@@ -60,6 +69,27 @@ function vfnConfigDefinitions(): array
             'type' => 'wss_url_optional',
             'max_length' => 500,
             'category' => 'voice'
+        ],
+        'hoppieCpdlcEnabled' => [
+            'type' => 'boolean',
+            'category' => 'cpdlc'
+        ],
+        'hoppieCpdlcLogonCode' => [
+            'type' => 'secret',
+            'min_length' => 0,
+            'max_length' => 128,
+            'category' => 'cpdlc'
+        ],
+        'hoppieCpdlcConnectUrl' => [
+            'type' => 'https_url',
+            'max_length' => 500,
+            'category' => 'cpdlc'
+        ],
+        'hoppieCpdlcPollSeconds' => [
+            'type' => 'integer',
+            'min' => 45,
+            'max' => 75,
+            'category' => 'cpdlc'
         ],
         'projectName' => [
             'type' => 'string',
@@ -128,21 +158,31 @@ function vfnConfigDefinitions(): array
 function vfnReadRuntimeConfig(): array
 {
     $path = vfnRuntimeConfigPath();
-
-    if (!is_file($path)) {
-        return [];
+    $values = [];
+    if (is_file($path)) {
+        $contents = file_get_contents($path);
+        if ($contents !== false && trim($contents) !== '') {
+            $decoded = json_decode($contents, true);
+            if (is_array($decoded)) {
+                $values = $decoded;
+            }
+        }
     }
 
-    $contents = file_get_contents($path);
-    if ($contents === false || trim($contents) === '') {
-        return [];
+    $secretPath = vfnRuntimeSecretsPath();
+    if (is_file($secretPath)) {
+        $secretContents = file_get_contents($secretPath);
+        $secretValues = $secretContents === false ? null : json_decode($secretContents, true);
+        if (is_array($secretValues)) {
+            foreach (vfnConfigDefinitions() as $key => $definition) {
+                if (($definition['type'] ?? '') === 'secret' && array_key_exists($key, $secretValues)) {
+                    $values[$key] = $secretValues[$key];
+                }
+            }
+        }
     }
 
-    $decoded = json_decode($contents, true);
-
-    return is_array($decoded)
-        ? $decoded
-        : [];
+    return $values;
 }
 
 function vfnValidateConfigValue(string $key, $value)
@@ -280,8 +320,18 @@ function vfnApplyRuntimeConfig(array $values): void
 function vfnWriteRuntimeConfig(array $values): void
 {
     $validated = vfnValidatedRuntimeConfig($values);
+    $definitions = vfnConfigDefinitions();
+    $publicValues = [];
+    $secretValues = [];
+    foreach ($validated as $key => $value) {
+        if (($definitions[$key]['type'] ?? '') === 'secret') {
+            $secretValues[$key] = $value;
+        } else {
+            $publicValues[$key] = $value;
+        }
+    }
     $json = json_encode(
-        $validated,
+        $publicValues,
         JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
     );
 
@@ -297,5 +347,16 @@ function vfnWriteRuntimeConfig(array $values): void
         ) === false
     ) {
         throw new RuntimeException('config_write_failed');
+    }
+
+    $secretJson = json_encode(
+        $secretValues,
+        JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+    );
+    if (
+        $secretJson === false
+        || file_put_contents(vfnRuntimeSecretsPath(), $secretJson . PHP_EOL, LOCK_EX) === false
+    ) {
+        throw new RuntimeException('secret_config_write_failed');
     }
 }

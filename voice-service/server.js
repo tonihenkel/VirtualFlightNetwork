@@ -957,8 +957,10 @@ async function handleMonitor(client, payload) {
     }
     const sessionLatitude = Number(payload.latitude);
     const sessionLongitude = Number(payload.longitude);
-    if (payload.atcSessionReference === true && (atcSession || client.opPermission >= 1) &&
-        Number.isFinite(sessionLatitude) && Number.isFinite(sessionLongitude)) {
+    if (payload.atcSessionReference === true && (atcSession || client.opPermission >= 1)) {
+      if (!Number.isFinite(sessionLatitude) || !Number.isFinite(sessionLongitude)) {
+        throw new Error('ATC radar reference is not ready. Please reconnect.');
+      }
       client.monitorLatitude = sessionLatitude;
       client.monitorLongitude = sessionLongitude;
       client.monitorLocationName = String(

@@ -218,6 +218,12 @@ try {
     $lockStmt->execute(['lock_name' => $lockName]);
     if ((int)$lockStmt->fetchColumn() !== 1) throw new RuntimeException('atc_position_busy');
     try {
+        // Match the heartbeat resume grace. Sessions abandoned for longer
+        // than five minutes must no longer reserve their controller position.
+        $pdo->exec(
+            "UPDATE atc_sessions SET is_active=0, disconnected_at=NOW()
+             WHERE is_active=1 AND last_seen_at<DATE_SUB(NOW(),INTERVAL 5 MINUTE)"
+        );
         $pdo->prepare(
             "UPDATE atc_sessions SET is_active = 0, disconnected_at = NOW()
              WHERE user_id = :user_id AND is_active = 1"

@@ -66,6 +66,9 @@ try {
         'divisions',
         'division_staff',
         'division_content_revisions',
+        'compendium_articles',
+        'compendium_aliases',
+        'compendium_revisions',
         'chat_filter_words',
         'atc_position_frequencies',
         'users'

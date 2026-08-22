@@ -10,6 +10,7 @@ require_once __DIR__ . '/../includes/web_session.php';
 require_once __DIR__ . '/../includes/atc_schema.php';
 require_once __DIR__ . '/../includes/chat_system.php';
 require_once __DIR__ . '/../includes/flightplan_schema.php';
+require_once __DIR__ . '/../includes/airport_code.php';
 
 function atcFplReply(bool $success, array $extra = [], int $status = 200): void
 {
@@ -33,9 +34,8 @@ try {
     ensurePilotFlightplanCommunicationColumn($pdo);
     $sessionToken = (string)($_SESSION['atc_session_token'] ?? '');
     $sessionStatement = $pdo->prepare(
-        "SELECT id,user_id FROM atc_sessions
+        "SELECT id,user_id,is_spectator,can_control FROM atc_sessions
          WHERE user_id=:user_id AND session_token=:token AND is_active=1
-           AND is_spectator=0 AND can_control=1
            AND last_seen_at>=DATE_SUB(NOW(),INTERVAL 30 SECOND) LIMIT 1"
     );
     $sessionStatement->execute([
@@ -44,7 +44,7 @@ try {
     ]);
     $atcSession = $sessionStatement->fetch(PDO::FETCH_ASSOC);
     if (!$atcSession) {
-        atcFplReply(false, ['message' => 'atc_control_session_required'], 403);
+        atcFplReply(false, ['message' => 'atc_session_required'], 403);
     }
 
     $callsign = strtoupper(trim((string)($_REQUEST['callsign'] ?? '')));
@@ -101,7 +101,13 @@ try {
         }
         $ownership=$pdo->prepare("SELECT atc_session_id,atc_callsign FROM atc_assumed_aircraft WHERE pilot_session_token=:token LIMIT 1");
         $ownership->execute(['token'=>(string)$target['session_token']]);$owner=$ownership->fetch(PDO::FETCH_ASSOC);
-        atcFplReply(true, ['callsign' => $callsign, 'flightplan' => $flightplan, 'assumed_by_me'=>$owner&&(int)$owner['atc_session_id']===(int)$atcSession['id'], 'assumed_by'=>(string)($owner['atc_callsign']??'')]);
+        $mayControl = (int)($atcSession['is_spectator'] ?? 1) === 0
+            && (int)($atcSession['can_control'] ?? 0) === 1;
+        atcFplReply(true, ['callsign' => $callsign, 'flightplan' => $flightplan, 'assumed_by_me'=>$mayControl&&$owner&&(int)$owner['atc_session_id']===(int)$atcSession['id'], 'assumed_by'=>(string)($owner['atc_callsign']??'')]);
+    }
+
+    if ((int)($atcSession['is_spectator'] ?? 1) === 1 || (int)($atcSession['can_control'] ?? 0) !== 1) {
+        atcFplReply(false, ['message' => 'atc_control_session_required'], 403);
     }
 
     $ownership=$pdo->prepare("SELECT atc_session_id FROM atc_assumed_aircraft WHERE pilot_session_token=:token LIMIT 1");
@@ -125,16 +131,12 @@ try {
         $values['communication_mode'] = 'VOICE';
     }
     foreach (['departure_airport','arrival_airport','alternate1_airport','alternate2_airport'] as $field) {
-        $values[$field] = strtoupper(substr($values[$field], 0, 8));
+        $values[$field] = vfnNormalizeFlightplanAirport($pdo, $values[$field]);
     }
     $values['cruising_level'] = strtoupper(substr($values['cruising_level'], 0, 20));
     $values['cruising_speed'] = strtoupper(substr($values['cruising_speed'], 0, 20));
     $values['route_text'] = mb_substr(strtoupper($values['route_text']), 0, 5000, 'UTF-8');
     $values['remarks'] = mb_substr($values['remarks'], 0, 2000, 'UTF-8');
-    if ($values['departure_airport'] === '' || $values['arrival_airport'] === '') {
-        atcFplReply(false, ['message' => 'departure_and_arrival_required'], 422);
-    }
-
     $values['token'] = (string)$target['session_token'];
     $values['callsign'] = $callsign;
     $update = $pdo->prepare(

@@ -183,6 +183,25 @@ if (!isset($showRatings)) {
             border-radius: 4px;
         }
         .map-statistics-link {color:#66bdff;text-decoration:none;font-size:12px;margin-bottom:10px;display:inline-block}
+        .map-invisible-filter,
+        .map-nearby-filter {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0 0 10px;
+            color: #d7e8ff;
+            font-size: 14px;
+            line-height: 1.25;
+            cursor: pointer;
+        }
+        .map-invisible-filter input,
+        .map-nearby-filter input {
+            flex: 0 0 auto;
+            width: 16px;
+            height: 16px;
+            margin: 0;
+            accent-color: #168cff;
+        }
         #pilotDirectoryList {
             display: grid;
             gap: 7px;
@@ -958,6 +977,10 @@ if ($statusMessage !== '') {
             <div class="panel-row">
                 <div class="panel-row-label"><?php echo htmlspecialchars(t('map_panel_route_distance')); ?></div>
                 <div class="panel-row-value" id="panelEstimatedRouteDistance">----</div>
+            </div>
+            <div class="panel-row">
+                <div class="panel-row-label"><?php echo htmlspecialchars(t('map_panel_remaining_route_distance')); ?></div>
+                <div class="panel-row-value" id="panelRemainingRouteDistance">----</div>
             </div>
             <div class="panel-row">
                 <div class="panel-row-label"><?php echo htmlspecialchars(t('map_panel_route_calculation')); ?></div>
@@ -2766,6 +2789,7 @@ if ($statusMessage !== '') {
         const elapsedElement = document.getElementById('panelElapsedFlightTime');
         const remainingElement = document.getElementById('panelRemainingFlightTime');
         const distanceElement = document.getElementById('panelEstimatedRouteDistance');
+        const remainingDistanceElement = document.getElementById('panelRemainingRouteDistance');
         const calculationElement = document.getElementById('panelRouteCalculation');
         if (!elapsedElement || !IS_WEB_LOGGED_IN) return;
 
@@ -2776,6 +2800,7 @@ if ($statusMessage !== '') {
         if (departure === 'ZZZZ' || arrival === 'ZZZZ') {
             remainingElement.textContent = MAP_TEXT.route_unavailable;
             distanceElement.textContent = '----';
+            if (remainingDistanceElement) remainingDistanceElement.textContent = '----';
             calculationElement.textContent = MAP_TEXT.route_unavailable;
             return;
         }
@@ -2788,6 +2813,7 @@ if ($statusMessage !== '') {
         if (!route.success || !Array.isArray(route.points)) {
             remainingElement.textContent = MAP_TEXT.route_unavailable;
             distanceElement.textContent = '----';
+            if (remainingDistanceElement) remainingDistanceElement.textContent = '----';
             calculationElement.textContent = MAP_TEXT.route_unavailable;
             return;
         }
@@ -2799,6 +2825,7 @@ if ($statusMessage !== '') {
             ? formatFlightDuration(remainingDistance / speed * 3600)
             : MAP_TEXT.route_unavailable;
         distanceElement.textContent = routeDistance.toFixed(1) + ' NM';
+        if (remainingDistanceElement) remainingDistanceElement.textContent = remainingDistance.toFixed(1) + ' NM';
         calculationElement.textContent = route.mode === 'waypoints'
             ? MAP_TEXT.route_via_waypoints
                 + (route.resolved_waypoints?.length

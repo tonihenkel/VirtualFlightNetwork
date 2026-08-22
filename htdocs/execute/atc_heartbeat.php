@@ -16,7 +16,11 @@ try {
         http_response_code(401); throw new RuntimeException('login_required');
     }
     ensureAtcSchema($pdo);
-    $pdo->exec("UPDATE atc_sessions SET is_active=0, disconnected_at=NOW() WHERE is_active=1 AND last_seen_at < DATE_SUB(NOW(), INTERVAL 30 SECOND)");
+    // Mobile browsers (notably Firefox on Android) suspend JavaScript timers
+    // while the app is in the background. Keep the controller's position
+    // resumable for a short grace period instead of treating one missed
+    // 30-second heartbeat as an explicit logout.
+    $pdo->exec("UPDATE atc_sessions SET is_active=0, disconnected_at=NOW() WHERE is_active=1 AND last_seen_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)");
     archiveAtcSessions($pdo, "a.is_active=0 AND a.disconnected_at IS NOT NULL");
     $token = (string)($_SESSION['atc_session_token'] ?? '');
     $stmt = $pdo->prepare(
@@ -75,6 +79,7 @@ try {
          FROM atc_sessions a
          INNER JOIN users u ON u.id = a.user_id
          WHERE a.is_active=1
+           AND a.last_seen_at>=DATE_SUB(NOW(),INTERVAL 30 SECOND)
            AND (a.is_invisible=0 OR (:show_invisible=1 AND u.op_permission <= :viewer_op))
          ORDER BY a.station_code, a.position_code, a.callsign"
     );

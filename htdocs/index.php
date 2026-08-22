@@ -616,6 +616,30 @@ if ($statusMessage !== '') {
             <p><?php echo htmlspecialchars(t('feature_divisions_text')); ?></p>
         </div>
 
+        <div class="feature-card">
+            <div class="feature-icon">&#128225;</div>
+            <h3><?php echo htmlspecialchars(t('feature_atc_client_title')); ?></h3>
+            <p><?php echo htmlspecialchars(t('feature_atc_client_text')); ?></p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">&#128232;</div>
+            <h3><?php echo htmlspecialchars(t('feature_cpdlc_title')); ?></h3>
+            <p><?php echo htmlspecialchars(t('feature_cpdlc_text')); ?></p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">&#128196;</div>
+            <h3><?php echo htmlspecialchars(t('feature_web_flightplans_title')); ?></h3>
+            <p><?php echo htmlspecialchars(t('feature_web_flightplans_text')); ?></p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">&#127891;</div>
+            <h3><?php echo htmlspecialchars(t('feature_atc_training_title')); ?></h3>
+            <p><?php echo htmlspecialchars(t('feature_atc_training_text')); ?></p>
+        </div>
+
     </section>
 
     <section class="download-section" id="download">

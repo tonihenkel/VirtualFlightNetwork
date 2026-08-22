@@ -38,10 +38,32 @@ try {
     if ($west > $east) [$west, $east] = [$east, $west];
 
     $position = strtoupper((string)$session['position_code']);
+    $station = normalizeAtcStationCode((string)($session['station_code'] ?? ''));
+    $isTerminalPosition = in_array($position, ['APP', 'DEP'], true);
     $features = in_array($position, ['APP', 'DEP', 'CTR'], true)
         ? readAtisScopeFeatures($session) : [];
-    if (!$features) {
+    if (!$features && !$isTerminalPosition) {
         echo json_encode(['success'=>true, 'airports'=>[]]); exit;
+    }
+
+    // APP/DEP polygons are sourced globally and are not equally complete for every
+    // country.  The position's own airport must therefore never depend solely on
+    // a polygon hit (LKPR_APP was one affected example).  The same row supplies a
+    // conservative terminal-radius fallback when no polygon exists at all.
+    $primaryAirport = null;
+    if ($isTerminalPosition && preg_match('/^[A-Z0-9]{4}$/', $station)) {
+        $primaryQuery = $pdo->prepare(
+            "SELECT ident,icao_code,gps_code,name,latitude_deg,longitude_deg
+             FROM airports
+             WHERE UPPER(ident)=:ident OR UPPER(icao_code)=:icao OR UPPER(gps_code)=:gps
+             ORDER BY UPPER(icao_code)=:order_icao DESC, UPPER(ident)=:order_ident DESC
+             LIMIT 1"
+        );
+        $primaryQuery->execute([
+            'ident'=>$station, 'icao'=>$station, 'gps'=>$station,
+            'order_icao'=>$station, 'order_ident'=>$station,
+        ]);
+        $primaryAirport = $primaryQuery->fetch(PDO::FETCH_ASSOC) ?: null;
     }
     $query = $pdo->prepare(
         "SELECT ident,icao_code,gps_code,name,latitude_deg,longitude_deg
@@ -52,15 +74,35 @@ try {
          LIMIT 500"
     );
     $query->execute(['south'=>$south, 'north'=>$north, 'west'=>$west, 'east'=>$east]);
+    $rows = $query->fetchAll(PDO::FETCH_ASSOC);
+    if ($primaryAirport) {
+        // Include the primary airport even if the current polygon or initial map
+        // bounds are imperfect. The client caches it and only renders it at the
+        // appropriate zoom level.
+        $rows[] = $primaryAirport;
+    }
+
     $layoutDir = dirname(__DIR__) . '/data/airport_layouts';
     $airports = [];
-    foreach ($query->fetchAll(PDO::FETCH_ASSOC) as $row) {
-        $inside = false;
-        foreach ($features as $feature) {
-            if (pointInAtisGeometry(
-                (float)$row['longitude_deg'], (float)$row['latitude_deg'],
-                $feature['geometry'] ?? []
-            )) { $inside = true; break; }
+    foreach ($rows as $row) {
+        $rowCodes = array_unique(array_filter(array_map(static function ($value): string {
+            return normalizeAtcStationCode((string)$value);
+        }, [$row['ident'] ?? '', $row['icao_code'] ?? '', $row['gps_code'] ?? ''])));
+        $isPrimaryAirport = $isTerminalPosition && in_array($station, $rowCodes, true);
+        $inside = $isPrimaryAirport;
+        if (!$inside) {
+            foreach ($features as $feature) {
+                if (pointInAtisGeometry(
+                    (float)$row['longitude_deg'], (float)$row['latitude_deg'],
+                    $feature['geometry'] ?? []
+                )) { $inside = true; break; }
+            }
+        }
+        if (!$inside && !$features && $primaryAirport) {
+            $inside = atisDistanceNm(
+                (float)$primaryAirport['latitude_deg'], (float)$primaryAirport['longitude_deg'],
+                (float)$row['latitude_deg'], (float)$row['longitude_deg']
+            ) <= 150.0;
         }
         if (!$inside) continue;
         $candidates = array_unique(array_filter(array_map(static function ($value): string {

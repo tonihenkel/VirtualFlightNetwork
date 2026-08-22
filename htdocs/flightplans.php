@@ -7,12 +7,10 @@ require_once __DIR__ . '/includes/web_session.php';
 require_once __DIR__ . '/includes/csrf.php';
 require_once __DIR__ . '/includes/web_features_schema.php';
 require_once __DIR__ . '/includes/flightplan_import.php';
+require_once __DIR__ . '/includes/airport_code.php';
 
 function h($value): string { return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8'); }
-function fpAirport(string $value): string {
-    $value = strtoupper(trim($value));
-    return preg_match('/^[A-Z0-9-]{3,10}$/', $value) ? $value : 'ZZZZ';
-}
+function fpAirport(PDO $pdo, string $value): string { return vfnNormalizeFlightplanAirport($pdo, $value); }
 
 $pdo = new PDO("mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4", $dbUser, $dbPass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 if (empty($_SESSION['web_user_id']) || !validateVfnWebSession($pdo)) { header('Location: index.php?type=error&message=login_required'); exit; }
@@ -44,10 +42,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'flight_type'=>in_array($_POST['flight_type']??'', ['S','N','G','M','X'], true)?$_POST['flight_type']:'G',
                     'communication_mode'=>in_array($_POST['communication_mode']??'', ['VOICE','RECEIVE_ONLY','TEXT_ONLY'], true)?$_POST['communication_mode']:'VOICE',
                     'departure_time'=>mb_substr(trim((string)($_POST['departure_time']??'')),0,20),
-                    'departure_airport'=>fpAirport((string)($_POST['departure_airport']??'')),
-                    'arrival_airport'=>fpAirport((string)($_POST['arrival_airport']??'')),
-                    'alternate1_airport'=>fpAirport((string)($_POST['alternate1_airport']??'')),
-                    'alternate2_airport'=>fpAirport((string)($_POST['alternate2_airport']??'')),
+                    'departure_airport'=>fpAirport($pdo, (string)($_POST['departure_airport']??'')),
+                    'arrival_airport'=>fpAirport($pdo, (string)($_POST['arrival_airport']??'')),
+                    'alternate1_airport'=>fpAirport($pdo, (string)($_POST['alternate1_airport']??'')),
+                    'alternate2_airport'=>fpAirport($pdo, (string)($_POST['alternate2_airport']??'')),
                     'route_text'=>mb_substr(strtoupper(trim((string)($_POST['route_text']??''))),0,5000),
                     'cruising_level'=>mb_substr(strtoupper(trim((string)($_POST['cruising_level']??''))),0,20),
                     'cruising_speed'=>mb_substr(strtoupper(trim((string)($_POST['cruising_speed']??''))),0,20),

@@ -1,0 +1,6 @@
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/build-linux/CMakeFiles/rebuild_cache.dir
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/build-linux/CMakeFiles/edit_cache.dir
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/build-linux/CMakeFiles/VFNPlugin.dir
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/build-linux/third_party/XPMP2/CMakeFiles/rebuild_cache.dir
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/build-linux/third_party/XPMP2/CMakeFiles/edit_cache.dir
+/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/build-linux/third_party/XPMP2/CMakeFiles/XPMP2.dir

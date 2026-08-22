@@ -87,6 +87,8 @@ function ensureAtcSchema(PDO $pdo): void
             pilot_callsign VARCHAR(40) NOT NULL,
             clearance_type VARCHAR(12) NOT NULL DEFAULT 'DIRECT',
             clearance_value VARCHAR(80) NOT NULL DEFAULT '',
+            cleared_landing_runway VARCHAR(24) NOT NULL DEFAULT '',
+            cleared_gate VARCHAR(40) NOT NULL DEFAULT '',
             cleared_altitude VARCHAR(20) NOT NULL DEFAULT '',
             issued_by_user_id INT NOT NULL,
             issued_by_callsign VARCHAR(40) NOT NULL,
@@ -135,8 +137,27 @@ function ensureAtcSchema(PDO $pdo): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
 
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS atc_coordination_messages (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            sender_user_id INT NOT NULL,
+            sender_session_id BIGINT UNSIGNED NOT NULL,
+            sender_callsign VARCHAR(40) NOT NULL,
+            sender_station VARCHAR(12) NOT NULL,
+            message_text VARCHAR(255) NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_atc_coordination_region (sender_station, id),
+            KEY idx_atc_coordination_created (created_at),
+            CONSTRAINT fk_atc_coordination_session FOREIGN KEY (sender_session_id)
+                REFERENCES atc_sessions(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+
     foreach ([
         'cleared_departure_runway' => "VARCHAR(10) NOT NULL DEFAULT ''",
+        'cleared_landing_runway' => "VARCHAR(24) NOT NULL DEFAULT ''",
+        'cleared_gate' => "VARCHAR(40) NOT NULL DEFAULT ''",
         'cleared_sid' => "VARCHAR(80) NOT NULL DEFAULT ''",
         'cleared_direct' => "VARCHAR(80) NOT NULL DEFAULT ''",
         'cleared_star' => "VARCHAR(80) NOT NULL DEFAULT ''",
@@ -149,7 +170,7 @@ function ensureAtcSchema(PDO $pdo): void
         )->fetchColumn();
         if ($exists === 0) {
             $pdo->exec("ALTER TABLE atc_aircraft_clearances ADD COLUMN {$column} {$definition} AFTER clearance_value");
-            if ($column === 'cleared_departure_runway') {
+            if (in_array($column, ['cleared_departure_runway', 'cleared_landing_runway', 'cleared_gate'], true)) {
                 continue;
             }
             $legacyType = $column === 'cleared_sid'

@@ -18,6 +18,7 @@ Flight Radar Sim Projekt/version_generated.h
 # Konfigurationen mit Zugangsdaten
 config.txt
 .env
+runtime-secrets.json
 voice-service/.env
 voice-service/node_modules/
 

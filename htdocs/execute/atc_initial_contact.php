@@ -18,6 +18,47 @@ function contactReply(bool $success, string $message, int $status = 200): void
     exit;
 }
 
+function normalizeAtcHandoffFrequency($value): ?string
+{
+    $value = strtoupper(trim((string)$value));
+    $value = trim(str_replace(['MHZ', ','], ['', '.'], $value));
+    if ($value === '' || !is_numeric($value)) return null;
+    $frequency = (float)$value;
+    if ($frequency < 118.000 || $frequency > 136.975) return null;
+    return number_format($frequency, 3, '.', '');
+}
+
+function cleanupClearancesAfterHandoff(PDO $pdo, string $pilotToken, string $sourcePosition, string $targetPosition, bool $onGround): void
+{
+    $source = strtoupper(trim($sourcePosition));
+    $target = strtoupper(trim($targetPosition));
+    if ($onGround && in_array($target, ['INFO', 'DEL', 'GND'], true)
+        && in_array($source, ['TWR', 'APP', 'DEP', 'CTR'], true)) {
+        $pdo->prepare("UPDATE atc_aircraft_clearances
+                       SET cleared_departure_runway='',cleared_landing_runway='',cleared_sid='',
+                           cleared_direct='',cleared_star='',cleared_altitude='',
+                           clearance_type='DIRECT',clearance_value='',updated_at=NOW()
+                       WHERE pilot_session_token=:token")
+            ->execute(['token'=>$pilotToken]);
+        return;
+    }
+    if (!$onGround && $source === 'TWR' && in_array($target, ['APP', 'DEP', 'CTR'], true)) {
+        $pdo->prepare("UPDATE atc_aircraft_clearances
+                       SET cleared_departure_runway='',cleared_sid='',
+                           clearance_type='DIRECT',clearance_value='',updated_at=NOW()
+                       WHERE pilot_session_token=:token")
+            ->execute(['token'=>$pilotToken]);
+        return;
+    }
+    if (in_array($source, ['APP', 'DEP', 'CTR'], true) && $target === 'TWR') {
+        $pdo->prepare("UPDATE atc_aircraft_clearances
+                       SET cleared_star='',cleared_direct='',cleared_altitude='',
+                           clearance_type='DIRECT',clearance_value='',updated_at=NOW()
+                       WHERE pilot_session_token=:token")
+            ->execute(['token'=>$pilotToken]);
+    }
+}
+
 try {
     $pdo = new PDO("mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4", $dbUser, $dbPass,
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
@@ -51,7 +92,7 @@ try {
         contactReply(false, 'invalid_data', 422);
     }
     $pilotStmt = $pdo->prepare(
-        "SELECT p.user_id,p.session_token,
+        "SELECT p.user_id,p.session_token,p.on_ground,
                 COALESCE(NULLIF(s.plugin_language,''),NULLIF(u.preferred_language,''),'en') AS plugin_language
          FROM pilot_positions p INNER JOIN user_sessions s ON s.token=p.session_token
          INNER JOIN users u ON u.id=p.user_id
@@ -160,17 +201,42 @@ try {
                 $pdo->rollBack();
                 contactReply(false, 'handoff_conflict', 409);
             }
+            $sourcePositionStatement = $pdo->prepare("SELECT position_code FROM atc_sessions WHERE id=:id LIMIT 1");
+            $sourcePositionStatement->execute(['id'=>(int)$request['source_session_id']]);
+            cleanupClearancesAfterHandoff(
+                $pdo,
+                (string)$request['pilot_session_token'],
+                (string)($sourcePositionStatement->fetchColumn() ?: ''),
+                (string)($atc['position_code'] ?? ''),
+                (bool)($pilot['on_ground'] ?? false)
+            );
         }
         $update = $pdo->prepare(
             "UPDATE atc_handoff_requests SET status=:status,responded_at=NOW() WHERE id=:id"
         );
         $update->execute(['status'=>$accepted?'accepted':'rejected','id'=>$requestId]);
         $pdo->commit();
+        if ($accepted) {
+            $handoffFrequency = normalizeAtcHandoffFrequency($atc['frequency'] ?? '');
+            if ($handoffFrequency === null) contactReply(false, 'handoff_target_frequency_invalid', 422);
+            $text = vfnPluginContactMessage($language, 'initial-contact', $handoffFrequency, $atcCallsign);
+            insertChatMessage(
+                $pdo,
+                null,
+                (int)$pilot['user_id'],
+                (int)$atc['user_id'],
+                $atcCallsign,
+                'atc_contact',
+                $text
+            );
+        }
         contactReply(true, $accepted ? 'handoff_accepted' : 'handoff_rejected');
     }
     if (in_array($action, ['release', 'leave-airspace'], true)) {
         $release=$pdo->prepare("DELETE FROM atc_assumed_aircraft WHERE pilot_session_token=:pilot_token AND atc_session_id=:atc_session_id");
         $release->execute(['pilot_token'=>(string)$pilot['session_token'],'atc_session_id'=>(int)$atc['id']]);
+        $clearances=$pdo->prepare("DELETE FROM atc_aircraft_clearances WHERE pilot_session_token=:pilot_token");
+        $clearances->execute(['pilot_token'=>(string)$pilot['session_token']]);
         $text=vfnPluginContactMessage($language, 'release', '122.800', $atcCallsign);
     } else {
         $text=vfnPluginContactMessage($language, 'initial-contact', (string)$frequency, $atcCallsign);

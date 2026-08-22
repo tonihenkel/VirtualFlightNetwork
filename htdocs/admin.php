@@ -735,6 +735,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             <a class="admin-button" href="bug_reports.php"><?php echo htmlspecialchars(t('bug_staff_queue')); ?><?php if (($pendingBugReportCount ?? 0) > 0): ?> (<?php echo (int)$pendingBugReportCount; ?>)<?php endif; ?></a>
             <?php if ($adminOpPermission >= 1): ?><a class="admin-button" href="admin_gca.php"><?php echo htmlspecialchars(t('gca_admin_title')); ?></a><?php endif; ?>
             <?php if ($adminOpPermission >= 3): ?><a class="admin-button" href="admin_divisions.php"><?php echo htmlspecialchars(t('division_admin_title')); ?></a><?php endif; ?>
+            <?php if ($adminOpPermission >= 3): ?><a class="admin-button" href="admin_compendium.php"><?php echo htmlspecialchars(t('compendium_manage')); ?></a><?php endif; ?>
             <?php if ($adminOpPermission >= 5): ?><a class="admin-button" href="system_status.php"><?php echo htmlspecialchars(t('system_status_title')); ?></a><?php endif; ?>
         </p>
 
@@ -1360,6 +1361,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             'chat' => t('admin_configuration_category_chat'),
             'weather' => t('admin_configuration_category_weather'),
             'voice' => t('admin_configuration_category_voice'),
+            'cpdlc' => t('admin_configuration_category_cpdlc'),
             'download' => t('admin_configuration_category_download'),
             'legal' => t('admin_configuration_category_legal')
         ],
@@ -1370,11 +1372,16 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             'maintenanceMode' => t('admin_configuration_maintenance_mode'),
             'registrationEnabled' => t('admin_configuration_registration_enabled'),
             'atcLoginEnabled' => t('admin_configuration_atc_login_enabled'),
+            'compendiumPublicEnabled' => t('admin_configuration_compendium_public_enabled'),
             'chatFrequencyRangeNm' => t('admin_configuration_chat_range'),
             'aviationWeatherMetarCacheUrl' => t('admin_configuration_metar_cache_url'),
             'noaaMetarStationBaseUrl' => t('admin_configuration_metar_station_url'),
             'metarCacheSeconds' => t('admin_configuration_metar_cache_seconds'),
             'voiceServiceWebSocketUrl' => t('admin_configuration_voice_url'),
+            'hoppieCpdlcEnabled' => t('admin_configuration_hoppie_enabled'),
+            'hoppieCpdlcLogonCode' => t('admin_configuration_hoppie_logon'),
+            'hoppieCpdlcConnectUrl' => t('admin_configuration_hoppie_url'),
+            'hoppieCpdlcPollSeconds' => t('admin_configuration_hoppie_poll'),
             'projectName' => t('admin_configuration_project_name'),
             'pluginDownloadEnabled' => t('admin_configuration_download_enabled'),
             'pluginDownloadUrl' => t('admin_configuration_download_url'),
@@ -2137,7 +2144,9 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             } else {
                 input = document.createElement('input');
                 input.type =
-                    definition.type === 'integer' || definition.type === 'number'
+                    definition.type === 'secret'
+                        ? 'password'
+                        : definition.type === 'integer' || definition.type === 'number'
                         ? 'number'
                         : definition.type === 'email'
                             ? 'email'
@@ -2151,6 +2160,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 if (definition.type === 'number') {
                     input.step = '0.1';
                 }
+                input.autocomplete = definition.type === 'secret' ? 'new-password' : '';
                 input.value =
                     data.values[key] === null || data.values[key] === undefined
                         ? ''

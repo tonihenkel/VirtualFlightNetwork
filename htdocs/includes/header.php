@@ -491,6 +491,12 @@ if (isset($_SESSION['web_user_id'])) {
             <?php echo htmlspecialchars(t('nav_divisions')); ?>
         </a>
 
+        <?php if (!empty($compendiumPublicEnabled) || $headerOpPermission >= 1): ?>
+            <a href="compendium.php">
+                <?php echo htmlspecialchars(t('nav_compendium')); ?>
+            </a>
+        <?php endif; ?>
+
         <a href="index.php#download">
             <?php echo htmlspecialchars(t('nav_download')); ?>
         </a>
@@ -679,4 +685,16 @@ if (isset($_SESSION['web_user_id'])) {
         }
     );
 
+    document.addEventListener('DOMContentLoaded', function () {
+        const compendiumOverviewLink = document.querySelector('.side a[href="compendium.php"]');
+        if (compendiumOverviewLink) {
+            compendiumOverviewLink.href = 'compendium.php?all=1';
+        }
+    });
+
 </script>
+<?php if (basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) === 'admin_compendium.php' && isset($op) && (int)$op >= 3): ?>
+<script src="assets/js/compendium-admin.js" defer
+        data-homepage="<?php echo !empty($f['is_homepage']) ? '1' : '0'; ?>"
+        data-label="<?php echo htmlspecialchars(t('compendium_homepage'), ENT_QUOTES, 'UTF-8'); ?>"></script>
+<?php endif; ?>

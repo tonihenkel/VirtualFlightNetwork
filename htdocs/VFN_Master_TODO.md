@@ -1,6 +1,6 @@
 # Virtual Flight Network (VFN) – Master-TODO
 
-Letzte Prüfung: 05.08.2026
+Letzte Prüfung: 18.08.2026
 
 ## Status
 
@@ -51,7 +51,7 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Overview-Unterseite
 - [x] Activity-Unterseite
 - [x] Awards-Unterseite
-- [x] Mehrsprachigkeit Deutsch/Englisch
+- [x] Mehrsprachigkeit mit 17 Website- und Plugin-Sprachen
 - [x] Land und Flagge
 - [x] Division
 - [x] Online-/Offline-Status
@@ -63,7 +63,9 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Flugzeugstatistiken
 - [x] Öffentliche Pilot-Unterseite mit paginiertem Flugbuch und Flughistorie
 - [x] Verlinkte Flugdetailseite mit Flugdaten und gespeicherter Route
-- [ ] Eigene ATC-Unterseite
+- [x] ATC-Sitzungen im gemeinsamen Logbuch und in der Profilübersicht
+- [x] Letzte und bevorzugte ATC-Position sowie ATC-Gesamtzeit/-Sitzungen
+- [x] GCA und Divisions-Staff-Zugehörigkeit im Profil anzeigen
 - [x] Profil-Einstellungen für das eigene Profil
 - [x] Profilbild hochladen, verschieben, zoomen und löschen
 - [x] Sichere serverseitige Avatar-Neucodierung als einheitliches 512×512-JPEG
@@ -212,7 +214,12 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Automatisches METAR-D-ATIS
 - [x] Controller-D-ATIS über `controller_atis`
 - [x] Flugplanbearbeitung und paginierte Historie auf der Webseite
-- [ ] ATC-seitige Flugplanannahme/-änderung
+- [x] ATC-seitige Flugplananzeige und -änderung mit Assume-Berechtigung
+- [x] ATC-Freigaben für Startbahn, SID, DIRECT, STAR und Höhe
+- [x] Warnungen bei widersprüchlicher ATIS-Startbahn beziehungsweise SID
+- [x] Gespeicherte Web-Flugpläne mit Suche und Auswahl im X-Plane-Plugin
+- [x] Flugplanimport aus XML-, FPL- und PLN-/SimBrief-kompatiblen Dateien
+- [x] Kommunikationsmodus Voice, Receive only oder Text only im Flugplan
 - [x] Automatische Voice-ATIS bei besetzter ATC-Position
   - [x] ATIS-Flughäfen dynamisch aus APP-/DEP-/CTR-Polygon beziehungsweise Terminalradius bestimmen
   - [x] Mehrere ATIS-Flughäfen eines Radarbereichs per Dropdown verwalten
@@ -252,7 +259,21 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Serverseitiger Plugin-Chat-Spamschutz mit automatischem Kick
 - [x] Spam-Kick als Benutzer-Activity
 - [ ] SELCAL
-- [ ] CPDLC
+- [x] CPDLC-Grundsystem und Hoppie-Gateway für flugzeuginterne FMC/MCDU-Clients
+  - [x] Serverseitige Hoppie-Konfiguration im Admin-Panel ab OP-Level 5
+  - [x] Hoppie-Geheimnis außerhalb der Versionsverwaltung speichern und maskieren
+  - [x] ATC-CPDLC-Fenster mit Logon-Anfragen, Annehmen/Ablehnen, Uplink, Downlink und Logoff
+  - [x] Interne ATC-Sektoren auf vierstellige Hoppie-Stationen abbilden (z. B. `EDMM_MEI` auf `EDMM`)
+  - [x] Deutsche und englische Einrichtungs-, Bedienungs- und Testdokumentation
+  - [x] Live-End-to-End-Grundtest mit FlightFactor 777v2 (Hoppie-Logon, Verbindungsaufbau und ATC-Uplink)
+  - [x] Nicht-CPDLC-Hoppie-Pakete typisiert und idempotent als Grundlage weiterer ACARS-Dienste speichern
+  - [x] ATC-Vorlage zur CPDLC-Positionsanforderung bereitstellen
+  - [ ] ACARS-Wetterdienst für METAR, TAF und ATIS über Hoppie integrieren
+  - [ ] Company-/Dispatch-Kanal für künftige VFN-Airlines über Hoppie `telex` und `progress` integrieren
+  - [ ] Strukturierten Oceanic-Clearance-Workflow entwickeln
+  - [ ] Erweiterter FlightFactor-777v2-Test mit Pilot-Downlink, WILCO/UNABLE und Logoff
+  - [ ] Kompatibilität weiterer Hoppie-fähiger Flugzeuge anhand ihrer jeweiligen Herstellerdokumentation prüfen
+  - [ ] Nach erfolgreichem Test Aufnahme in Hoppies Softwareliste per E-Mail beantragen
 - [x] Bann-, Kick-, Verwarnungs- und PM-Kommandos mit serverseitiger OP-Hierarchie
 - [x] Chat-Spam-Schutz mit hohen Burst-, Minuten- und Wiederholungsschwellen
 - [ ] Nachrichtenaufbewahrung und automatische Archivierung definieren
@@ -297,13 +318,54 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [ ] Reproduzierbare NSSM-/IIS-Installationsdokumentation
 - [ ] Lasttest mit vielen gleichzeitigen Sendern und Empfängern
 
-# 9. X-Plane-Plugin und Build
+# 9. ATC-Radar-Client
+
+- [x] Eigenständiger browserbasierter ATC-Radar-Client
+- [x] Auswahl zwischen ATC, Trainer und Zuschauer mit Rating-, Division- und GCA-Prüfung
+- [x] ATC-Sitzung über F5 erhalten sowie Position kontrolliert ausloggen
+- [x] Verschiebbare, einklappbare, dockbare und auslagerbare Arbeitsfenster
+- [x] Kartenprofil und Bewegungsgrenzen abhängig von INFO/DEL/GND/TWR/APP/DEP/CTR
+- [x] Weltweite FIR-/Untersektor-Geometrien und Flughafenlayouts bedarfsgerecht laden
+- [x] Flughafenlayouts mit Runways, Taxiways, Gates und Standpositionen
+- [x] Navigation, Airways und deutsche VFR-Meldepunkte schaltbar darstellen
+- [x] Persistente Kartenposition, Zoom, Fensterpositionen, Schrift- und Fenstergröße
+- [x] Einstellbare Abdunkelung der Hintergrundkarte
+- [x] Live-Verkehr mit Transponderstatus, Radarlabel, Leader Line und Verlaufsspur
+- [ ] Live-Verkehrsfenster für viele Flugzeuge übersichtlich skalieren
+      - [x] Kompakte Zeilendarstellung statt langer Einzelblöcke
+      - [x] Reiter für Inbound, Outbound und Durchflug; bei lokalen Positionen auf den eigenen Flughafen und bei APP/DEP/CTR auf den ganzen Sektor bezogen
+  - [ ] Suche sowie Filter nach Callsign, Abflug, Ziel, Status und zuständigem Lotsen
+  - [ ] Sortierung nach Entfernung, Höhe, Callsign, Dringlichkeit und Zuständigkeit
+  - [ ] Gruppen oder getrennte Ansichten für Assumed, Incoming/Handoff, Unassigned und übrigen Verkehr
+  - [ ] Notfall-, IDENT-, Handoff- und Konflikthinweise visuell priorisieren
+  - [ ] Große Verkehrsmengen performant aktualisieren, ohne die komplette Liste neu aufzubauen
+- [x] Frei verschiebbare und relativ zum Ziel gespeicherte Radarlabels
+- [x] Assume/Un-assume, Force Act, Release und Handoff mit Annahme/Ablehnung
+- [x] Zuständigen Lotsen, Freigaben und Warnungen im Label und Live-Verkehr anzeigen
+- [x] Notfallcodes 7500, 7600 und 7700 sowie entschärfte IDENT-Markierung
+- [x] Flugplan anzeigen/ändern und Flugplanroute samt SID/STAR darstellen
+- [x] Entfernungsmessung per Kontextmenü
+- [x] Frequenzchat, Privatnachrichten und OP-abhängige Moderation
+- [x] Mehrsprachige Pilotenhinweise anhand der Plugin-Sprache
+- [x] METAR- & Flughafen-Watch mit Suche, Vergleich, Änderungsmarkierung und Kartensprung
+- [x] Automatische und manuelle Flughafen-ATIS einschließlich Informationsbuchstaben
+- [x] Runway-Änderungen sofort an betroffene Lotsen melden
+- [x] ATC-Voice mit Auto-Connect, PTT, Dauersenden, Geräteauswahl und Pegelanzeige
+- [x] Trainer ohne Kontrollrechte, aber mit Voice; Zuschauer ausschließlich beobachtend
+- [x] Unsichtbare OPs nach Hierarchie behandeln und optional ausblenden
+- [x] GCA-Positionen auf Karte und im Informationspanel kennzeichnen
+- [ ] Vollständiger praktischer Abnahmetest mit mehreren gleichzeitig besetzten ATC-Positionen
+- [ ] Globalen Frequenzkatalog und verbleibende Untersektor-Polygone weiter vervollständigen
+- [ ] Airportlayouts stichprobenartig gegen frei nutzbare Referenzdaten prüfen
+- [ ] Übergaben, Voice-Kanalbelegung und gleichzeitige Aktualisierungen unter Last testen
+
+# 10. X-Plane-Plugin und Build
 
 - [x] Neue benutzerdefinierte Oberfläche
 - [x] Hauptfenster mit COM1/COM2 und Transponder
 - [x] Separate/dockbare Popout-Fenster
 - [x] Login-, Flugplan-, Chat-, ATC-, D-ATIS- und Einstellungsfenster
-- [x] Deutsch/Englisch und automatische X-Plane-Spracherkennung
+- [x] 17 Plugin-Sprachen und automatische X-Plane-Spracherkennung
 - [x] ATC-Online-Liste
 - [x] Unsichtbar-Modus nach erneutem Login wiederherstellen
 - [x] Zusatzfenster beim Logout schließen
@@ -317,14 +379,18 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
   - [x] SHA-256-Prüfsumme automatisch erzeugen
   - [ ] Binäre Codesignatur für die XPL
 - [ ] Tests unter mehreren X-Plane-12-Versionen
-- [ ] Linux- und macOS-Plugin-Builds
+- [-] Linux- und macOS-Plugin-Builds
+  - [ ] Windows-spezifische Netzwerk-, Voice-, Audio-, Grafik- und Shell-Aufrufe plattformneutral abstrahieren
+  - [ ] Native Linux-XPL (`lin.xpl`) für X-Plane 11 und 12 bauen und testen
+  - [ ] Linux-Release-ZIP mit Plugin und CSL Downloader erzeugen
+  - [ ] macOS-Port und Signierung/Notarisierung später umsetzen
 - [x] Spectator-Modus mit deaktiviertem Flugplan, D-ATIS und Voice-Senden
 - [x] 30-NM-Spielerliste mit laufender Distanzanzeige
 - [x] Spieler aus der Plugin-Liste per Kamera verfolgen
 - [x] Kontextaktionen für PM sowie rangabhängige Verwarnung, Kick und Bann
 - [x] Wechselnde Multiplayer-Beschriftung mit Callsign, Flugzeugtyp, Route und Entfernung
 
-# 10. Admin Panel und Berechtigungen
+# 11. Admin Panel und Berechtigungen
 
 - [x] Admin-Zugriff anhand `op_permission`
 - [x] Chat-/Frequenzmonitor
@@ -357,12 +423,16 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] Entbannungsanträge im Admin Panel mit rotem Benachrichtigungspunkt
 - [x] Spieler über die Entscheidung eines Entbannungsantrags per E-Mail informieren
 - [x] Verwarnungssystem mit Ablauf, OP-Hierarchie und Activity
+- [x] Bug-Report-System mit Status, Claiming, Staff-Zuweisung und Diskussion
+- [x] GCA-Anträge durch Divisionsleitung und Staff verwalten, deaktivieren und löschen
+- [x] Divisionen erstellen, bearbeiten, deaktivieren und löschen
+- [x] Divisionsseiten mit sicherem HTML/CSS-Baukasten und dynamischen Platzhaltern
 - [ ] Rollen und Rechte feiner als nur OP-Level modellieren
 - [ ] Vollständiger Audit-Log aller Admin-Aktionen
 - [x] Serverseitige Pagination für Chat, Spielerliste und Staff-Activities
 - [ ] Exportfunktionen für Staff
 
-# 11. Multiplayer
+# 12. Multiplayer
 
 - [x] Multiplayer-Flugzeuge in X-Plane darstellen
   - [x] XPMP2 3.6.1 statisch in den Windows-x64-Plugin-Build eingebunden
@@ -476,22 +546,24 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [ ] Spectator darf Voice empfangen, aber nicht senden
 - [ ] Mehrminütigen Betrieb auf Aussetzer, Verzögerung, Kratzen und erforderliches F5/Neuverbinden prüfen
 
-# 12. Statistiksystem
+# 13. Statistiksystem
 
-- [-] Benutzer- und Pilotenstatistiken im Profil
-- [-] Flugzeugstatistiken
-- [ ] Controllerstatistiken und Controllerstunden
+- [x] Benutzer- und Pilotenstatistiken im Profil und in der gemeinsamen Statistikseite
+- [x] Flugzeugstatistiken nach Flügen, Distanz und Stunden
+- [x] Controllerstatistiken, Controllerstunden und Sitzungen
 - [x] Flughafenstatistiken mit Bewegungs-Rangliste
-- [ ] Divisionsstatistiken
+- [-] Divisionsstatistiken
 - [x] Netzwerkstatistiken nach Zeitraum, Flügen, Piloten, Distanz und Flugstunden
 - [-] Leaderboards
   - [x] Top Airports
   - [x] Top Herkunftsländer nach registrierten Piloten
   - [x] Top Länder nach Bewegungen an Abflug- und Zielflughäfen
   - [x] Top Piloten nach abgeschlossenen Flügen, NM, Flugstunden und Landungen
-  - [ ] Top Controller
+  - [x] Top Controller nach Stunden und Sitzungen
+  - [x] Top ATC-Positionen nach Sitzungen
+  - [x] Umschaltung zwischen globaler, eigener und gesuchter Spielerstatistik
 
-# 13. Datenbank und SQL
+# 14. Datenbank und SQL
 
 ## Produktiv vorhandene Tabellen
 
@@ -520,6 +592,10 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [x] `users.preferred_language`
 - [x] `web_notification_state`
 - [x] `system_job_status`
+- [x] ATC-Sitzungen, Sitzungshistorie, Assumptions und Handoffs
+- [x] GCA-Anträge und Divisions-Staff
+- [x] Bug-Reports, Beiträge, Ereignisse und Staff-Zuweisungen
+- [x] Gespeicherte Web-Flugpläne
 
 ## Offene SQL-Arbeiten
 
@@ -534,7 +610,7 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [ ] Aufbewahrungsfristen für Tracks, Chat, Sessions und Reset-Tokens festlegen
 - [ ] Datenbankzugriff des Voice-Service auf minimal notwendige Leserechte begrenzen
 
-# 14. Sicherheit und Betrieb
+# 15. Sicherheit und Betrieb
 
 - [x] HTTPS für die Webseite
 - [x] WSS für Voice
@@ -568,8 +644,19 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [ ] Abhängigkeiten regelmäßig auf Sicherheitsupdates prüfen
 - [ ] Test-/Debug-Dateien aus der Produktionswebseite entfernen
 
-# 15. Dokumentation und Qualität
+# 16. Dokumentation und Qualität
 
+- [x] Wikipedia-artiges VFN-Kompendium als zentrale Wissensbasis
+  - [x] Frei wählbarer globaler Artikel als Kompendium-Haupt- und Übersichtsseite
+  - [x] Globale und divisionsbezogene Artikel sowie optionale Flughafenkennung
+  - [x] Kategorien für Sprechfunk, Plugin, ATC, Ausbildung, Prüfungen, Regeln und Verfahren
+  - [x] Volltextsuche, Kategorie-/Divisionsfilter und interne Begriffsaliasse/Weiterleitungen
+  - [x] Sicheres HTML und begrenztes CSS; JavaScript und gefährliche Einbettungen blockiert
+  - [x] Entwurf, Veröffentlichung, Archivierung und Versionsverlauf mit Wiederherstellung
+  - [x] OP-Level-3-Verwaltung sowie Bearbeitung der eigenen Division durch berechtigte Divisionsmitarbeiter
+  - [x] Artikel, Aliasse und Revisionen beim Test-Datenbankreset erhalten
+  - [ ] Kompendium redaktionell mit Sprechfunk-, Plugin-, ATC- und Prüfungsthemen füllen
+  - [ ] Divisionsregeln, Transition Altitudes, Frequenzhinweise und Flughafenverfahren einpflegen
 - [x] Voice-Service-README vorhanden
 - [x] Lokales Build-Skript vorhanden
 - [x] Git/GitHub-Repository verbunden
@@ -581,9 +668,9 @@ Bilder und Binärdateien wurden nur auf Vorhandensein geprüft.
 - [ ] CI-Build und Syntaxprüfungen über GitHub Actions
 - [ ] Staging-Umgebung vor Änderungen an Produktion
 - [ ] Changelog und Release-Prozess
-- [x] Startseite um Voice, Chat, Flugbuch, Flugpläne, D-ATIS, Multiplayer/TCAS, Statistiken und Divisionen erweitert
+- [x] Startseite um Voice, Chat, Flugbuch, Flugpläne, D-ATIS, Multiplayer/TCAS, Statistiken, Divisionen, ATC-Radar, Training und GCA erweitert
 
-# 16. Zukunft
+# 17. Zukunft
 
 - [ ] Eventsystem und Division-Events
 - [ ] Badges/Karrieresystem

@@ -133,7 +133,7 @@ function sanitizeDivisionHtml(string $html): string
                 }
                 if ($tag === 'a') {
                     $href = trim($child->getAttribute('href'));
-                    if (!preg_match('~^(https?://|/|division\.php|profile\.php|#)~i', $href)) {
+                    if (!preg_match('~^(https?://|/|division\.php|profile\.php|compendium\.php|#)~i', $href)) {
                         $child->removeAttribute('href');
                     }
                     $child->setAttribute('rel', 'noopener noreferrer');

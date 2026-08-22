@@ -37,6 +37,16 @@ try {
             exit;
         }
 
+        $currentValues = vfnReadRuntimeConfig();
+        foreach ($definitions as $settingKey => $definition) {
+            if (
+                ($definition['type'] ?? '') === 'secret'
+                && isset($submitted[$settingKey])
+                && $submitted[$settingKey] === '********'
+            ) {
+                $submitted[$settingKey] = (string)($currentValues[$settingKey] ?? '');
+            }
+        }
         vfnWriteRuntimeConfig($submitted);
         vfnApplyRuntimeConfig(vfnReadRuntimeConfig());
 
@@ -62,7 +72,10 @@ try {
 
     $values = [];
     foreach (vfnConfigDefinitions() as $key => $definition) {
-        $values[$key] = $GLOBALS[$key] ?? null;
+        $value = $GLOBALS[$key] ?? null;
+        $values[$key] = (($definition['type'] ?? '') === 'secret' && (string)$value !== '')
+            ? '********'
+            : $value;
     }
 
     echo json_encode([

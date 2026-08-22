@@ -1,7 +1,14 @@
 #include "pch.h"
 #include "version_generated.h"
 
+#if defined(_WIN32)
 #define IBM 1
+#define LIN 0
+#else
+#define IBM 0
+#define LIN 1
+#endif
+#define APL 0
 #define XPLM200 1
 #define XPLM210 1
 #define XPLM300 1
@@ -46,6 +53,7 @@
 #include <chrono>
 #include <thread>
 #include <cstring>
+#if defined(_WIN32)
 #include <windows.h>
 #include <shellapi.h>
 #include <mmsystem.h>
@@ -64,6 +72,87 @@
 #pragma comment(lib, "winmm.lib")
 
 using namespace Gdiplus;
+#else
+#include <curl/curl.h>
+#include <libwebsockets.h>
+#include <AL/al.h>
+#include <AL/alc.h>
+#include <png.h>
+#include <GL/gl.h>
+#include <unistd.h>
+#include <dlfcn.h>
+#include <sys/stat.h>
+#include <cerrno>
+
+#ifndef _TRUNCATE
+#define _TRUNCATE static_cast<std::size_t>(-1)
+#endif
+
+struct POINT { long x; long y; };
+using HHOOK = void*;
+
+inline void Sleep(unsigned long milliseconds)
+{
+    usleep(milliseconds * 1000U);
+}
+
+inline int localtime_s(std::tm* result, const std::time_t* value)
+{
+    return localtime_r(value, result) == nullptr ? errno : 0;
+}
+
+inline int CreateDirectoryA(const char* path, void*)
+{
+    if (::mkdir(path, 0755) == 0 || errno == EEXIST) return 1;
+    return 0;
+}
+
+inline int DeleteFileA(const char* path)
+{
+    return std::remove(path) == 0 ? 1 : 0;
+}
+
+template <std::size_t Size, typename... Args>
+int sprintf_s(char (&buffer)[Size], const char* format, Args... args)
+{
+    return std::snprintf(buffer, Size, format, args...);
+}
+
+inline int strcpy_s(char* destination, std::size_t destinationSize, const char* source)
+{
+    if (destination == nullptr || destinationSize == 0)
+    {
+        return 22;
+    }
+
+    const char* safeSource = source != nullptr ? source : "";
+    const std::size_t sourceLength = std::strlen(safeSource);
+    if (sourceLength >= destinationSize)
+    {
+        destination[0] = '\0';
+        return 34;
+    }
+
+    std::memcpy(destination, safeSource, sourceLength + 1);
+    return 0;
+}
+
+inline int strncpy_s(
+    char* destination,
+    std::size_t destinationSize,
+    const char* source,
+    std::size_t count)
+{
+    if (destination == nullptr || destinationSize == 0) return EINVAL;
+    const char* safeSource = source != nullptr ? source : "";
+    std::size_t length = std::strlen(safeSource);
+    if (count != _TRUNCATE) length = (std::min)(length, count);
+    length = (std::min)(length, destinationSize - 1);
+    std::memcpy(destination, safeSource, length);
+    destination[length] = '\0';
+    return 0;
+}
+#endif
 
 #ifndef GL_BGRA_EXT
 #define GL_BGRA_EXT 0x80E1
@@ -96,7 +185,9 @@ static std::map<std::string, std::string> gText;
 const char* T(const std::string& key);
 
 static bool gDebugEnabled = false;
+#if defined(_WIN32)
 static ULONG_PTR gGdiplusToken = 0;
+#endif
 
 struct TextureImage
 {
@@ -107,6 +198,7 @@ struct TextureImage
 };
 
 static std::map<std::string, TextureImage> gLanguageFlagTextures;
+static bool gLanguageFlagTexturesLoadAttempted = false;
 
 
 
@@ -134,6 +226,9 @@ gServerAddress + "/execute/flightplan_update.php";
 
 static const std::string gWebFlightplanUrl =
 gServerAddress + "/execute/web_flightplan_selected.php";
+
+static const std::string gCpdlcUrl =
+gServerAddress + "/execute/cpdlc.php";
 
 static const std::string gSetInvisibleUrl =
 gServerAddress + "/execute/set_invisible.php";
@@ -1065,8 +1160,10 @@ static std::atomic<int> gFollowCameraWheelDelta(0);
 static std::atomic<int> gFollowCameraDragX(0);
 static std::atomic<int> gFollowCameraDragY(0);
 static std::atomic<bool> gFollowCameraDragging(false);
+#if defined(_WIN32)
 static POINT gFollowCameraLastMouse = { 0, 0 };
 static HHOOK gFollowCameraMouseHook = nullptr;
+#endif
 static float gTrafficPollElapsed = 0.0f;
 static std::atomic<bool> gTrafficPollInProgress(false);
 static std::atomic<bool> gTrafficPollResultReady(false);
@@ -1088,12 +1185,14 @@ static int gSelectedCommunicationModeIndex = 0;
 static XPLMMenuID gMenuId = nullptr;
 static int gLoginMenuItem = 0;
 static int gFlightplanMenuItem = 0;
+static int gCpdlcMenuItem = 0;
 
 static XPWidgetID gLoginWindow = nullptr;
 static XPLMWindowID gCustomLoginWindow = nullptr;
 static XPLMWindowID gCompactWindow = nullptr;
 static XPLMWindowID gLogoutConfirmWindow = nullptr;
 static XPLMWindowID gSettingsWindow = nullptr;
+static XPLMWindowID gCpdlcWindow = nullptr;
 static XPLMWindowID gAtcWindow = nullptr;
 static XPLMWindowID gPlayersWindow = nullptr;
 static XPLMWindowID gMessagesWindow = nullptr;
@@ -1277,6 +1376,35 @@ static bool gWebFlightplanSelectorDragging = false;
 static int gWebFlightplanSelectorDragOffsetX = 0;
 static int gWebFlightplanSelectorDragOffsetY = 0;
 
+struct CpdlcMessage
+{
+    int id = 0;
+    std::string senderRole;
+    std::string text;
+    std::string time;
+    std::string responseOptions;
+};
+
+static std::vector<CpdlcMessage> gCpdlcMessages;
+static std::string gCpdlcStationText;
+static std::string gCpdlcInputText;
+static std::string gCpdlcState = "closed";
+static std::string gCpdlcStatusText;
+static int gCpdlcConnectionId = 0;
+static int gCpdlcLastMessageId = 0;
+static bool gCpdlcInputFocused = false;
+static bool gCpdlcStationFocused = false;
+static bool gCpdlcDragging = false;
+static bool gCpdlcPoppedOut = false;
+static int gCpdlcDragOffsetX = 0;
+static int gCpdlcDragOffsetY = 0;
+static float gCpdlcPollElapsed = 999.0f;
+static std::atomic<bool> gCpdlcPollInProgress(false);
+static std::atomic<bool> gCpdlcPollResultReady(false);
+static std::mutex gCpdlcPollResultMutex;
+static std::string gCpdlcPollResponse;
+static std::thread gCpdlcPollThread;
+
 static XPWidgetID gFlightplanWindow = nullptr;
 static XPLMWindowID gCustomFlightplanWindow = nullptr;
 static XPLMWindowID gFrequencyWindow = nullptr;
@@ -1309,6 +1437,12 @@ static int gKickNoticeDragOffsetY = 0;
 static bool gSettingsLanguageDropdownOpen = false;
 static bool gSettingsVoiceInputDropdownOpen = false;
 static bool gSettingsVoiceOutputDropdownOpen = false;
+static int gPluginFontScalePercent = 100;
+static int gPluginWindowScalePercent = 100;
+static int gAppliedPluginWindowScalePercent = 100;
+static bool gSettingsFontScaleDragging = false;
+static bool gSettingsWindowScaleDragging = false;
+static int gSettingsScrollOffset = 0;
 static char gLastFrequencyKey = 0;
 static char gLastFrequencyVirtualKey = 0;
 static float gLastFrequencyKeyTime = -1.0f;
@@ -1468,11 +1602,15 @@ static std::condition_variable gVoicePlaybackCondition;
 static std::deque<std::vector<unsigned char>> gVoicePlaybackQueue;
 static std::atomic<bool> gVoicePlaybackStopRequested(false);
 static std::mutex gVoiceSocketMutex;
+#if defined(_WIN32)
 static HINTERNET gVoiceWebSocket = nullptr;
 static HWAVEIN gVoiceWaveIn = nullptr;
 static HWAVEOUT gVoiceWaveOut = nullptr;
 static WAVEHDR gVoiceCaptureHeaders[4] = {};
 static std::vector<short> gVoiceCaptureBuffers[4];
+#else
+static void* gVoiceWebSocket = nullptr;
+#endif
 static const int gVoiceSampleRate = 16000;
 static std::atomic<int> gVoiceCaptureSampleRate(16000);
 
@@ -1532,6 +1670,7 @@ std::vector<unsigned char> VoiceBase64Decode(const std::string& text)
 
 bool SendVoiceMessage(const std::string& message)
 {
+#if defined(_WIN32)
     std::lock_guard<std::mutex> lock(gVoiceSocketMutex);
     if (gVoiceWebSocket == nullptr || !gVoiceConnected.load())
     {
@@ -1544,6 +1683,10 @@ bool SendVoiceMessage(const std::string& message)
         const_cast<char*>(message.data()),
         bytes
     ) == NO_ERROR;
+#else
+    (void)message;
+    return false;
+#endif
 }
 
 std::string GetVoiceFrequency(int com)
@@ -1568,6 +1711,7 @@ void SendVoiceState()
     );
 }
 
+#if defined(_WIN32)
 void CALLBACK VoiceWaveInCallback(
     HWAVEIN waveIn,
     UINT message,
@@ -1705,6 +1849,16 @@ void StopVoiceCapture()
     }
     waveInClose(waveIn);
 }
+#else
+bool StartVoiceCapture()
+{
+    return false;
+}
+
+void StopVoiceCapture()
+{
+}
+#endif
 
 std::vector<unsigned char> ResampleVoicePcm(
     const std::vector<unsigned char>& bytes,
@@ -1742,6 +1896,7 @@ std::vector<unsigned char> ResampleVoicePcm(
 
 void VoicePlaybackWorker()
 {
+#if defined(_WIN32)
     const int outputSampleRate = 48000;
     WAVEFORMATEX format = {};
     format.wFormatTag = WAVE_FORMAT_PCM;
@@ -1810,6 +1965,14 @@ void VoicePlaybackWorker()
         waveOutUnprepareHeader(gVoiceWaveOut, &buffer->header, sizeof(WAVEHDR));
     waveOutClose(gVoiceWaveOut);
     gVoiceWaveOut = nullptr;
+#else
+    while (!gVoicePlaybackStopRequested.load())
+    {
+        std::unique_lock<std::mutex> lock(gVoicePlaybackMutex);
+        gVoicePlaybackCondition.wait_for(lock, std::chrono::milliseconds(100));
+        gVoicePlaybackQueue.clear();
+    }
+#endif
 }
 
 void StartVoicePlayback()
@@ -1911,6 +2074,7 @@ void ProcessIncomingVoiceMessage(const std::string& message)
 
 void VoiceWorker(std::string token, std::string callsign)
 {
+#if defined(_WIN32)
     gVoiceRunning = true;
     while (!gVoiceStopRequested.load() && !token.empty())
     {
@@ -1994,6 +2158,13 @@ void VoiceWorker(std::string token, std::string callsign)
         if (!gVoiceStopRequested.load()) Sleep(3000);
     }
     gVoiceRunning = false;
+#else
+    (void)token;
+    (void)callsign;
+    gVoiceConnected = false;
+    gVoiceAuthenticated = false;
+    gVoiceRunning = false;
+#endif
 }
 
 void StartVoiceService()
@@ -2023,6 +2194,7 @@ void StopVoiceService(bool waitForThread = true)
     StopVoiceCapture();
     {
         std::lock_guard<std::mutex> lock(gVoiceSocketMutex);
+#if defined(_WIN32)
         if (gVoiceWebSocket)
         {
             if (waitForThread)
@@ -2042,6 +2214,7 @@ void StopVoiceService(bool waitForThread = true)
                 gVoiceAuthenticated = false;
             }
         }
+#endif
     }
     if (waitForThread && gVoiceThread.joinable()) gVoiceThread.join();
     if (!waitForThread)
@@ -2289,14 +2462,20 @@ void DrawText(
         blue
     };
 
-    XPLMDrawString(
-        color,
-        x,
-        y,
-        text.c_str(),
-        nullptr,
-        xplmFont_Basic
-    );
+    const float scale =
+        std::clamp(gPluginFontScalePercent, 80, 140) / 100.0f;
+
+    if (std::fabs(scale - 1.0f) < 0.001f)
+    {
+        XPLMDrawString(color, x, y, text.c_str(), nullptr, xplmFont_Basic);
+        return;
+    }
+
+    glPushMatrix();
+    glTranslatef((float)x, (float)y, 0.0f);
+    glScalef(scale, scale, 1.0f);
+    XPLMDrawString(color, 0, 0, text.c_str(), nullptr, xplmFont_Basic);
+    glPopMatrix();
 }
 
 std::string MaskPassword(
@@ -2334,9 +2513,12 @@ size_t EstimateTextCharsForWidth(
         return 1;
     }
 
+    const float fontScale =
+        (std::max)(0.80f, (float)gPluginFontScalePercent / 100.0f);
+
     return (std::max)(
         (size_t)1,
-        (size_t)(widthPixels / 7)
+        (size_t)(widthPixels / (7.0f * fontScale))
     );
 }
 
@@ -2636,6 +2818,8 @@ void LoadInternalEnglishLanguage()
     gText["settings.voice_ptt_hint"] = "Keyboard assignment";
     gText["settings.voice_ptt_path"] = "(VFN > Voice > VFN Voice Push To Talk)";
     gText["settings.voice_continuous"] = "Continuous transmit";
+    gText["settings.font_size"] = "Font size";
+    gText["settings.window_size"] = "Window size";
     gText["settings.voice_shortcut"] = "Current shortcut";
     gText["settings.voice_shortcut_none"] = "Not assigned";
     gText["settings.voice_input"] = "Input device";
@@ -2835,6 +3019,8 @@ void ApplyInternalGermanLanguageFallbacks()
     gText["settings.voice_ptt_hint"] = "Tastaturbelegung";
     gText["settings.voice_ptt_path"] = "(VFN > Voice > VFN Voice Push To Talk)";
     gText["settings.voice_continuous"] = "Dauersenden";
+    gText["settings.font_size"] = "Schriftgroesse";
+    gText["settings.window_size"] = "Fenstergroesse";
     gText["settings.voice_shortcut"] = "Aktueller Shortkey";
     gText["settings.voice_shortcut_none"] = "Nicht belegt";
     gText["settings.voice_input"] = "Eingabegeraet";
@@ -2949,6 +3135,8 @@ void WriteDefaultLanguageFilesIfMissing()
             enFile << "settings.voice_ptt_hint=Keyboard assignment\n";
             enFile << "settings.voice_ptt_path=(VFN > Voice > VFN Voice Push To Talk)\n";
             enFile << "settings.voice_continuous=Continuous transmit\n";
+            enFile << "settings.font_size=Font size\n";
+            enFile << "settings.window_size=Window size\n";
             enFile << "settings.voice_shortcut=Current shortcut\n";
             enFile << "settings.voice_shortcut_none=Not assigned\n";
             enFile << "settings.voice_input=Input device\n";
@@ -3135,6 +3323,8 @@ void WriteDefaultLanguageFilesIfMissing()
             deFile << "settings.voice_ptt_hint=Tastaturbelegung\n";
             deFile << "settings.voice_ptt_path=(VFN > Voice > VFN Voice Push To Talk)\n";
             deFile << "settings.voice_continuous=Dauersenden\n";
+            deFile << "settings.font_size=Schriftgroesse\n";
+            deFile << "settings.window_size=Fenstergroesse\n";
             deFile << "settings.voice_shortcut=Aktueller Shortkey\n";
             deFile << "settings.voice_shortcut_none=Nicht belegt\n";
             deFile << "settings.voice_input=Eingabegeraet\n";
@@ -3556,6 +3746,7 @@ std::string GetMessageSoundPath()
 
 void PlayIncomingChatSound()
 {
+#if defined(_WIN32)
     std::string soundPath =
         GetMessageSoundPath();
 
@@ -3608,10 +3799,17 @@ void PlayIncomingChatSound()
     {
         MessageBeep(MB_ICONASTERISK);
     }
+#else
+    // X-Plane on Linux has no Windows MCI backend.  Keep the notification
+    // non-blocking; the terminal bell is a safe fallback until the sound is
+    // decoded through the voice/audio subsystem.
+    std::fputc('\a', stderr);
+#endif
 }
 
 void PlayInitialContactSound()
 {
+#if defined(_WIN32)
     const std::vector<std::string> candidates = {
         gPluginDirectory + "\\resources\\initial_contact_sound.mp3",
         gPluginDirectory + "\\initial_contact_sound.mp3",
@@ -3632,6 +3830,9 @@ void PlayInitialContactSound()
     {
         MessageBeep(MB_ICONEXCLAMATION);
     }
+#else
+    PlayIncomingChatSound();
+#endif
 }
 
 
@@ -3639,6 +3840,7 @@ std::wstring StringToWideString(
     const std::string& value
 )
 {
+#if defined(_WIN32)
     int length =
         MultiByteToWideChar(
             CP_ACP,
@@ -3674,6 +3876,9 @@ std::wstring StringToWideString(
     }
 
     return result;
+#else
+    return std::wstring(value.begin(), value.end());
+#endif
 }
 
 
@@ -3729,6 +3934,7 @@ bool LoadPngTexture(
         return false;
     }
 
+#if defined(_WIN32)
     std::wstring widePath =
         StringToWideString(filePath);
 
@@ -3804,6 +4010,24 @@ bool LoadPngTexture(
     bitmap.UnlockBits(
         &data
     );
+#else
+    png_image image{};
+    image.version = PNG_IMAGE_VERSION;
+    if (!png_image_begin_read_from_file(&image, filePath.c_str()))
+    {
+        return false;
+    }
+    image.format = PNG_FORMAT_RGBA;
+    const unsigned int width = image.width;
+    const unsigned int height = image.height;
+    std::vector<unsigned char> pixels(PNG_IMAGE_SIZE(image));
+    if (!png_image_finish_read(&image, nullptr, pixels.data(), 0, nullptr))
+    {
+        png_image_free(&image);
+        return false;
+    }
+    png_image_free(&image);
+#endif
 
     if (texture.textureId == 0)
     {
@@ -3849,7 +4073,11 @@ bool LoadPngTexture(
         width,
         height,
         0,
+#if defined(_WIN32)
         GL_BGRA_EXT,
+#else
+        GL_RGBA,
+#endif
         GL_UNSIGNED_BYTE,
         pixels.data()
     );
@@ -3912,6 +4140,8 @@ void DrawTextureImage(
 
 void LoadFlagTextures()
 {
+    gLanguageFlagTexturesLoadAttempted = true;
+
     for (int index = 0; index < gPluginLanguageCount; ++index)
     {
         TextureImage texture = { 0, 0, 0, false };
@@ -3983,6 +4213,8 @@ void LoadConfig()
     gVoiceContinuousTransmit = false;
     gRestoreInvisibleOnLogin = false;
     gHideInvisibleTraffic = false;
+    gPluginFontScalePercent = 100;
+    gPluginWindowScalePercent = 100;
 
     CreateDefaultConfigIfMissing();
 
@@ -4059,6 +4291,16 @@ void LoadConfig()
         else if (line == "hide_invisible_traffic=false")
         {
             gHideInvisibleTraffic = false;
+        }
+        else if (line.rfind("ui_font_scale=", 0) == 0)
+        {
+            try { gPluginFontScalePercent = std::clamp(std::stoi(line.substr(14)), 80, 140); }
+            catch (...) { gPluginFontScalePercent = 100; }
+        }
+        else if (line.rfind("ui_window_scale=", 0) == 0)
+        {
+            try { gPluginWindowScalePercent = std::clamp(std::stoi(line.substr(16)), 80, 140); }
+            catch (...) { gPluginWindowScalePercent = 100; }
         }
     }
 
@@ -4250,6 +4492,7 @@ std::wstring StringToWString(const std::string& value)
         return std::wstring();
     }
 
+#if defined(_WIN32)
     int sizeNeeded = MultiByteToWideChar(
         CP_UTF8,
         0,
@@ -4276,11 +4519,15 @@ std::wstring StringToWString(const std::string& value)
     }
 
     return result;
+#else
+    return std::wstring(value.begin(), value.end());
+#endif
 }
 
 
 std::string GetClipboardText()
 {
+#if defined(_WIN32)
     if (!OpenClipboard(nullptr))
     {
         return "";
@@ -4317,6 +4564,11 @@ std::string GetClipboardText()
         TrimString(result);
 
     return result;
+#else
+    // Clipboard access is intentionally unavailable without a desktop API.
+    // Returning an empty value preserves the existing paste behaviour.
+    return "";
+#endif
 }
 
 
@@ -4616,8 +4868,50 @@ void SaveConfig()
         << (gRestoreInvisibleOnLogin ? "true" : "false") << "\n";
     configFile << "hide_invisible_traffic="
         << (gHideInvisibleTraffic ? "true" : "false") << "\n";
+    configFile << "ui_font_scale=" << gPluginFontScalePercent << "\n";
+    configFile << "ui_window_scale=" << gPluginWindowScalePercent << "\n";
 
     configFile.close();
+}
+
+void ApplyPluginWindowScale()
+{
+    const int target = std::clamp(gPluginWindowScalePercent, 80, 140);
+    const int source = std::clamp(gAppliedPluginWindowScalePercent, 80, 140);
+    if (target == source) return;
+
+    XPLMWindowID windows[] = {
+        gCustomLoginWindow, gCompactWindow, gLogoutConfirmWindow,
+        gSettingsWindow, gAtcWindow, gPlayersWindow, gMessagesWindow,
+        gDatisWindow, gKickNoticeWindow, gWebFlightplanSelectorWindow,
+        gCustomFlightplanWindow, gFrequencyWindow
+    };
+
+    for (XPLMWindowID window : windows)
+    {
+        if (window == nullptr) continue;
+        int left, top, right, bottom;
+        XPLMGetWindowGeometry(window, &left, &top, &right, &bottom);
+        int minimumWidth = 240;
+        int minimumHeight = 180;
+        if (window == gSettingsWindow)
+        {
+            minimumWidth = 500;
+            minimumHeight = 640;
+        }
+        else if (window == gCustomFlightplanWindow)
+        {
+            minimumWidth = 760;
+            minimumHeight = 615;
+        }
+        const int width =
+            (std::max)(minimumWidth, ((right - left) * target) / source);
+        const int height =
+            (std::max)(minimumHeight, ((top - bottom) * target) / source);
+        XPLMSetWindowGeometry(window, left, top, left + width, top - height);
+    }
+
+    gAppliedPluginWindowScalePercent = target;
 }
 
 
@@ -4862,6 +5156,7 @@ std::string HttpPost(
     const std::string& postData
 )
 {
+#if defined(_WIN32)
     std::wstring wideUrl =
         StringToWString(url);
 
@@ -5041,6 +5336,49 @@ std::string HttpPost(
     }
 
     return response;
+#else
+    CURL* curl = curl_easy_init();
+    if (curl == nullptr)
+    {
+        return "{\"success\":false,\"message\":\"HTTP initialization failed.\"}";
+    }
+
+    std::string response;
+    curl_slist* headers = nullptr;
+    headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "FlightRadarPlugin/1.0");
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, static_cast<long>(gHttpConnectTimeoutMs));
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, static_cast<long>(gHttpReceiveTimeoutMs));
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.c_str());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(postData.size()));
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+        +[](char* data, size_t size, size_t count, void* target) -> size_t
+        {
+            const size_t bytes = size * count;
+            static_cast<std::string*>(target)->append(data, bytes);
+            return bytes;
+        });
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+
+    const CURLcode result = curl_easy_perform(curl);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (result != CURLE_OK)
+    {
+        return "{\"success\":false,\"message\":\"HTTP request failed.\"}";
+    }
+    if (response.empty())
+    {
+        return "{\"success\":false,\"message\":\"Empty server response.\"}";
+    }
+    return response;
+#endif
 }
 
 void ClearMultiplayerTraffic()
@@ -5055,11 +5393,16 @@ void ClearMultiplayerTraffic()
 
 bool IsXPlaneForegroundWindow()
 {
+#if defined(_WIN32)
     DWORD foregroundProcessId = 0;
     GetWindowThreadProcessId(GetForegroundWindow(), &foregroundProcessId);
     return foregroundProcessId == GetCurrentProcessId();
+#else
+    return true;
+#endif
 }
 
+#if defined(_WIN32)
 LRESULT CALLBACK FollowCameraMouseHook(
     int code,
     WPARAM message,
@@ -5122,6 +5465,16 @@ void StopFollowCameraMouseControl()
         gFollowCameraMouseHook = nullptr;
     }
 }
+#else
+void StartFollowCameraMouseControl()
+{
+}
+
+void StopFollowCameraMouseControl()
+{
+    gFollowCameraDragging = false;
+}
+#endif
 
 
 int FollowTrafficCamera(
@@ -5750,6 +6103,7 @@ std::string HttpGet(
     const std::string& url
 )
 {
+#if defined(_WIN32)
     std::wstring wideUrl =
         StringToWString(url);
 
@@ -5926,6 +6280,40 @@ std::string HttpGet(
     }
 
     return response;
+#else
+    CURL* curl = curl_easy_init();
+    if (!curl)
+    {
+        return "{\"success\":false,\"message\":\"HTTP initialization failed.\"}";
+    }
+
+    std::string response;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "FlightRadarPlugin/1.0");
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, static_cast<long>(gHttpConnectTimeoutMs));
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, static_cast<long>(gHttpReceiveTimeoutMs));
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+        +[](char* data, size_t size, size_t count, void* target) -> size_t
+        {
+            const size_t bytes = size * count;
+            static_cast<std::string*>(target)->append(data, bytes);
+            return bytes;
+        });
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+
+    const CURLcode result = curl_easy_perform(curl);
+    curl_easy_cleanup(curl);
+    if (result != CURLE_OK)
+    {
+        return "{\"success\":false,\"message\":\"HTTP request failed.\"}";
+    }
+    if (response.empty())
+    {
+        return "{\"success\":false,\"message\":\"Empty server response.\"}";
+    }
+    return response;
+#endif
 }
 
 
@@ -5967,6 +6355,7 @@ void OpenExternalUrl(
         return;
     }
 
+#if defined(_WIN32)
     HINSTANCE result =
         ShellExecuteA(
             nullptr,
@@ -5983,6 +6372,18 @@ void OpenExternalUrl(
             "Flight Radar Plugin: Failed to open profile URL.\n"
         );
     }
+#else
+    const pid_t child = fork();
+    if (child == 0)
+    {
+        execlp("xdg-open", "xdg-open", url.c_str(), static_cast<char*>(nullptr));
+        _exit(127);
+    }
+    if (child < 0)
+    {
+        XPLMDebugString("Flight Radar Plugin: Failed to open profile URL.\n");
+    }
+#endif
 }
 
 
@@ -7508,6 +7909,16 @@ void SendChatMessage()
         return;
     }
 
+    // /clear is intentionally local: it clears only this plugin window and
+    // never removes messages from the network or database.
+    if (ToLowerString(message) == "/clear")
+    {
+        gChatLines.clear();
+        gChatScrollOffset = 0;
+        gChatInputText.clear();
+        return;
+    }
+
     std::string frequency =
         GetPrimaryChatFrequency();
 
@@ -9024,15 +9435,23 @@ void DrawCustomLoginButton(
         );
     }
 
+    const std::string displayLabel =
+        TruncateForWidthFromStart(
+            label,
+            (std::max)(1, rect.right - rect.left - 16)
+        );
+    const float fontScale =
+        (std::max)(0.80f, (float)gPluginFontScalePercent / 100.0f);
     int textX =
-        rect.left + ((rect.right - rect.left) / 2) - ((int)label.size() * 3);
+        rect.left + ((rect.right - rect.left) / 2) -
+        (int)std::round((float)displayLabel.size() * 3.0f * fontScale);
     int textY =
         rect.bottom + ((rect.top - rect.bottom) / 2) - 5;
 
     DrawText(
         textX,
         textY,
-        label,
+        displayLabel,
         0.92f,
         0.96f,
         1.00f
@@ -9053,18 +9472,18 @@ CustomRect GetCustomFlightplanPopoutRect(int left, int top, int right)
 
 CustomRect GetCustomFlightplanRulesRect(int left, int top)
 {
-    return { left + 28, top - 92, left + 125, top - 122 };
+    return { left + 28, top - 92, left + 113, top - 122 };
 }
 
 
 CustomRect GetCustomFlightplanTypeRect(int left, int top)
 {
-    return { left + 130, top - 92, left + 245, top - 122 };
+    return { left + 118, top - 92, left + 238, top - 122 };
 }
 
 CustomRect GetCustomFlightplanCommunicationRect(int left, int top)
 {
-    return { left + 250, top - 92, left + 360, top - 122 };
+    return { left + 243, top - 92, left + 380, top - 122 };
 }
 
 
@@ -10943,6 +11362,7 @@ std::string WideToUtf8(
         return "";
     }
 
+#if defined(_WIN32)
     int size =
         WideCharToMultiByte(
             CP_UTF8,
@@ -10977,6 +11397,29 @@ std::string WideToUtf8(
     );
 
     return result;
+#else
+    std::string result;
+    result.reserve(value.size());
+    for (wchar_t character : value)
+    {
+        if (character <= 0x7f)
+        {
+            result.push_back(static_cast<char>(character));
+        }
+        else if (character <= 0x7ff)
+        {
+            result.push_back(static_cast<char>(0xc0 | ((character >> 6) & 0x1f)));
+            result.push_back(static_cast<char>(0x80 | (character & 0x3f)));
+        }
+        else
+        {
+            result.push_back(static_cast<char>(0xe0 | ((character >> 12) & 0x0f)));
+            result.push_back(static_cast<char>(0x80 | ((character >> 6) & 0x3f)));
+            result.push_back(static_cast<char>(0x80 | (character & 0x3f)));
+        }
+    }
+    return result;
+#endif
 }
 
 
@@ -11023,6 +11466,7 @@ void RefreshVoiceAudioDevices()
         { "default", T("settings.voice_default_device") }
     );
 
+#if defined(_WIN32)
     HRESULT initResult =
         CoInitializeEx(
             nullptr,
@@ -11174,6 +11618,7 @@ void RefreshVoiceAudioDevices()
     {
         CoUninitialize();
     }
+#endif
 }
 
 
@@ -11194,6 +11639,7 @@ std::string GetVoiceDeviceLabel(
 }
 
 
+#if defined(_WIN32)
 float ReadWindowsEndpointPeakLevel(IMMDevice* device);
 
 
@@ -11430,6 +11876,12 @@ float ReadWindowsEndpointPeakLevel(IMMDevice* device)
         )
     );
 }
+#else
+float ReadWindowsInputPeakLevel()
+{
+    return gVoiceInputPeakLevel;
+}
+#endif
 
 std::string ReadVoiceShortcutFromPreferences()
 {
@@ -11670,6 +12122,73 @@ CustomRect GetSettingsVoiceHintRect(int left, int top, int right)
     return { left + 36, voiceTop - 216, right - 36, voiceTop - 254 };
 }
 
+CustomRect GetSettingsFontScaleRect(int left, int top, int right)
+{
+    int voiceTop = GetSettingsVoiceTop(top);
+    return { left + 36, voiceTop - 350, right - 36, voiceTop - 368 };
+}
+
+CustomRect GetSettingsWindowScaleRect(int left, int top, int right)
+{
+    int voiceTop = GetSettingsVoiceTop(top);
+    return { left + 36, voiceTop - 404, right - 36, voiceTop - 422 };
+}
+
+int GetSettingsMaxScroll(int left, int top, int right, int bottom)
+{
+    const int contentBottom = GetSettingsWindowScaleRect(left, top, right).bottom;
+    return (std::max)(0, (bottom + 28) - contentBottom);
+}
+
+int SliderPercentFromX(const CustomRect& rect, int x)
+{
+    const int width = (std::max)(1, rect.right - rect.left);
+    const float ratio = std::clamp((float)(x - rect.left) / (float)width, 0.0f, 1.0f);
+    return 80 + (int)std::round(ratio * 60.0f);
+}
+
+void DrawSettingsScaleSlider(const CustomRect& rect, const std::string& label, int percent)
+{
+    DrawText(rect.left, rect.top + 16, label + ": " + std::to_string(percent) + "%",
+        0.62f, 0.72f, 0.82f);
+    DrawFilledRect(rect, 0.035f, 0.055f, 0.070f, 1.00f);
+    // Small GL_QUADS can lose their interior in some X-Plane pop-out
+    // contexts. Paint the track with scan lines as a reliable fallback.
+    for (int y = rect.bottom + 1; y < rect.top; ++y)
+    {
+        DrawLine(rect.left + 1, y, rect.right - 1, y,
+            0.035f, 0.055f, 0.070f, 1.00f);
+    }
+    DrawRectOutline(rect, 0.18f, 0.40f, 0.52f, 0.95f);
+    const float ratio = (std::clamp(percent, 80, 140) - 80) / 60.0f;
+    const int knobX = rect.left + (int)std::round((rect.right - rect.left) * ratio);
+    const CustomRect fillRect = {
+        rect.left + 2,
+        rect.top - 3,
+        (std::max)(rect.left + 2, knobX),
+        rect.bottom + 3
+    };
+    DrawFilledRect(fillRect,
+        0.08f, 0.55f, 1.00f, 0.90f);
+    for (int y = fillRect.bottom; y <= fillRect.top; ++y)
+    {
+        DrawLine(fillRect.left, y, fillRect.right, y,
+            0.08f, 0.55f, 1.00f, 1.00f);
+    }
+
+    const CustomRect knobRect = {
+        knobX - 5, rect.top - 1, knobX + 5, rect.bottom + 1
+    };
+    DrawFilledRect(knobRect,
+        0.25f, 0.85f, 1.00f, 1.00f);
+    for (int y = knobRect.bottom + 1; y < knobRect.top; ++y)
+    {
+        DrawLine(knobRect.left + 1, y, knobRect.right - 1, y,
+            0.25f, 0.85f, 1.00f, 1.00f);
+    }
+    DrawRectOutline(knobRect, 0.55f, 0.95f, 1.00f, 1.00f);
+}
+
 
 CustomRect GetSettingsVoiceDeviceOptionRect(
     const CustomRect& selectRect,
@@ -11743,6 +12262,15 @@ void DrawSettingsFlagBadge(
     const std::string& code
 )
 {
+    // Texture creation must happen while X-Plane has an active graphics
+    // context. Loading lazily from the settings draw callback guarantees
+    // that context and avoids all non-German flags falling back to the
+    // missing-texture badge.
+    if (!gLanguageFlagTexturesLoadAttempted)
+    {
+        LoadFlagTextures();
+    }
+
     std::string normalizedCode =
         code;
 
@@ -12036,6 +12564,14 @@ void DrawSettingsLanguageSelect(
         0.96f
     );
 
+}
+
+void DrawSettingsLanguageDropdown(
+    int left,
+    int top,
+    int right
+)
+{
     if (!gSettingsLanguageDropdownOpen)
     {
         return;
@@ -12317,6 +12853,13 @@ void DrawSettingsWindow(
         &bottom
     );
 
+    gSettingsScrollOffset = std::clamp(
+        gSettingsScrollOffset,
+        0,
+        GetSettingsMaxScroll(left, top, right, bottom)
+    );
+    const int contentTop = top + gSettingsScrollOffset;
+
     XPLMSetGraphicsState(
         0,
         0,
@@ -12399,7 +12942,7 @@ void DrawSettingsWindow(
 
     DrawText(
         left + 24,
-        GetSettingsLanguageTop(top),
+        GetSettingsLanguageTop(contentTop),
         T("settings.language"),
         0.08f,
         0.55f,
@@ -12411,13 +12954,13 @@ void DrawSettingsWindow(
         CustomRect invisibleRect =
             GetSettingsInvisibleRect(
                 left,
-                top,
+                contentTop,
                 right
             );
 
         DrawText(
             left + 24,
-            top - 66,
+            contentTop - 66,
             T("settings.invisible"),
             0.08f,
             0.55f,
@@ -12476,7 +13019,7 @@ void DrawSettingsWindow(
     if (gCurrentOpPermission >= 1)
     {
         const CustomRect filterRect =
-            GetSettingsHideInvisibleTrafficRect(left, top, right);
+            GetSettingsHideInvisibleTrafficRect(left, contentTop, right);
         const CustomRect checkbox =
             { filterRect.left + 12, filterRect.top - 11,
               filterRect.left + 30, filterRect.top - 29 };
@@ -12494,25 +13037,31 @@ void DrawSettingsWindow(
         DrawText(
             filterRect.left + 44,
             filterRect.top - 17,
-            T("settings.hide_invisible_traffic"),
+            TruncateForWidthFromStart(
+                T("settings.hide_invisible_traffic"),
+                filterRect.right - filterRect.left - 58
+            ),
             0.82f, 0.88f, 0.95f
         );
         DrawText(
             filterRect.left + 44,
             filterRect.top - 31,
-            T("settings.hide_invisible_traffic_hint"),
+            TruncateForWidthFromStart(
+                T("settings.hide_invisible_traffic_hint"),
+                filterRect.right - filterRect.left - 58
+            ),
             0.50f, 0.66f, 0.78f
         );
     }
 
     DrawSettingsLanguageSelect(
         left,
-        top,
+        contentTop,
         right
     );
 
     int voiceTop =
-        GetSettingsVoiceTop(top);
+        GetSettingsVoiceTop(contentTop);
 
     DrawText(
         left + 24,
@@ -12551,10 +13100,14 @@ void DrawSettingsWindow(
         0.82f
     );
 
+    const int voiceValueLeft = voiceRect.left + 154;
     DrawText(
-        voiceRect.left + 130,
+        voiceValueLeft,
         voiceRect.top - 25,
-        "VFN Voice Push To Talk",
+        TruncateForWidthFromStart(
+            "VFN Voice Push To Talk",
+            voiceRect.right - voiceValueLeft - 12
+        ),
         0.88f,
         0.94f,
         1.00f
@@ -12570,7 +13123,7 @@ void DrawSettingsWindow(
     );
 
     DrawSettingsVoiceDeviceSelect(
-        GetSettingsVoiceInputSelectRect(left, top, right),
+        GetSettingsVoiceInputSelectRect(left, contentTop, right),
         gVoiceInputDevices,
         gSelectedVoiceInputDeviceId,
         gSettingsVoiceInputDropdownOpen
@@ -12586,7 +13139,7 @@ void DrawSettingsWindow(
     );
 
     DrawSettingsVoiceDeviceSelect(
-        GetSettingsVoiceOutputSelectRect(left, top, right),
+        GetSettingsVoiceOutputSelectRect(left, contentTop, right),
         gVoiceOutputDevices,
         gSelectedVoiceOutputDeviceId,
         gSettingsVoiceOutputDropdownOpen
@@ -12650,7 +13203,7 @@ void DrawSettingsWindow(
     );
 
     CustomRect continuousRect =
-        GetSettingsVoiceContinuousRect(left, top, right);
+        GetSettingsVoiceContinuousRect(left, contentTop, right);
     CustomRect continuousCheckbox = {
         continuousRect.left,
         continuousRect.top - 3,
@@ -12682,7 +13235,7 @@ void DrawSettingsWindow(
     );
 
     CustomRect hintRect =
-        GetSettingsVoiceHintRect(left, top, right);
+        GetSettingsVoiceHintRect(left, contentTop, right);
     DrawText(
         hintRect.left,
         hintRect.top - 13,
@@ -12707,8 +13260,19 @@ void DrawSettingsWindow(
         0.62f, 0.72f, 0.82f
     );
 
+    DrawSettingsScaleSlider(
+        GetSettingsFontScaleRect(left, contentTop, right),
+        T("settings.font_size"),
+        gPluginFontScalePercent
+    );
+    DrawSettingsScaleSlider(
+        GetSettingsWindowScaleRect(left, contentTop, right),
+        T("settings.window_size"),
+        gPluginWindowScalePercent
+    );
+
     DrawSettingsVoiceDeviceDropdown(
-        GetSettingsVoiceOutputSelectRect(left, top, right),
+        GetSettingsVoiceOutputSelectRect(left, contentTop, right),
         gVoiceOutputDevices,
         gSelectedVoiceOutputDeviceId,
         gSettingsVoiceOutputDropdownOpen,
@@ -12716,12 +13280,45 @@ void DrawSettingsWindow(
     );
 
     DrawSettingsVoiceDeviceDropdown(
-        GetSettingsVoiceInputSelectRect(left, top, right),
+        GetSettingsVoiceInputSelectRect(left, contentTop, right),
         gVoiceInputDevices,
         gSelectedVoiceInputDeviceId,
         gSettingsVoiceInputDropdownOpen,
         true
     );
+
+    // Draw the language popup after every regular settings control so its
+    // opaque option rows stay above the voice fields and level meters.
+    DrawSettingsLanguageDropdown(left, contentTop, right);
+
+    const int maxScroll = GetSettingsMaxScroll(left, top, right, bottom);
+    if (maxScroll > 0)
+    {
+        const CustomRect track = { right - 10, top - 46, right - 5, bottom + 8 };
+        DrawFilledRect(track, 0.03f, 0.08f, 0.11f, 0.95f);
+        const int trackHeight = (std::max)(1, track.top - track.bottom);
+        const int thumbHeight = (std::max)(32,
+            trackHeight * trackHeight / (trackHeight + maxScroll));
+        const int travel = (std::max)(0, trackHeight - thumbHeight);
+        const int thumbTop = track.top -
+            (maxScroll > 0 ? travel * gSettingsScrollOffset / maxScroll : 0);
+        DrawFilledRect(
+            { track.left, thumbTop, track.right, thumbTop - thumbHeight },
+            0.10f, 0.45f, 0.85f, 0.95f
+        );
+    }
+
+    // Keep the window header fixed above the scrolling settings content.
+    DrawFilledRect({ left, top, right, top - 38 },
+        0.018f, 0.075f, 0.115f, 1.00f);
+    DrawFilledRect({ left + 3, top - 40, right - 3, top - 38 },
+        0.10f, 0.45f, 0.85f, 0.86f);
+    DrawRectOutline({ left, top, right, top - 38 },
+        0.05f, 0.42f, 0.88f, 0.95f);
+    DrawCompactHeaderLogo(left + 4, top - 3);
+    DrawText(left + 90, top - 21, T("settings.title"),
+        0.88f, 0.94f, 1.00f);
+    DrawText(right - 24, top - 21, "X", 0.72f, 0.80f, 0.88f);
 }
 
 
@@ -12898,6 +13495,19 @@ int SettingsHandleMouseWheel(
     void* inRefcon
 )
 {
+    int left;
+    int top;
+    int right;
+    int bottom;
+    XPLMGetWindowGeometry(inWindowID, &left, &top, &right, &bottom);
+    gSettingsScrollOffset = std::clamp(
+        gSettingsScrollOffset - (clicks * 36),
+        0,
+        GetSettingsMaxScroll(left, top, right, bottom)
+    );
+    gSettingsLanguageDropdownOpen = false;
+    gSettingsVoiceInputDropdownOpen = false;
+    gSettingsVoiceOutputDropdownOpen = false;
     return 1;
 }
 
@@ -12923,8 +13533,27 @@ int SettingsHandleMouse(
         &bottom
     );
 
+    gSettingsScrollOffset = std::clamp(
+        gSettingsScrollOffset,
+        0,
+        GetSettingsMaxScroll(left, top, right, bottom)
+    );
+    const int contentTop = top + gSettingsScrollOffset;
+
     if (inMouse == xplm_MouseDown)
     {
+        if (PointInRect(x, y, GetSettingsFontScaleRect(left, contentTop, right)))
+        {
+            gSettingsFontScaleDragging = true;
+            gPluginFontScalePercent = SliderPercentFromX(GetSettingsFontScaleRect(left, contentTop, right), x);
+            return 1;
+        }
+        if (PointInRect(x, y, GetSettingsWindowScaleRect(left, contentTop, right)))
+        {
+            gSettingsWindowScaleDragging = true;
+            gPluginWindowScalePercent = SliderPercentFromX(GetSettingsWindowScaleRect(left, contentTop, right), x);
+            return 1;
+        }
         if (PointInWindowRect(x, y, GetSettingsCloseRect(left, top, right), left, top, bottom))
         {
             XPLMSetWindowIsVisible(
@@ -12937,7 +13566,7 @@ int SettingsHandleMouse(
 
         if (
             gCanUseInvisible &&
-            PointInWindowRect(x, y, GetSettingsInvisibleRect(left, top, right), left, top, bottom)
+            PointInWindowRect(x, y, GetSettingsInvisibleRect(left, contentTop, right), left, top, bottom)
         )
         {
             gSettingsLanguageDropdownOpen = false;
@@ -12953,7 +13582,7 @@ int SettingsHandleMouse(
             gCurrentOpPermission >= 1
             && PointInWindowRect(
                 x, y,
-                GetSettingsHideInvisibleTrafficRect(left, top, right),
+                GetSettingsHideInvisibleTrafficRect(left, contentTop, right),
                 left, top, bottom
             )
         )
@@ -12969,15 +13598,15 @@ int SettingsHandleMouse(
         }
 
         CustomRect inputSelectRect =
-            GetSettingsVoiceInputSelectRect(left, top, right);
+            GetSettingsVoiceInputSelectRect(left, contentTop, right);
 
         CustomRect outputSelectRect =
-            GetSettingsVoiceOutputSelectRect(left, top, right);
+            GetSettingsVoiceOutputSelectRect(left, contentTop, right);
 
         // Voice controls use their exact drawn rectangles in popped-out windows.
         if (!gSpectatorMode && PointInRect(
             x, y,
-            GetSettingsVoiceContinuousRect(left, top, right)))
+            GetSettingsVoiceContinuousRect(left, contentTop, right)))
         {
             gSettingsLanguageDropdownOpen = false;
             gSettingsVoiceInputDropdownOpen = false;
@@ -13072,7 +13701,7 @@ int SettingsHandleMouse(
 
         if (PointInWindowRect(
             x, y,
-            GetSettingsVoiceHintRect(left, top, right),
+            GetSettingsVoiceHintRect(left, contentTop, right),
             left, top, bottom))
         {
             gSettingsLanguageDropdownOpen = false;
@@ -13083,7 +13712,7 @@ int SettingsHandleMouse(
             return 1;
         }
 
-        if (PointInWindowRect(x, y, GetSettingsLanguageSelectRect(left, top, right), left, top, bottom))
+        if (PointInWindowRect(x, y, GetSettingsLanguageSelectRect(left, contentTop, right), left, top, bottom))
         {
             gSettingsVoiceInputDropdownOpen = false;
             gSettingsVoiceOutputDropdownOpen = false;
@@ -13097,7 +13726,7 @@ int SettingsHandleMouse(
         {
             for (int index = 0; index < gPluginLanguageCount; ++index)
             {
-                if (PointInWindowRect(x, y, GetSettingsLanguageOptionRect(left, top, right, index), left, top, bottom))
+                if (PointInWindowRect(x, y, GetSettingsLanguageOptionRect(left, contentTop, right, index), left, top, bottom))
                 {
                     ApplyPluginLanguageSelection(gPluginLanguages[index].code);
                     gSettingsLanguageDropdownOpen = false;
@@ -13117,6 +13746,16 @@ int SettingsHandleMouse(
             gSettingsWindowDragOffsetY = top - y;
             return 1;
         }
+    }
+    else if (inMouse == xplm_MouseDrag && gSettingsFontScaleDragging)
+    {
+        gPluginFontScalePercent = SliderPercentFromX(GetSettingsFontScaleRect(left, contentTop, right), x);
+        return 1;
+    }
+    else if (inMouse == xplm_MouseDrag && gSettingsWindowScaleDragging)
+    {
+        gPluginWindowScalePercent = SliderPercentFromX(GetSettingsWindowScaleRect(left, contentTop, right), x);
+        return 1;
     }
     else if (inMouse == xplm_MouseDrag && gSettingsWindowDragging)
     {
@@ -13145,6 +13784,13 @@ int SettingsHandleMouse(
     else if (inMouse == xplm_MouseUp)
     {
         gSettingsWindowDragging = false;
+        if (gSettingsFontScaleDragging || gSettingsWindowScaleDragging)
+        {
+            SaveConfig();
+            ApplyPluginWindowScale();
+        }
+        gSettingsFontScaleDragging = false;
+        gSettingsWindowScaleDragging = false;
         return 1;
     }
 
@@ -13192,9 +13838,9 @@ void CreateSettingsWindow()
         XPLMSetWindowResizingLimits(
             gSettingsWindow,
             500,
-            460,
-            620,
-            700
+            640,
+            760,
+            820
         );
     }
 }
@@ -13202,6 +13848,7 @@ void CreateSettingsWindow()
 
 void ShowSettingsWindow()
 {
+    gSettingsScrollOffset = 0;
     gSettingsLanguageDropdownOpen = false;
     gSettingsVoiceInputDropdownOpen = false;
     gSettingsVoiceOutputDropdownOpen = false;
@@ -13241,20 +13888,22 @@ void ShowSettingsWindow()
             compactTop - 60;
     }
 
+    int settingsHeight = 760;
+#if defined(_WIN32)
     RECT workArea = {};
-    int settingsHeight = 600;
     if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0))
     {
         settingsHeight = std::clamp(
             static_cast<int>(workArea.bottom - workArea.top) - 90,
-            460,
-            600
+            640,
+            760
         );
     }
+#endif
 
     if (!ConfigureChildWindowForCompactMode(
             gSettingsWindow,
-            520,
+            (520 * gPluginWindowScalePercent) / 100,
             settingsHeight,
             18
         ))
@@ -13263,7 +13912,7 @@ void ShowSettingsWindow()
             gSettingsWindow,
             windowLeft,
             windowTop,
-            windowLeft + 520,
+            windowLeft + (520 * gPluginWindowScalePercent) / 100,
             windowTop - settingsHeight
         );
     }
@@ -16703,6 +17352,7 @@ bool HandleChatKeyInput(
         }
         else
         {
+#if defined(_WIN32)
             char ansiText[2] =
             {
                 static_cast<char>(keyByte),
@@ -16731,6 +17381,9 @@ bool HandleChatKeyInput(
                         )
                     );
             }
+#else
+            inputText.push_back(static_cast<char>(keyByte));
+#endif
         }
 
         if (
@@ -16757,6 +17410,7 @@ int ChatKeySniffer(
 }
 
 
+#if defined(_WIN32)
 char GetWindowsChatCharacter(int virtualKey)
 {
     bool shiftDown =
@@ -17187,6 +17841,15 @@ void PollCompactChatMouseFocus()
     gWindowsChatMouseDown =
         mouseDown;
 }
+#else
+void PollWindowsChatKeyboard()
+{
+}
+
+void PollCompactChatMouseFocus()
+{
+}
+#endif
 
 
 int CompactHandleMouse(
@@ -18820,6 +19483,108 @@ void DrawCustomFlightplanWindow(
 
 }
 
+
+CustomRect GetCpdlcCloseRect(int left, int top, int right) { return {right-48,top-36,right-8,top-4}; }
+CustomRect GetCpdlcPopoutRect(int left, int top, int right) { return {right-94,top-36,right-54,top-4}; }
+CustomRect GetCpdlcStationRect(int left, int top) { return {left+18,top-78,left+240,top-108}; }
+CustomRect GetCpdlcLogonRect(int left, int top) { return {left+250,top-78,left+350,top-108}; }
+CustomRect GetCpdlcLogoffRect(int left, int top) { return {left+360,top-78,left+460,top-108}; }
+CustomRect GetCpdlcInputRect(int left, int bottom, int right) { return {left+18,bottom+18,right-112,bottom+50}; }
+CustomRect GetCpdlcSendRect(int bottom, int right) { return {right-102,bottom+18,right-18,bottom+50}; }
+
+void ApplyCpdlcResponse(const std::string& response)
+{
+    if (!ResponseIsSuccess(response))
+    {
+        gCpdlcStatusText = ExtractMessageFromResponse(response);
+        return;
+    }
+    gCpdlcConnectionId = ExtractJsonIntValue(response,"connection_id",0);
+    gCpdlcState = ExtractJsonStringValue(response,"connection_state");
+    std::string station = ExtractJsonStringValue(response,"station_code");
+    if (!station.empty()) gCpdlcStationText = station;
+    int count = ExtractJsonIntValue(response,"message_count",0);
+    gCpdlcMessages.clear();
+    for (int i=0;i<count;++i)
+    {
+        std::string p="message_"+std::to_string(i)+"_";
+        CpdlcMessage m;
+        m.id=ExtractJsonIntValue(response,p+"id",0);
+        m.senderRole=ExtractJsonStringValue(response,p+"sender_role");
+        m.text=ExtractJsonStringValue(response,p+"text");
+        m.time=ExtractJsonStringValue(response,p+"time");
+        m.responseOptions=ExtractJsonStringValue(response,p+"response_options");
+        gCpdlcLastMessageId=(std::max)(gCpdlcLastMessageId,m.id);
+        gCpdlcMessages.push_back(m);
+    }
+    gCpdlcStatusText = gCpdlcState=="connected" ? T("cpdlc.connected") :
+        gCpdlcState=="requested" ? T("cpdlc.requested") : T("cpdlc.not_connected");
+}
+
+void CpdlcRequest(const std::string& action,const std::string& extra="")
+{
+    if(!gLoggedIn||gAuthToken.empty()){gCpdlcStatusText=T("status.login_first");return;}
+    std::string body="token="+UrlEncode(gAuthToken)+"&action="+UrlEncode(action);
+    if(!extra.empty()) body+="&"+extra;
+    ApplyCpdlcResponse(HttpPost(gCpdlcUrl,body));
+}
+
+void StartCpdlcPollWorker()
+{
+    if(!gLoggedIn||gAuthToken.empty()||gCpdlcPollInProgress.exchange(true))return;
+    if(gCpdlcPollThread.joinable())gCpdlcPollThread.join();
+    std::string body="token="+UrlEncode(gAuthToken)+"&action=status";
+    gCpdlcPollThread=std::thread([body](){std::string r=HttpPost(gCpdlcUrl,body);{std::lock_guard<std::mutex> l(gCpdlcPollResultMutex);gCpdlcPollResponse=r;}gCpdlcPollResultReady.store(true);gCpdlcPollInProgress.store(false);});
+}
+
+void ProcessCpdlcPollResult()
+{
+    if(!gCpdlcPollResultReady.exchange(false))return;
+    std::string r;{std::lock_guard<std::mutex> l(gCpdlcPollResultMutex);r=gCpdlcPollResponse;}
+    if(!gCpdlcPollInProgress.load()&&gCpdlcPollThread.joinable())gCpdlcPollThread.join();
+    ApplyCpdlcResponse(r);
+}
+
+void UpdateCpdlcPolling(float elapsed)
+{
+    if(!gLoggedIn||gAuthToken.empty())return;
+    gCpdlcPollElapsed+=elapsed;if(gCpdlcPollElapsed<2.0f)return;gCpdlcPollElapsed=0.0f;StartCpdlcPollWorker();
+}
+
+void DrawCpdlcWindow(XPLMWindowID window,void*)
+{
+    int l,t,r,b;XPLMGetWindowGeometry(window,&l,&t,&r,&b);XPLMSetGraphicsState(0,0,0,0,1,0,0);
+    DrawFilledRect({l,t,r,b},0.055f,0.063f,0.071f,1.0f);DrawRectOutline({l,t,r,b},0.12f,0.42f,0.66f,1.0f);
+    DrawFilledRect({l+2,t-42,r-2,t-2},0.015f,0.055f,0.080f,1.0f);DrawText(l+18,t-27,"CPDLC",0.9f,0.96f,1.0f);
+    DrawCustomLoginButton(GetCpdlcPopoutRect(l,t,r),gCpdlcPoppedOut?"DOCK":"POP",false);DrawCustomLoginButton(GetCpdlcCloseRect(l,t,r),"X",false);
+    CustomRect station=GetCpdlcStationRect(l,t);DrawFilledRect(station,0.075f,0.09f,0.105f,1.0f);DrawRectOutline(station,0.12f,0.42f,0.66f,1.0f);
+    DrawText(station.left+8,station.bottom+9,gCpdlcStationText.empty()?T("cpdlc.station"):gCpdlcStationText,0.75f,0.88f,0.96f);
+    DrawCustomLoginButton(GetCpdlcLogonRect(l,t),T("cpdlc.logon"),true);DrawCustomLoginButton(GetCpdlcLogoffRect(l,t),T("cpdlc.logoff"),false);
+    DrawText(l+18,t-128,gCpdlcStatusText,0.35f,0.95f,0.55f);
+    int y=t-158;int start=(std::max)(0,static_cast<int>(gCpdlcMessages.size())-10);
+    for(int i=start;i<(int)gCpdlcMessages.size()&&y>b+82;++i,y-=28){const auto&m=gCpdlcMessages[i];std::string line=m.time+" "+ToUpperString(m.senderRole)+": "+m.text;DrawText(l+18,y,TruncateForWidthFromStart(line,r-l-36),m.senderRole=="atc"?0.95f:0.55f,0.9f,0.75f);}
+    CustomRect input=GetCpdlcInputRect(l,b,r);DrawFilledRect(input,0.075f,0.09f,0.105f,1.0f);DrawRectOutline(input,0.12f,0.42f,0.66f,1.0f);DrawText(input.left+8,input.bottom+9,gCpdlcInputText.empty()?T("cpdlc.message"):gCpdlcInputText,0.78f,0.9f,0.96f);DrawCustomLoginButton(GetCpdlcSendRect(b,r),T("cpdlc.send"),true);
+}
+
+void ToggleCpdlcPopout(){if(!gCpdlcWindow)return;if(XPLMWindowIsPoppedOut(gCpdlcWindow)){XPLMSetWindowPositioningMode(gCpdlcWindow,xplm_WindowPositionFree,-1);XPLMSetWindowGeometry(gCpdlcWindow,540,760,1140,300);gCpdlcPoppedOut=false;}else{XPLMSetWindowPositioningMode(gCpdlcWindow,xplm_WindowPopOut,-1);gCpdlcPoppedOut=true;}}
+
+int CpdlcHandleMouse(XPLMWindowID w,int x,int y,XPLMMouseStatus mouse,void*)
+{
+    int l,t,r,b;XPLMGetWindowGeometry(w,&l,&t,&r,&b);
+    if(mouse==xplm_MouseDown){if(PointInRect(x,y,GetCpdlcCloseRect(l,t,r))){XPLMSetWindowIsVisible(w,0);return 1;}if(PointInRect(x,y,GetCpdlcPopoutRect(l,t,r))){ToggleCpdlcPopout();return 1;}if(PointInRect(x,y,GetCpdlcStationRect(l,t))){gCpdlcStationFocused=true;gCpdlcInputFocused=false;XPLMTakeKeyboardFocus(w);return 1;}if(PointInRect(x,y,GetCpdlcLogonRect(l,t))){CpdlcRequest("logon","station="+UrlEncode(ToUpperString(gCpdlcStationText)));return 1;}if(PointInRect(x,y,GetCpdlcLogoffRect(l,t))){CpdlcRequest("logoff");return 1;}if(PointInRect(x,y,GetCpdlcInputRect(l,b,r))){gCpdlcInputFocused=true;gCpdlcStationFocused=false;XPLMTakeKeyboardFocus(w);return 1;}if(PointInRect(x,y,GetCpdlcSendRect(b,r))&&!gCpdlcInputText.empty()){CpdlcRequest("send","message="+UrlEncode(gCpdlcInputText));gCpdlcInputText.clear();return 1;}if(!XPLMWindowIsPoppedOut(w)&&y>=t-42){gCpdlcDragging=true;gCpdlcDragOffsetX=x-l;gCpdlcDragOffsetY=t-y;}return 1;}
+    if(mouse==xplm_MouseDrag&&gCpdlcDragging){int width=r-l,height=t-b,nl=x-gCpdlcDragOffsetX,nt=y+gCpdlcDragOffsetY;XPLMSetWindowGeometry(w,nl,nt,nl+width,nt-height);return 1;}if(mouse==xplm_MouseUp)gCpdlcDragging=false;return 1;
+}
+
+void CpdlcHandleKey(XPLMWindowID,char key,XPLMKeyFlags flags,char virtualKey,void*,int losingFocus)
+{
+    if(losingFocus){gCpdlcInputFocused=false;gCpdlcStationFocused=false;return;}if(flags&xplm_UpFlag)return;std::string* target=gCpdlcStationFocused?&gCpdlcStationText:gCpdlcInputFocused?&gCpdlcInputText:nullptr;if(!target)return;if(virtualKey==8||key==8){if(!target->empty())target->pop_back();return;}if((virtualKey==13||key==13)&&gCpdlcInputFocused&&!target->empty()){CpdlcRequest("send","message="+UrlEncode(*target));target->clear();return;}unsigned char c=static_cast<unsigned char>(key);if(c>=32&&c<127&&target->size()<(gCpdlcStationFocused?32u:500u)){target->push_back(gCpdlcStationFocused?static_cast<char>(toupper(c)):static_cast<char>(c));}
+}
+
+void ShowCpdlcWindow()
+{
+    if(!gCpdlcWindow){XPLMCreateWindow_t p={};p.structSize=sizeof(p);p.left=540;p.top=760;p.right=1140;p.bottom=300;p.visible=0;p.drawWindowFunc=DrawCpdlcWindow;p.handleMouseClickFunc=CpdlcHandleMouse;p.handleKeyFunc=CpdlcHandleKey;p.handleCursorFunc=[](XPLMWindowID,int,int,void*) -> int {return xplm_CursorDefault;};p.handleMouseWheelFunc=[](XPLMWindowID,int,int,int,int,void*){return 0;};p.refcon=nullptr;p.decorateAsFloatingWindow=xplm_WindowDecorationRoundRectangle;p.layer=xplm_WindowLayerFloatingWindows;p.handleRightClickFunc=CpdlcHandleMouse;gCpdlcWindow=XPLMCreateWindowEx(&p);if(gCpdlcWindow){XPLMSetWindowTitle(gCpdlcWindow,"VFN CPDLC");XPLMSetWindowResizingLimits(gCpdlcWindow,520,340,900,800);}}
+    if(gCpdlcWindow){XPLMSetWindowIsVisible(gCpdlcWindow,1);XPLMBringWindowToFront(gCpdlcWindow);gCpdlcPollElapsed=999.0f;}
+}
 
 CustomRect GetWebFlightplanSelectorPopoutRect(int left, int top, int right)
 {
@@ -20725,6 +21490,7 @@ PLUGIN_API int XPluginStart(
         (std::string("VFN Network Pilot Client v") + VFN_PLUGIN_VERSION).c_str()
     );
 
+#if defined(_WIN32)
     if (gGdiplusToken == 0)
     {
         GdiplusStartupInput gdiplusStartupInput;
@@ -20734,6 +21500,7 @@ PLUGIN_API int XPluginStart(
             nullptr
         );
     }
+#endif
 
     LoadInternalEnglishLanguage();
 
@@ -20752,6 +21519,10 @@ PLUGIN_API int XPluginStart(
     LoadSavedLoginData();
 
     CreateFlightplanWindow();
+
+    // Apply a saved UI size after the initial plugin windows exist.
+    gAppliedPluginWindowScalePercent = 100;
+    ApplyPluginWindowScale();
 
     CreatePluginMenu();
 
@@ -21374,11 +22145,13 @@ PLUGIN_API void XPluginStop(void)
     for (auto& entry : gLanguageFlagTextures) DestroyTexture(entry.second);
     gLanguageFlagTextures.clear();
 
+#if defined(_WIN32)
     if (gGdiplusToken != 0)
     {
         GdiplusShutdown(gGdiplusToken);
         gGdiplusToken = 0;
     }
+#endif
 
     XPLMDebugString(
         T("debug.plugin_stopped")
