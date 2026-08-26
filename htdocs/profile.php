@@ -338,20 +338,20 @@ $totalFlightMiles =
 
 $atcSummaryStmt = $pdo->prepare(
     "SELECT COUNT(*) AS sessions, COALESCE(SUM(duration_seconds),0) AS duration_seconds
-     FROM atc_session_history WHERE user_id=:user_id"
+     FROM atc_session_history WHERE user_id=:user_id AND is_trainer=0"
 );
 $atcSummaryStmt->execute(['user_id'=>$profileUserId]);
 $atcSummary = $atcSummaryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 $atcSessionCount = (int)($atcSummary['sessions'] ?? 0);
 $atcControllerSeconds = (int)($atcSummary['duration_seconds'] ?? 0);
 $profileLastAtcPosition = '----';
-$lastAtcStmt = $pdo->prepare("SELECT callsign FROM atc_session_history WHERE user_id=:user_id ORDER BY disconnected_at DESC,id DESC LIMIT 1");
+$lastAtcStmt = $pdo->prepare("SELECT callsign FROM atc_session_history WHERE user_id=:user_id AND is_trainer=0 ORDER BY disconnected_at DESC,id DESC LIMIT 1");
 $lastAtcStmt->execute(['user_id'=>$profileUserId]);
 if (($lastAtc = $lastAtcStmt->fetchColumn()) !== false) $profileLastAtcPosition = (string)$lastAtc;
 $profileFavoriteAtcPosition = '----';
 $favoriteAtcStmt = $pdo->prepare(
     "SELECT callsign,COUNT(*) AS sessions,COALESCE(SUM(duration_seconds),0) AS seconds
-     FROM atc_session_history WHERE user_id=:user_id GROUP BY callsign
+     FROM atc_session_history WHERE user_id=:user_id AND is_trainer=0 GROUP BY callsign
      ORDER BY seconds DESC,sessions DESC,callsign ASC LIMIT 1"
 );
 $favoriteAtcStmt->execute(['user_id'=>$profileUserId]);

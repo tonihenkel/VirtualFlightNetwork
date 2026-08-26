@@ -34,7 +34,7 @@ try {
     ensurePilotFlightplanCommunicationColumn($pdo);
     $sessionToken = (string)($_SESSION['atc_session_token'] ?? '');
     $sessionStatement = $pdo->prepare(
-        "SELECT id,user_id,is_spectator,can_control FROM atc_sessions
+        "SELECT id,user_id,is_spectator,is_trainer,can_control FROM atc_sessions
          WHERE user_id=:user_id AND session_token=:token AND is_active=1
            AND last_seen_at>=DATE_SUB(NOW(),INTERVAL 30 SECOND) LIMIT 1"
     );
@@ -101,18 +101,20 @@ try {
         }
         $ownership=$pdo->prepare("SELECT atc_session_id,atc_callsign FROM atc_assumed_aircraft WHERE pilot_session_token=:token LIMIT 1");
         $ownership->execute(['token'=>(string)$target['session_token']]);$owner=$ownership->fetch(PDO::FETCH_ASSOC);
-        $mayControl = (int)($atcSession['is_spectator'] ?? 1) === 0
+        $isTrainer = (int)($atcSession['is_trainer'] ?? 0) === 1;
+        $mayControl = ((int)($atcSession['is_spectator'] ?? 1) === 0 || $isTrainer)
             && (int)($atcSession['can_control'] ?? 0) === 1;
-        atcFplReply(true, ['callsign' => $callsign, 'flightplan' => $flightplan, 'assumed_by_me'=>$mayControl&&$owner&&(int)$owner['atc_session_id']===(int)$atcSession['id'], 'assumed_by'=>(string)($owner['atc_callsign']??'')]);
+        atcFplReply(true, ['callsign' => $callsign, 'flightplan' => $flightplan, 'assumed_by_me'=>$mayControl&&($isTrainer||($owner&&(int)$owner['atc_session_id']===(int)$atcSession['id'])), 'assumed_by'=>(string)($owner['atc_callsign']??'')]);
     }
 
-    if ((int)($atcSession['is_spectator'] ?? 1) === 1 || (int)($atcSession['can_control'] ?? 0) !== 1) {
+    $isTrainer = (int)($atcSession['is_trainer'] ?? 0) === 1;
+    if (((int)($atcSession['is_spectator'] ?? 1) === 1 && !$isTrainer) || (int)($atcSession['can_control'] ?? 0) !== 1) {
         atcFplReply(false, ['message' => 'atc_control_session_required'], 403);
     }
 
     $ownership=$pdo->prepare("SELECT atc_session_id FROM atc_assumed_aircraft WHERE pilot_session_token=:token LIMIT 1");
     $ownership->execute(['token'=>(string)$target['session_token']]);$owner=$ownership->fetch(PDO::FETCH_ASSOC);
-    if(!$owner||(int)$owner['atc_session_id']!==(int)$atcSession['id'])atcFplReply(false,['message'=>'aircraft_must_be_assumed'],409);
+    if(!$isTrainer&&(!$owner||(int)$owner['atc_session_id']!==(int)$atcSession['id']))atcFplReply(false,['message'=>'aircraft_must_be_assumed'],409);
 
     $values = [];
     foreach ($fields as $field) $values[$field] = trim((string)($_POST[$field] ?? ''));

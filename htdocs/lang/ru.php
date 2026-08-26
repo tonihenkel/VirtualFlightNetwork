@@ -1,6 +1,23 @@
 <?php
 
 return [
+    'admin_filter_filtered_chats'=>'Отфильтрованные чаты','admin_filter_filtered_chats_only'=>'Показывать только отфильтрованные чаты',
+    'admin_activity_sort'=>'Сортировать действия персонала','admin_activity_search_placeholder'=>'Поиск игрока, сотрудника, действия или даты …','admin_activity_player'=>'Игрок','admin_activity_staff_member'=>'Сотрудник','admin_activity_type'=>'Тип действия','admin_activity_date'=>'Дата',
+    'admin_online_search_placeholder'=>'Поиск по имени, позывному, роли, станции или рейтингу …',
+    'admin_online_users_tab'=>'В сети','admin_online_users_title'=>'Пользователи в сети','admin_online_users_text'=>'Активные пилоты, диспетчеры, инструкторы и наблюдатели с фазой и рейтингами. Фаза 1 истекает через 10 минут.','admin_online_users_empty'=>'Никого нет в сети.','admin_online_role'=>'Роль / сеанс','admin_online_role_pilot'=>'Пилот','admin_online_role_spectator'=>'Наблюдатель','admin_online_role_controller'=>'Диспетчер','admin_online_role_trainer'=>'Инструктор','admin_online_role_atc_spectator'=>'Наблюдатель ATC','admin_online_phase'=>'Фаза','admin_online_reason_prompt'=>'Укажите причину:','admin_online_ban_duration_prompt'=>'Срок блокировки (напр. 30min, 12h, 7d или permanent):','admin_online_action_failed'=>'Ошибка действия модерации.',
+    'atc_airport_watch_title' => 'Схема аэропорта', 'atc_airport_watch_open' => 'Открыть аэропорт в отдельном окне', 'atc_airport_layout_unavailable' => 'Схема аэропорта недоступна',
+    'atc_position_denied' => 'Ваш рейтинг ATC не позволяет занять эту позицию.', 'atc_trainer_denied' => 'У вас нет разрешения на использование режима инструктора.', 'invalid_station_or_position' => 'Недопустимый идентификатор станции или позиция.', 'station_position_unavailable' => 'Эта позиция недоступна на выбранной станции.', 'access_denied' => 'Доступ запрещён.',
+    'invalid_handoff_target' => 'Недопустимая целевая диспетчерская позиция для передачи.',
+    'atc_nav_points' => 'точек', 'atc_nav_loading' => 'загрузка…', 'atc_nav_hidden' => 'скрыто', 'atc_nav_error' => 'ошибка',
+    'atc_windows' => 'Окна', 'atc_window_close' => 'Закрыть окно',
+    'map_show_sector_waypoints' => 'Показать все точки в секторе радара',
+    'atc_map_context_title' => 'Карта радара', 'atc_atis_include_small' => 'Показывать также малые аэродромы',
+    'atc_metar_only_available' => 'Только аэропорты с доступным METAR', 'atc_metar_runway_estimate' => 'Предположительно',
+    'atc_position_busy' => 'Эта позиция УВД уже занята или готовится к открытию.',
+    'atc_ready_title' => 'Этап 1 · Подготовка', 'atc_ready_loading' => 'Загрузка радара и данных сектора…',
+    'atc_ready_loaded' => 'Радар и сектор готовы. Навигационные точки могут продолжать загружаться в фоне.',
+    'atc_ready_open_position' => 'Готов · Открыть позицию', 'atc_ready_activating' => 'Позиция открывается…',
+    'atc_ready_voice_waiting' => 'Голосовая связь ожидает открытия позиции.',
     'feature_cpdlc_title' => 'CPDLC через Hoppie',
     'feature_cpdlc_text' => 'Совместимые системы FMC и MCDU через Hoppie напрямую связываются с диспетчерами в ATC-клиенте VFN.',
     'feature_atc_client_title' => 'Радарный клиент УВД',

@@ -37,9 +37,18 @@ try {
         mb_substr($message, 0, 220);
 
     $onlineStmt = $pdo->query(
-        "SELECT DISTINCT user_id
-         FROM user_sessions
-         WHERE is_active = 1"
+        "SELECT DISTINCT online.user_id
+         FROM (
+             SELECT user_id
+             FROM user_sessions
+             WHERE is_active = 1
+               AND last_seen >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
+             UNION
+             SELECT user_id
+             FROM atc_sessions
+             WHERE is_active = 1
+               AND last_seen_at >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
+         ) online"
     );
 
     $onlineUserIds =

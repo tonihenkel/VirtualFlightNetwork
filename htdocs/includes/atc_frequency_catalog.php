@@ -10,6 +10,9 @@ declare(strict_types=1);
  */
 function ensureAtcFrequencyCatalog(PDO $pdo): void
 {
+    static $ensuredConnections = [];
+    $connectionId = spl_object_id($pdo);
+    if (isset($ensuredConnections[$connectionId])) return;
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS atc_position_frequencies (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -30,6 +33,7 @@ function ensureAtcFrequencyCatalog(PDO $pdo): void
     );
 
     seedAtcFrequencyOverrides($pdo);
+    $ensuredConnections[$connectionId] = true;
 }
 
 /**
@@ -44,6 +48,88 @@ function seedAtcFrequencyOverrides(PDO $pdo): void
         ['SAEF_CTR', 'SAEF', 'CTR', '135.500'],
         // VFN assignment for Jeddah Control (Saudi Arabia).
         ['OEJD_CTR', 'OEJD', 'CTR', '134.300'],
+        // Comodoro Rivadavia FIR primary frequency. The remaining SAVF
+        // frequencies are supplied by its CMN/CMO/CMS child sectors.
+        ['SAVF_CTR', 'SAVF', 'CTR', '125.500'],
+        // Antarctic and Southern Ocean parent facilities. Their source data
+        // stores the frequency on a child sector or in the VATSpy facility
+        // name, so the FIR-level controller otherwise appears without one.
+        ['FAJO_CTR', 'FAJO', 'CTR', '120.850'],
+        ['NZZO_CTR', 'NZZO', 'CTR', '129.000'],
+        ['YIND_CTR', 'YIND', 'CTR', '129.250'],
+        ['YINS_CTR', 'YINS', 'CTR', '123.200'],
+        // Current national AIP assignments for FIRs whose VATGlasses records
+        // contain geometry but no voice frequency.
+        ['SLLF_CTR', 'SLLF', 'CTR', '128.200'],
+        ['SPIM_CTR', 'SPIM', 'CTR', '128.100'],
+        ['SPIM_CTR_2', 'SPIM', 'CTR', '128.500'],
+        ['SPIM_CTR_3', 'SPIM', 'CTR', '128.800'],
+        ['OERK_CTR', 'OERK', 'CTR', '120.000'],
+        ['OERK_CTR_2', 'OERK', 'CTR', '128.500'],
+        ['OERK_CTR_3', 'OERK', 'CTR', '124.100'],
+        ['OERK_CTR_4', 'OERK', 'CTR', '126.000'],
+        ['VABF_CTR', 'VABF', 'CTR', '132.700'],
+        ['VABF_CTR_2', 'VABF', 'CTR', '125.350'],
+        ['VABF_CTR_3', 'VABF', 'CTR', '133.850'],
+        ['VABF_CTR_4', 'VABF', 'CTR', '133.300'],
+        ['VABF_CTR_5', 'VABF', 'CTR', '120.500'],
+        ['VABF_CTR_6', 'VABF', 'CTR', '133.425'],
+        ['VABF_CTR_7', 'VABF', 'CTR', '133.925'],
+        ['VABF_CTR_8', 'VABF', 'CTR', '127.150'],
+        ['VABF_CTR_9', 'VABF', 'CTR', '135.750'],
+        ['VIDF_CTR', 'VIDF', 'CTR', '119.500'],
+        ['VIDF_CTR_2', 'VIDF', 'CTR', '120.900'],
+        ['VIDF_CTR_3', 'VIDF', 'CTR', '124.550'],
+        ['VIDF_CTR_4', 'VIDF', 'CTR', '125.700'],
+        ['VIDF_CTR_5', 'VIDF', 'CTR', '125.950'],
+        ['VIDF_CTR_6', 'VIDF', 'CTR', '132.150'],
+        ['VIDF_CTR_7', 'VIDF', 'CTR', '132.850'],
+        ['VIDF_CTR_8', 'VIDF', 'CTR', '132.975'],
+        ['VIDF_CTR_9', 'VIDF', 'CTR', '133.900'],
+        ['VIDF_CTR_10', 'VIDF', 'CTR', '134.075'],
+        ['VIDF_CTR_11', 'VIDF', 'CTR', '134.500'],
+        ['VECF_CTR', 'VECF', 'CTR', '132.450'],
+        ['VECF_CTR_2', 'VECF', 'CTR', '120.700'],
+        ['VECF_CTR_3', 'VECF', 'CTR', '120.100'],
+        ['VECF_CTR_4', 'VECF', 'CTR', '126.100'],
+        ['VECF_CTR_5', 'VECF', 'CTR', '125.900'],
+        ['VOMF_CTR', 'VOMF', 'CTR', '118.900'],
+        ['VOMF_CTR_2', 'VOMF', 'CTR', '125.700'],
+        ['VOMF_CTR_3', 'VOMF', 'CTR', '126.150'],
+        // VATRUS published Russian ACC and discrete sector assignments.
+        ['UEEE_CTR', 'UEEE', 'CTR', '125.600'],
+        ['UEEE_E_CTR', 'UEEE_E', 'CTR', '126.900'],
+        ['UEEE_NE_CTR', 'UEEE_NE', 'CTR', '129.500'],
+        ['UHHH_CTR', 'UHHH', 'CTR', '124.500'],
+        ['UHHH_1_CTR', 'UHHH_1', 'CTR', '126.600'],
+        ['UHHH_3_CTR', 'UHHH_3', 'CTR', '133.700'],
+        ['USSV_CTR', 'USSV', 'CTR', '122.200'],
+        ['USTV_CTR', 'USTV', 'CTR', '132.600'],
+        ['UUWV_CTR', 'UUWV', 'CTR', '127.500'],
+        ['UUWV_SE_CTR', 'UUWV_SE', 'CTR', '125.200'],
+        ['UWWW_CTR', 'UWWW', 'CTR', '132.900'],
+        ['UWWW_E_CTR', 'UWWW_E', 'CTR', '126.900'],
+        ['UWWW_N_CTR', 'UWWW_N', 'CTR', '133.600'],
+        ['UWWW_SE_CTR', 'UWWW_SE', 'CTR', '132.500'],
+        ['UWWW_SG_CTR', 'UWWW_SG', 'CTR', '126.100'],
+        ['UWWW_SW_CTR', 'UWWW_SW', 'CTR', '134.300'],
+        ['UWWW_W_CTR', 'UWWW_W', 'CTR', '133.300'],
+        // Gander/Shanwick OCA VHF aliases used by VATSIM to simulate HF.
+        ['EGGX_CTR', 'EGGX', 'CTR', '131.800'],
+        ['EGGX_A_CTR', 'EGGX_A', 'CTR', '131.450'],
+        ['EGGX_B_CTR', 'EGGX_B', 'CTR', '131.550'],
+        ['EGGX_C_CTR', 'EGGX_C', 'CTR', '131.650'],
+        ['EGGX_D_CTR', 'EGGX_D', 'CTR', '131.750'],
+        ['EGGX_F_CTR', 'EGGX_F', 'CTR', '131.850'],
+        ['EGGX_S_CTR', 'EGGX_S', 'CTR', '131.800'],
+        ['CZQO_CTR', 'CZQO', 'CTR', '131.700'],
+        ['CZQO_A_CTR', 'CZQO_A', 'CTR', '131.575'],
+        ['CZQO_B_CTR', 'CZQO_B', 'CTR', '131.675'],
+        ['CZQO_C_CTR', 'CZQO_C', 'CTR', '131.775'],
+        ['CZQO_D_CTR', 'CZQO_D', 'CTR', '131.875'],
+        ['CZQO_F_CTR', 'CZQO_F', 'CTR', '131.975'],
+        ['CZQO_G_CTR', 'CZQO_G', 'CTR', '131.700'],
+        ['NAT_FSS_CTR', 'NAT', 'CTR', '131.900'],
         // VATSIM Germany EDMM EBG West elemental sectors.
         ['EDMM_ALB_CTR', 'EDMM_ALB', 'CTR', '129.100'],
         ['EDMM_EGG_CTR', 'EDMM_EGG', 'CTR', '129.555'],
@@ -110,6 +196,102 @@ function getCompiledAtcSectors(): array
     return $stations;
 }
 
+/**
+ * VATSpy FIR identifiers and VATGlasses sector station keys occasionally use
+ * different abbreviations for the same airspace. Keep only reviewed aliases;
+ * a geographic or fuzzy match could attach a valid frequency to the wrong
+ * controller position.
+ */
+function getCompiledAtcSectorAliases(string $station): array
+{
+    $aliases = [
+        // Arabian Peninsula subdivisions.
+        'OBBB_C' => ['OBBB_BBCH', 'OBBB_BBCL'],
+        'OBBB_E' => ['OBBB_BBE'],
+        'OBBB_N' => ['OBBB_BBN'],
+        'OBBB_S' => ['OBBB_BBE', 'OBBB_BB2'],
+        'OEJD_C' => ['OEJD_JCC'],
+        'OEJD_E' => ['OEJD_JCE'],
+        'OEJD_N' => ['OEJD_JCN'],
+        'OEJD_NE' => ['OEJD_JCNE'],
+        'OEJD_S' => ['OEJD_JCS'],
+        'OEJD_SE' => ['OEJD_JCSE'],
+        'OEJD_W' => ['OEJD_JCW', 'OEJD_JCW1'],
+        'OERD_E' => ['OERD_RCE'],
+        'OERD_N' => ['OERD_RCN'],
+        'OERD_NE' => ['OERD_RCNE'],
+        'OTDF_N' => ['OTDF_DCN'],
+        'OTDF_S' => ['OTDF_DCS'],
+
+        // Chinese FIR parents and their published ACC sectors.
+        'ZBPE' => ['ZBAA', 'ZBHH'],
+        'ZGZU' => ['ZGGG', 'ZGHA', 'ZGNN'],
+        'ZHWH' => ['ZHCC', 'ZHHH'],
+        'ZJSA' => ['ZJSY'],
+        'ZLHW' => ['ZLLL', 'ZLXY'],
+        'ZPKM' => ['ZPPP', 'ZUGY', 'ZULS', 'ZUUU'],
+        'ZSHA' => ['ZSAM', 'ZSCN', 'ZSJN', 'ZSOF', 'ZSQD', 'ZSSS'],
+        'ZWUQ' => ['ZWWW'],
+        'ZYSH' => ['ZYHB', 'ZYTL', 'ZYTX'],
+        'ZBAA_E' => ['ZBAA_BJE'],
+        'ZBAA_N' => ['ZBAA_BJN'],
+        'ZBAA_S' => ['ZBAA_BJS'],
+        'ZBAA_SW' => ['ZBAA_BJSW'],
+        'ZBAA_W' => ['ZBAA_BJW'],
+        'ZJSY_L' => ['ZJSY_SYL'],
+        'ZJSY_O' => ['ZJSY_SYO'],
+        'ZSSS_C' => ['ZSSS_SHC'],
+        'ZSSS_N' => ['ZSSS_SHN'],
+        'ZSSS_S' => ['ZSSS_SHS'],
+        'ZSSS_W' => ['ZSSS_SHW'],
+        'ZWWW_N' => ['ZWWW_WUN'],
+        'ZWWW_S' => ['ZWWW_WUS'],
+    ];
+    return $aliases[normalizeAtcStationCode($station)] ?? [];
+}
+
+function getAtcFrequencyParentFallback(string $station): string
+{
+    $station = normalizeAtcStationCode($station);
+    if (preg_match('/^VA/', $station)) return 'VABF';
+    if (preg_match('/^VE/', $station)) return 'VECF';
+    if (preg_match('/^VI/', $station)) return 'VIDF';
+    if (preg_match('/^VO/', $station)) return 'VOMF';
+    return '';
+}
+
+/** Frequencies explicitly embedded in VATSpy FIR/UIR labels (notably Australia). */
+function findVatSpyLabelFrequencies(string $station): array
+{
+    static $frequencies = null;
+    if ($frequencies === null) {
+        $frequencies = [];
+        $path = dirname(__DIR__) . '/data/atc/VATSpy.dat';
+        $section = '';
+        $handle = is_file($path) ? fopen($path, 'rb') : false;
+        if ($handle !== false) {
+            while (($line = fgets($handle)) !== false) {
+                $line = trim($line);
+                if (preg_match('/^\[([A-Za-z]+)\]$/', $line, $match)) {
+                    $section = strtoupper($match[1]);
+                    continue;
+                }
+                if (!in_array($section, ['FIRS', 'UIRS'], true)) continue;
+                $columns = explode('|', $line);
+                $code = normalizeAtcStationCode((string)($columns[0] ?? ''));
+                $label = (string)($columns[1] ?? '');
+                if ($code === '' || !preg_match_all('/\b1[123]\d(?:\.\d{1,3})?\b/', $label, $matches)) continue;
+                foreach ($matches[0] as $candidate) {
+                    $frequency = normalizeAtcVoiceFrequency($candidate);
+                    if ($frequency !== '') $frequencies[$code][$frequency] = true;
+                }
+            }
+            fclose($handle);
+        }
+    }
+    return array_keys($frequencies[normalizeAtcStationCode($station)] ?? []);
+}
+
 function splitAtcCallsign(string $callsign): array
 {
     $callsign = normalizeAtcStationCode($callsign);
@@ -165,7 +347,7 @@ function findAtcFrequencies(PDO $pdo, string $station, string $position): array
     $station = normalizeAtcStationCode($station);
     $position = strtoupper(trim($position));
     $exactCallsign = $station . '_' . $position;
-    $base = explode('_', $station, 2)[0];
+    $sectorPrefix = $station . '\_%';
     $stmt = $pdo->prepare(
         "SELECT callsign, frequency, source_name, last_seen_at,
                 CASE
@@ -182,9 +364,9 @@ function findAtcFrequencies(PDO $pdo, string $station, string $position): array
     );
     $stmt->execute([
         'exact' => $exactCallsign, 'station' => $station,
-        'sector_prefix' => $base . '\_%', 'position' => $position,
+        'sector_prefix' => $sectorPrefix, 'position' => $position,
         'exact2' => $exactCallsign, 'station2' => $station,
-        'sector_prefix2' => $base . '\_%',
+        'sector_prefix2' => $sectorPrefix,
     ]);
     $seen = [];
     $result = [];
@@ -206,6 +388,113 @@ function findAtcFrequencies(PDO $pdo, string $station, string $position): array
             'frequency' => $compiledFrequency,
             'source' => 'VATGlasses sector data',
         ]);
+        $seen[$compiledFrequency] = true;
+    }
+    // Parent FIR identifiers such as SAVF do not necessarily have their own
+    // VATGlasses station record. Collect the frequencies of every compiled
+    // child sector assigned to that FIR group instead of returning an empty
+    // frequency list for the parent controller position.
+    if ($position === 'CTR') {
+        $compiledPrefixes = array_merge(
+            [$station],
+            getCompiledAtcSectorAliases($station)
+        );
+        foreach (getCompiledAtcSectors() as $compiledStation => $sector) {
+            $compiledStation = normalizeAtcStationCode((string)$compiledStation);
+            // The station prefix is the reliable parent relation. Several
+            // datasets use generic group labels such as FIR or O instead of
+            // repeating SBAO, SBRE or FAJO in the group field.
+            $matchesStation = false;
+            foreach ($compiledPrefixes as $prefix) {
+                $prefix = normalizeAtcStationCode((string)$prefix);
+                if (
+                    $compiledStation === $prefix
+                    || strpos($compiledStation, $prefix . '_') === 0
+                ) {
+                    $matchesStation = true;
+                    break;
+                }
+            }
+            if (!$matchesStation) continue;
+            $frequency = normalizeAtcVoiceFrequency((string)($sector['frequency'] ?? ''));
+            if ($frequency === '' || isset($seen[$frequency])) continue;
+            $seen[$frequency] = true;
+            $result[] = [
+                'callsign' => $compiledStation . '_CTR',
+                'frequency' => $frequency,
+                'source' => 'VATGlasses sector data',
+            ];
+        }
+    }
+    if ($position === 'CTR') {
+        foreach (findVatSpyLabelFrequencies($station) as $frequency) {
+            if (isset($seen[$frequency])) continue;
+            $seen[$frequency] = true;
+            $result[] = [
+                'callsign' => $station . '_CTR',
+                'frequency' => $frequency,
+                'source' => 'VATSpy facility data',
+            ];
+        }
+    }
+    // Some compiled records use a display key (for example LIM_SPIM) while
+    // position_key contains the actual FIR identifier used by the frequency
+    // catalogue. Follow that explicit source relation before broader parent
+    // fallbacks are attempted.
+    if ($position === 'CTR' && $result === [] && is_array($compiled)) {
+        $positionStation = normalizeAtcStationCode(
+            (string)($compiled['position_key'] ?? '')
+        );
+        if ($positionStation !== '' && $positionStation !== $station) {
+            $positionFrequencies = findAtcFrequencies(
+                $pdo,
+                $positionStation,
+                $position
+            );
+            if ($positionFrequencies) return $positionFrequencies;
+        }
+    }
+    // VATSpy may abbreviate a directional/numbered sector (ZMUB_M), while
+    // VATGlasses prefixes the local sector designator (ZMUB_ULM). Match the
+    // explicit suffix inside the same parent group before inheriting every
+    // frequency of the parent FIR.
+    if ($position === 'CTR' && $result === [] && strpos($station, '_') !== false) {
+        [$sectorParent, $sectorSuffix] = explode('_', $station, 2);
+        $suffixMatches = [];
+        foreach (getCompiledAtcSectors() as $candidateStation => $candidate) {
+            $candidateStation = normalizeAtcStationCode((string)$candidateStation);
+            $candidateGroup = normalizeAtcStationCode((string)($candidate['group'] ?? ''));
+            $candidatePosition = normalizeAtcStationCode((string)($candidate['position_key'] ?? ''));
+            if (
+                strpos($candidateStation, $sectorParent . '_') !== 0
+                || $candidateGroup !== $sectorParent
+                || $sectorSuffix === ''
+                || substr($candidatePosition, -strlen($sectorSuffix)) !== $sectorSuffix
+            ) continue;
+            $frequency = normalizeAtcVoiceFrequency((string)($candidate['frequency'] ?? ''));
+            if ($frequency === '' || isset($suffixMatches[$frequency])) continue;
+            $suffixMatches[$frequency] = [
+                'callsign' => $candidateStation . '_CTR',
+                'frequency' => $frequency,
+                'source' => 'VATGlasses sector data',
+            ];
+        }
+        if ($suffixMatches) return array_values($suffixMatches);
+    }
+    if ($position === 'CTR' && $result === []) {
+        $fallbackStation = getAtcFrequencyParentFallback($station);
+        if ($fallbackStation !== '' && $fallbackStation !== $station) {
+            return findAtcFrequencies($pdo, $fallbackStation, $position);
+        }
+    }
+    // Combined and directional VATSpy identifiers normally inherit the
+    // available frequencies of their parent facility when no discrete value
+    // exists (for example SBAZ_CE, KZJX_A or VTBB_NE).
+    if ($position === 'CTR' && $result === [] && strpos($station, '_') !== false) {
+        $parentStation = explode('_', $station, 2)[0];
+        if ($parentStation !== '' && $parentStation !== $station) {
+            return findAtcFrequencies($pdo, $parentStation, $position);
+        }
     }
     return $result;
 }

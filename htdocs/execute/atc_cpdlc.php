@@ -7,13 +7,12 @@ function outCpdlc(array $d,int $s=200){http_response_code($s);echo json_encode($
 try{
  $pdo=new PDO("mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4",$dbUser,$dbPass,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
  if(empty($_SESSION['web_user_id'])||!validateVfnWebSession($pdo))outCpdlc(['success'=>false,'message'=>'login_required'],401);
- ensureAtcSchema($pdo);ensureCpdlcSchema($pdo);
  $s=$pdo->prepare("SELECT * FROM atc_sessions WHERE user_id=:uid AND session_token=:token AND is_active=1 AND last_seen_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE) LIMIT 1");
  $s->execute(['uid'=>(int)$_SESSION['web_user_id'],'token'=>(string)($_SESSION['atc_session_token']??'')]);$atc=$s->fetch(PDO::FETCH_ASSOC);if(!$atc)outCpdlc(['success'=>false,'message'=>'atc_session_inactive'],409);
  $station=strtoupper((string)$atc['station_code']);$callsign=strtoupper((string)$atc['callsign']);$hoppieStation=vfnHoppieAtcStation($station);$action=strtolower(trim((string)($_REQUEST['action']??'list')));
  vfnHoppieSyncStation($pdo,$hoppieStation,true);
  if($_SERVER['REQUEST_METHOD']==='POST'){
-  if(!(int)$atc['can_control']||(int)$atc['is_spectator'])outCpdlc(['success'=>false,'message'=>'atc_control_session_required'],403);
+  if(!(int)$atc['can_control']||((int)$atc['is_spectator']&&!(int)($atc['is_trainer']??0)))outCpdlc(['success'=>false,'message'=>'atc_control_session_required'],403);
   $id=(int)($_POST['connection_id']??0);
   $q=$pdo->prepare("SELECT * FROM cpdlc_connections WHERE id=:id AND (station_code=:station OR station_code=:hoppie OR station_code=:callsign OR controller_session_id=:sid) LIMIT 1");$q->execute(['id'=>$id,'station'=>$station,'hoppie'=>$hoppieStation,'callsign'=>$callsign,'sid'=>$atc['id']]);$c=$q->fetch(PDO::FETCH_ASSOC);if(!$c)outCpdlc(['success'=>false,'message'=>'cpdlc_connection_not_found'],404);
   if(in_array($action,['accept','reject'],true)){$state=$action==='accept'?'connected':'rejected';$pdo->prepare("UPDATE cpdlc_connections SET state=:state,controller_session_id=:sid,controller_user_id=:uid,connected_at=IF(:state2='connected',NOW(),NULL),closed_at=IF(:state3='rejected',NOW(),NULL),last_activity_at=NOW() WHERE id=:id AND state='requested'")->execute(['state'=>$state,'sid'=>$atc['id'],'uid'=>$atc['user_id'],'state2'=>$state,'state3'=>$state,'id'=>$id]);if(($c['transport']??'vfn')==='hoppie'){$pdo->prepare("INSERT INTO cpdlc_messages(connection_id,sender_role,sender_user_id,message_type,message_text,response_options,transport) VALUES(:cid,'system',:uid,:type,:text,'','hoppie')")->execute(['cid'=>$id,'uid'=>$atc['user_id'],'type'=>$action==='accept'?'logon_accepted':'logon_rejected','text'=>$action==='accept'?'LOGON ACCEPTED':'LOGON REJECTED']);}}

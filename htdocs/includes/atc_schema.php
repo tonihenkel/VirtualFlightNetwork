@@ -13,6 +13,7 @@ function ensureAtcSchema(PDO $pdo): void
             is_gca TINYINT(1) NOT NULL DEFAULT 0,
             is_spectator TINYINT(1) NOT NULL DEFAULT 0,
             is_trainer TINYINT(1) NOT NULL DEFAULT 0,
+            is_ready TINYINT(1) NOT NULL DEFAULT 1,
             is_invisible TINYINT(1) NOT NULL DEFAULT 0,
             can_control TINYINT(1) NOT NULL DEFAULT 1,
             can_transmit_voice TINYINT(1) NOT NULL DEFAULT 1,
@@ -55,6 +56,7 @@ function ensureAtcSchema(PDO $pdo): void
             callsign VARCHAR(40) NOT NULL,
             station_code VARCHAR(12) NOT NULL,
             position_code VARCHAR(8) NOT NULL,
+            is_trainer TINYINT(1) NOT NULL DEFAULT 0,
             connected_at DATETIME NOT NULL,
             disconnected_at DATETIME NOT NULL,
             duration_seconds INT UNSIGNED NOT NULL DEFAULT 0,
@@ -251,6 +253,26 @@ function ensureAtcSchema(PDO $pdo): void
             "ALTER TABLE atc_sessions ADD COLUMN is_trainer TINYINT(1) NOT NULL DEFAULT 0 AFTER is_spectator"
         );
     }
+    $readyColumn = $pdo->query(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'atc_sessions'
+           AND COLUMN_NAME = 'is_ready'"
+    )->fetchColumn();
+    if ((int)$readyColumn === 0) {
+        $pdo->exec(
+            "ALTER TABLE atc_sessions ADD COLUMN is_ready TINYINT(1) NOT NULL DEFAULT 1 AFTER is_trainer"
+        );
+    }
+    $historyTrainerColumn = $pdo->query(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'atc_session_history'
+           AND COLUMN_NAME = 'is_trainer'"
+    )->fetchColumn();
+    if ((int)$historyTrainerColumn === 0) {
+        $pdo->exec(
+            "ALTER TABLE atc_session_history ADD COLUMN is_trainer TINYINT(1) NOT NULL DEFAULT 0 AFTER position_code"
+        );
+    }
     $gcaColumn = $pdo->query(
         "SELECT COUNT(*) FROM information_schema.COLUMNS
          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'atc_sessions'
@@ -266,11 +288,13 @@ function ensureAtcSchema(PDO $pdo): void
 function archiveAtcSessions(PDO $pdo, string $condition='1=1', array $params=[]): void
 {
     $sql="INSERT IGNORE INTO atc_session_history
-          (atc_session_id,user_id,callsign,station_code,position_code,connected_at,disconnected_at,duration_seconds)
-          SELECT a.id,a.user_id,a.callsign,a.station_code,a.position_code,a.connected_at,
+          (atc_session_id,user_id,callsign,station_code,position_code,is_trainer,connected_at,disconnected_at,duration_seconds)
+          SELECT a.id,a.user_id,a.callsign,a.station_code,a.position_code,a.is_trainer,a.connected_at,
                  COALESCE(a.disconnected_at,NOW()),
                  GREATEST(0,TIMESTAMPDIFF(SECOND,a.connected_at,COALESCE(a.disconnected_at,NOW())))
           FROM atc_sessions a
-          WHERE a.is_spectator=0 AND a.is_trainer=0 AND a.is_invisible=0 AND ($condition)";
+          WHERE (a.is_spectator=0 OR a.is_trainer=1)
+            AND a.is_ready=1
+            AND a.is_invisible=0 AND ($condition)";
     $stmt=$pdo->prepare($sql); $stmt->execute($params);
 }

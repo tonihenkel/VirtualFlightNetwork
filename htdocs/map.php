@@ -259,6 +259,24 @@ if (!isset($showRatings)) {
             font-size: 10px;
             padding: 2px 5px;
         }
+        .sector-waypoint-label {
+            color: #a9e8ff;
+            text-shadow: 0 1px 3px #000, 0 0 5px #000;
+            font: bold 10px/12px Consolas, monospace;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+        .sector-waypoint-label::before {
+            content: "";
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            margin-right: 4px;
+            border: 1px solid #a9e8ff;
+            background: #07141f;
+            transform: rotate(45deg);
+            vertical-align: 1px;
+        }
         .airport-panel-link {
             color: inherit;
             background: transparent;
@@ -803,6 +821,10 @@ if ($statusMessage !== '') {
                 <?php echo htmlspecialchars(t('map_search_exact')); ?>
             </label>
         </div>
+        <label class="map-nearby-filter" id="sectorWaypointsOption" hidden>
+            <input id="sectorWaypointsToggle" type="checkbox">
+            <?php echo htmlspecialchars(t('map_show_sector_waypoints')); ?>
+        </label>
         <div id="pilotDirectoryList"></div>
     </div>
 </aside>
@@ -1316,14 +1338,36 @@ if ($statusMessage !== '') {
         ?>;
     const INITIAL_HEATMAP =
         <?php echo !empty($_GET['heatmap']) ? 'true' : 'false'; ?>;
+    let initialMapCenter = [51.0, 10.0];
+    let initialMapZoom = 5;
+    try {
+        const savedMapView = JSON.parse(
+            localStorage.getItem('vfn_map_last_view') || 'null'
+        );
+        const savedLatitude = Number(savedMapView?.latitude);
+        const savedLongitude = Number(savedMapView?.longitude);
+        const savedZoom = Number(savedMapView?.zoom);
+        if (
+            Number.isFinite(savedLatitude) && savedLatitude >= -90
+            && savedLatitude <= 90 && Number.isFinite(savedLongitude)
+            && savedLongitude >= -180 && savedLongitude <= 180
+            && Number.isFinite(savedZoom) && savedZoom >= 1
+            && savedZoom <= 22
+        ) {
+            initialMapCenter = [savedLatitude, savedLongitude];
+            initialMapZoom = savedZoom;
+        }
+    } catch (error) {
+        localStorage.removeItem('vfn_map_last_view');
+    }
     const map = L.map(
         'map',
         {
             zoomControl: true
         }
     ).setView(
-        [51.0, 10.0],
-        5
+        initialMapCenter,
+        initialMapZoom
     );
 
     L.tileLayer(
@@ -1343,6 +1387,18 @@ if ($statusMessage !== '') {
     }
     updateAtcSymbolScale();
     map.on('zoomend', updateAtcSymbolScale);
+    map.on('moveend', function() {
+        const center = map.getCenter();
+        try {
+            localStorage.setItem('vfn_map_last_view', JSON.stringify({
+                latitude: Number(center.lat.toFixed(6)),
+                longitude: Number(center.lng.toFixed(6)),
+                zoom: map.getZoom()
+            }));
+        } catch (error) {
+            // The map remains usable when browser storage is unavailable.
+        }
+    });
 
     const statusBox =
         document.getElementById('statusBox');
@@ -1418,9 +1474,71 @@ if ($statusMessage !== '') {
     let selectedAirportMarker = null;
     let selectedNavigationMarker = null;
     let selectedRadarLayer = null;
+    let selectedRadarIdentifier = '';
+    let sectorWaypointLayer = null;
+    let sectorWaypointRequest = 0;
     let selectedAirwayLayer = null;
 
     let selectedAirportTab = 'inbound';
+
+    function clearSectorWaypoints()
+    {
+        ++sectorWaypointRequest;
+        if (sectorWaypointLayer) {
+            map.removeLayer(sectorWaypointLayer);
+            sectorWaypointLayer = null;
+        }
+    }
+
+    function resetSectorWaypointOption()
+    {
+        clearSectorWaypoints();
+        selectedRadarIdentifier = '';
+        document.getElementById('sectorWaypointsToggle').checked = false;
+        document.getElementById('sectorWaypointsOption').hidden = true;
+    }
+
+    async function loadSelectedSectorWaypoints()
+    {
+        clearSectorWaypoints();
+        const station = selectedRadarIdentifier;
+        const request = sectorWaypointRequest;
+        const toggle = document.getElementById('sectorWaypointsToggle');
+        if (!station || !toggle.checked) return;
+        try {
+            const response = await fetch(
+                'execute/sector_waypoints.php?v=6&station=' + encodeURIComponent(station),
+                {cache: 'no-store'}
+            );
+            const payload = await response.json();
+            if (request !== sectorWaypointRequest || station !== selectedRadarIdentifier
+                || !toggle.checked) return;
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || 'waypoints_unavailable');
+            }
+            sectorWaypointLayer = L.layerGroup();
+            (payload.points || []).forEach(point => {
+                const latitude = Number(point.latitude);
+                const longitude = Number(point.longitude);
+                if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+                L.marker([latitude, longitude], {
+                    interactive: false,
+                    icon: L.divIcon({
+                        className: '',
+                        html: '<div class="sector-waypoint-label">'
+                            + escapeHtml(point.identifier || '') + '</div>',
+                        iconSize: [100, 14],
+                        iconAnchor: [4, 7]
+                    })
+                }).addTo(sectorWaypointLayer);
+            });
+            sectorWaypointLayer.addTo(map);
+        } catch (error) {
+            console.warn('Sector waypoints could not be loaded.', error);
+            toggle.checked = false;
+            clearSectorWaypoints();
+        }
+    }
 
     function escapeHtml(value)
     {
@@ -3272,6 +3390,10 @@ if ($statusMessage !== '') {
     });
     const mapSearchType = document.getElementById('mapSearchType');
     const mapSearchExact = document.getElementById('mapSearchExact');
+    document.getElementById('sectorWaypointsToggle').addEventListener('change', function() {
+        if (this.checked) loadSelectedSectorWaypoints();
+        else clearSectorWaypoints();
+    });
     mapSearchType.value =
         localStorage.getItem('vfn_map_search_type') || 'all';
     mapSearchExact.checked =
@@ -4376,6 +4498,7 @@ if ($statusMessage !== '') {
         updateMapUrl(null);
         removeAllTracks();
         removeAirportRouteOverlays();
+        resetSectorWaypointOption();
 
         if (selectedNavigationMarker) {
             map.removeLayer(selectedNavigationMarker);
@@ -4464,10 +4587,35 @@ if ($statusMessage !== '') {
                     fillColor: '#168cff', fillOpacity: 0.18
                 }
             }).addTo(map);
+            selectedRadarIdentifier = String(point.identifier || '')
+                .toUpperCase().replace(/-/g, '_');
+            document.getElementById('sectorWaypointsOption').hidden = false;
             const bounds = selectedRadarLayer.getBounds();
             if (!point.preserveView && bounds.isValid()) {
                 map.fitBounds(bounds, {padding:[40, 40]});
             }
+            const radarFrequencyField =
+                document.getElementById('navigationPointFrequency');
+            radarFrequencyField.textContent = '...';
+            navigationPointPanel.classList.add('open');
+            try {
+                const response = await fetch(
+                    'execute/radar_frequencies.php?station='
+                    + encodeURIComponent(selectedRadarIdentifier)
+                    + '&v=2',
+                    {cache: 'no-store'}
+                );
+                const data = response.ok ? await response.json() : null;
+                if (data?.success && Array.isArray(data.frequencies)) {
+                    point.frequency = data.frequencies.join(' / ');
+                    point.frequency_unit = data.frequencies.length ? 'MHz' : '';
+                }
+            } catch (error) {
+                console.error('Radar frequency unavailable', error);
+            }
+            radarFrequencyField.textContent = point.frequency
+                ? point.frequency + ' ' + (point.frequency_unit || '')
+                : '----';
         } else {
             selectedNavigationMarker = L.circleMarker(
                 [Number(point.latitude), Number(point.longitude)],
@@ -4512,6 +4660,7 @@ if ($statusMessage !== '') {
 
     function closeNavigationPointPanel()
     {
+        resetSectorWaypointOption();
         navigationPointPanel.classList.remove('open');
         if (selectedNavigationMarker) {
             map.removeLayer(selectedNavigationMarker);

@@ -33,11 +33,9 @@ try {
     if (empty($_SESSION['web_user_id']) || !validateVfnWebSession($pdo)) {
         atisReply(['success' => false, 'message' => 'login_required'], 401);
     }
-    ensureAtcSchema($pdo);
-    ensureAtcAtisOverrideSchema($pdo);
     $sessionToken = (string)($_SESSION['atc_session_token'] ?? '');
     $sessionStmt = $pdo->prepare(
-        "SELECT station_code, position_code, radar_boundary_code, is_spectator, can_control, user_id
+        "SELECT station_code, position_code, radar_boundary_code, is_spectator, is_trainer, can_control, user_id
          FROM atc_sessions
          WHERE user_id=:user_id AND session_token=:token AND is_active=1
            AND last_seen_at>=DATE_SUB(NOW(), INTERVAL 30 SECOND)
@@ -49,14 +47,17 @@ try {
     ]);
     $session = $sessionStmt->fetch(PDO::FETCH_ASSOC);
     if (!$session) atisReply(['success' => false, 'message' => 'atc_session_inactive'], 409);
-    if ((int)$session['is_spectator'] === 1 || (int)$session['can_control'] !== 1) {
+    // Preparing controllers may configure ATIS and airport runways before
+    // becoming visible. This does not grant traffic-control or voice rights.
+    if ((int)$session['is_spectator'] === 1 && (int)$session['is_trainer'] !== 1) {
         atisReply(['success' => false, 'message' => 'atc_atis_permission_denied'], 403);
     }
     $station = strtoupper(trim((string)($_REQUEST['airport'] ?? $session['station_code'])));
     if (!preg_match('/^[A-Z0-9-]{3,12}$/', $station)) {
         atisReply(['success' => false, 'message' => 'atc_atis_airport_required'], 409);
     }
-    $allowedAirports = getAtisAirportsForSession($pdo, $session);
+    $includeSmall = (string)($_REQUEST['include_small'] ?? '') === '1';
+    $allowedAirports = getAtisAirportsForSession($pdo, $session, $includeSmall);
     $allowed = null;
     foreach ($allowedAirports as $candidate) {
         if ((string)$candidate['icao'] === $station) { $allowed = $candidate; break; }

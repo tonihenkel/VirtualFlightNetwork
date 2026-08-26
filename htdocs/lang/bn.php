@@ -1,6 +1,23 @@
 <?php
 
 return [
+    'admin_filter_filtered_chats'=>'ফিল্টার করা চ্যাট','admin_filter_filtered_chats_only'=>'শুধু ফিল্টার করা চ্যাট দেখান',
+    'admin_activity_sort'=>'স্টাফ কার্যকলাপ সাজান','admin_activity_search_placeholder'=>'খেলোয়াড়, স্টাফ, কার্যকলাপ বা তারিখ খুঁজুন …','admin_activity_player'=>'খেলোয়াড়','admin_activity_staff_member'=>'স্টাফ সদস্য','admin_activity_type'=>'কার্যকলাপের ধরন','admin_activity_date'=>'তারিখ',
+    'admin_online_search_placeholder'=>'নাম, কলসাইন, ভূমিকা, স্টেশন বা রেটিং খুঁজুন …',
+    'admin_online_users_tab'=>'অনলাইন','admin_online_users_title'=>'অনলাইন ব্যবহারকারী','admin_online_users_text'=>'পর্যায় ও রেটিংসহ সক্রিয় পাইলট, কন্ট্রোলার, প্রশিক্ষক ও দর্শক। পর্যায় ১ দশ মিনিট পর শেষ হয়।','admin_online_users_empty'=>'কেউ অনলাইনে নেই।','admin_online_role'=>'ভূমিকা / সেশন','admin_online_role_pilot'=>'পাইলট','admin_online_role_spectator'=>'দর্শক','admin_online_role_controller'=>'কন্ট্রোলার','admin_online_role_trainer'=>'প্রশিক্ষক','admin_online_role_atc_spectator'=>'ATC দর্শক','admin_online_phase'=>'পর্যায়','admin_online_reason_prompt'=>'কারণ লিখুন:','admin_online_ban_duration_prompt'=>'নিষেধাজ্ঞার সময় (যেমন 30min, 12h, 7d বা permanent):','admin_online_action_failed'=>'মডারেশন কার্যক্রম ব্যর্থ হয়েছে।',
+    'atc_airport_watch_title' => 'বিমানবন্দরের নকশা', 'atc_airport_watch_open' => 'বিমানবন্দরটি আলাদা উইন্ডোতে খুলুন', 'atc_airport_layout_unavailable' => 'বিমানবন্দরের নকশা উপলব্ধ নেই',
+    'atc_position_denied' => 'আপনার ATC রেটিং এই অবস্থানের অনুমতি দেয় না।', 'atc_trainer_denied' => 'প্রশিক্ষক মোড ব্যবহারের অনুমতি আপনার নেই।', 'invalid_station_or_position' => 'স্টেশন পরিচিতি বা অবস্থানটি সঠিক নয়।', 'station_position_unavailable' => 'নির্বাচিত স্টেশনে এই অবস্থানটি উপলভ্য নয়।', 'access_denied' => 'প্রবেশাধিকার প্রত্যাখ্যান করা হয়েছে।',
+    'invalid_handoff_target' => 'হ্যান্ডঅফের লক্ষ্য অবস্থানটি সঠিক নয়।',
+    'atc_nav_points' => 'পয়েন্ট', 'atc_nav_loading' => 'লোড হচ্ছে…', 'atc_nav_hidden' => 'লুকানো', 'atc_nav_error' => 'ত্রুটি',
+    'atc_windows' => 'উইন্ডো', 'atc_window_close' => 'উইন্ডো বন্ধ করুন',
+    'map_show_sector_waypoints' => 'রাডার সেক্টরের সব ওয়েপয়েন্ট দেখান',
+    'atc_map_context_title' => 'রাডার মানচিত্র', 'atc_atis_include_small' => 'ছোট বিমানক্ষেত্রও দেখান',
+    'atc_metar_only_available' => 'শুধু METAR-সহ বিমানবন্দর', 'atc_metar_runway_estimate' => 'আনুমানিক',
+    'atc_position_busy' => 'এই ATC অবস্থানটি ইতিমধ্যে ব্যবহৃত বা প্রস্তুত করা হচ্ছে।',
+    'atc_ready_title' => 'পর্যায় ১ · প্রস্তুতি', 'atc_ready_loading' => 'রাডার ও সেক্টরের তথ্য লোড হচ্ছে…',
+    'atc_ready_loaded' => 'রাডার ও সেক্টর প্রস্তুত। নেভিগেশন পয়েন্ট পটভূমিতে লোড হতে পারে।',
+    'atc_ready_open_position' => 'প্রস্তুত · অবস্থান খুলুন', 'atc_ready_activating' => 'অবস্থান খোলা হচ্ছে…',
+    'atc_ready_voice_waiting' => 'ভয়েস অবস্থান খোলার অপেক্ষায় আছে।',
     'feature_cpdlc_title' => 'Hoppie-এর মাধ্যমে CPDLC',
     'feature_cpdlc_text' => 'সামঞ্জস্যপূর্ণ FMC ও MCDU সিস্টেম Hoppie-এর মাধ্যমে VFN ATC ক্লায়েন্টের নিয়ন্ত্রকদের সঙ্গে সরাসরি যোগাযোগ করে।',
     'feature_atc_client_title' => 'ATC রাডার ক্লায়েন্ট',

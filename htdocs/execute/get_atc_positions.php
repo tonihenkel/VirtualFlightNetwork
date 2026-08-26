@@ -43,7 +43,7 @@ try {
              FROM atc_session_atis_airports s
              INNER JOIN atc_sessions a ON a.id=s.session_id
              INNER JOIN users u ON u.id=a.user_id
-             WHERE a.is_active=1 AND a.is_spectator=0
+             WHERE a.is_active=1 AND a.is_ready=1 AND (a.is_spectator=0 OR a.is_trainer=1)
                AND a.last_seen_at>=DATE_SUB(NOW(),INTERVAL 30 SECOND)
              ORDER BY a.position_code='CTR' DESC,a.callsign"
         )->fetchAll(PDO::FETCH_ASSOC);
@@ -80,7 +80,7 @@ try {
          FROM atc_sessions a
          INNER JOIN users u ON u.id = a.user_id
          LEFT JOIN airports ap ON ap.ident = a.station_code
-         WHERE a.is_active = 1 AND (a.is_spectator = 0 OR a.is_trainer = 1)
+         WHERE a.is_active = 1 AND a.is_ready=1 AND (a.is_spectator = 0 OR a.is_trainer = 1)
            AND a.is_invisible = 0
            AND a.last_seen_at >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
          ORDER BY a.station_code, a.position_code, a.callsign"
@@ -89,7 +89,6 @@ try {
     $atisFrequencies = [];
     $activeStations = [];
     foreach ($positions as $activePosition) {
-        if ((int)($activePosition['is_trainer'] ?? 0) === 1) continue;
         if (strtoupper((string)($activePosition['position_code'] ?? '')) === 'CTR') continue;
         $station = strtoupper(trim((string)($activePosition['station_code'] ?? '')));
         if ($station !== '') $activeStations[$station] = true;
@@ -137,15 +136,6 @@ try {
     foreach ($positions as &$position) {
         $position['is_gca'] = (int)($position['is_gca'] ?? 0) === 1;
         $position['is_trainer'] = (int)($position['is_trainer'] ?? 0) === 1;
-        if ($position['is_trainer']) {
-            $position['frequency'] = '';
-            $position['atis_frequency'] = '';
-            $position['atis_info_letter'] = '';
-            $position['atis_active_runway'] = '';
-            $position['atis_updated_at'] = '';
-            $position['atis_active'] = 0;
-            continue;
-        }
         if (normalizeAtcVoiceFrequency((string)($position['frequency'] ?? '')) === '') {
             $frequencies = findAtcFrequencies(
                 $pdo,

@@ -20,7 +20,7 @@ try {
     $pdo=new PDO("mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4",$dbUser,$dbPass,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
     if(empty($_SESSION['web_user_id'])||!validateVfnWebSession($pdo))clearanceReply(false,['message'=>'login_required'],401);
     ensureAtcSchema($pdo);
-    $atcStatement=$pdo->prepare("SELECT id,user_id,callsign FROM atc_sessions WHERE user_id=:user_id AND session_token=:token AND is_active=1 AND is_spectator=0 AND can_control=1 AND last_seen_at>=DATE_SUB(NOW(),INTERVAL 30 SECOND) LIMIT 1");
+    $atcStatement=$pdo->prepare("SELECT id,user_id,callsign,is_trainer FROM atc_sessions WHERE user_id=:user_id AND session_token=:token AND is_active=1 AND (is_spectator=0 OR is_trainer=1) AND can_control=1 AND last_seen_at>=DATE_SUB(NOW(),INTERVAL 30 SECOND) LIMIT 1");
     $atcStatement->execute(['user_id'=>(int)$_SESSION['web_user_id'],'token'=>(string)($_SESSION['atc_session_token']??'')]);
     $atc=$atcStatement->fetch(PDO::FETCH_ASSOC);
     if(!$atc)clearanceReply(false,['message'=>'atc_control_session_required'],403);
@@ -31,7 +31,7 @@ try {
     if(!$pilot)clearanceReply(false,['message'=>'pilot_not_online'],404);
     $ownerStatement=$pdo->prepare("SELECT atc_session_id FROM atc_assumed_aircraft WHERE pilot_session_token=:token LIMIT 1");
     $ownerStatement->execute(['token'=>(string)$pilot['session_token']]);$owner=$ownerStatement->fetch(PDO::FETCH_ASSOC);
-    if(!$owner||(int)$owner['atc_session_id']!==(int)$atc['id'])clearanceReply(false,['message'=>'aircraft_must_be_assumed'],409);
+    if((int)($atc['is_trainer']??0)!==1&&(!$owner||(int)$owner['atc_session_id']!==(int)$atc['id']))clearanceReply(false,['message'=>'aircraft_must_be_assumed'],409);
     if(strtolower(trim((string)($_POST['action']??'')))==='delete'){
         $delete=$pdo->prepare("DELETE FROM atc_aircraft_clearances WHERE pilot_session_token=:token");
         $delete->execute(['token'=>(string)$pilot['session_token']]);

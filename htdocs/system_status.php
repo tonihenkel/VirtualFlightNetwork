@@ -5,6 +5,7 @@ require_once __DIR__ . '/execute/config.php';
 require_once __DIR__ . '/includes/language.php';
 require_once __DIR__ . '/includes/web_session.php';
 require_once __DIR__ . '/includes/web_features_schema.php';
+require_once __DIR__ . '/includes/job_status.php';
 
 function h($value): string { return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8'); }
 
@@ -64,6 +65,8 @@ foreach ($files as $key => $file) {
 }
 
 $metarFiles = glob(sys_get_temp_dir().DIRECTORY_SEPARATOR.'vfn_map_metar_*.json') ?: [];
+$bulkMetarCache = sys_get_temp_dir().DIRECTORY_SEPARATOR.'vfn_datis_metars_bulk_xml.txt';
+if (is_file($bulkMetarCache)) $metarFiles[] = $bulkMetarCache;
 $latestMetar = 0;
 foreach ($metarFiles as $metarFile) $latestMetar = max($latestMetar, (int)filemtime($metarFile));
 $metarJob = null;
@@ -71,8 +74,33 @@ foreach ($jobs as $job) if ((string)$job['job_key'] === 'metar_refresh') { $meta
 $metarLastSuccess = $metarJob && !empty($metarJob['last_success_at']) ? strtotime((string)$metarJob['last_success_at']) : 0;
 $metarLastError = $metarJob && !empty($metarJob['last_error_at']) ? strtotime((string)$metarJob['last_error_at']) : 0;
 $metarOk = $latestMetar > 0 || ($metarLastSuccess > 0 && $metarLastSuccess >= $metarLastError);
+$metarLiveChecked = false;
+if (!$metarOk) {
+    // A reset or PHP/IIS restart removes temporary METAR caches and may also
+    // clear the job table. In that state, verify the small station feed instead
+    // of reporting a false outage without contacting the configured provider.
+    $metarLiveChecked = true;
+    $probeUrl = rtrim((string)($noaaMetarStationBaseUrl ?? ''), '/') . '/EDDP.TXT';
+    $probeContext = stream_context_create(['http' => [
+        'timeout' => 5,
+        'ignore_errors' => true,
+        'header' => "User-Agent: VFN-System-Status/1.0\r\n",
+    ]]);
+    $probe = $probeUrl !== '/EDDP.TXT' ? @file_get_contents($probeUrl, false, $probeContext) : false;
+    $metarOk = is_string($probe) && preg_match('/\bEDDP\b/', $probe) === 1;
+    vfnRecordJobStatus(
+        $pdo,
+        'metar_refresh',
+        $metarOk,
+        $metarOk ? 'METAR provider live check successful (EDDP)' : 'METAR provider live check failed (EDDP)'
+    );
+    if ($metarOk) $metarLastSuccess = time();
+}
 $metarTimestamp = max($latestMetar, $metarLastSuccess);
-$metarDetail = $metarTimestamp > 0 ? date('d.m.Y H:i:s', $metarTimestamp).($latestMetar > 0 ? ' · Cache vorhanden' : ' · letzter erfolgreicher Abruf') : 'missing';
+$metarDetail = $metarTimestamp > 0
+    ? date('d.m.Y H:i:s', $metarTimestamp)
+        . ($latestMetar > 0 ? ' · Cache vorhanden' : ($metarLiveChecked ? ' · Live-Prüfung erfolgreich' : ' · letzter erfolgreicher Abruf'))
+    : ($metarLiveChecked ? 'Live-Prüfung fehlgeschlagen' : 'missing');
 $checks[] = ['metar_data', $metarOk, $metarDetail];
 $sessions = (int)$pdo->query('SELECT COUNT(*) FROM user_sessions WHERE is_active=1 AND last_seen>=DATE_SUB(NOW(),INTERVAL 30 SECOND)')->fetchColumn();
 ?>

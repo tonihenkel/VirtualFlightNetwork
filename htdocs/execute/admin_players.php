@@ -15,6 +15,9 @@ try {
     $rank = strtoupper(trim((string)($_GET['rank'] ?? '')));
     $status = trim((string)($_GET['status'] ?? ''));
     $online = trim((string)($_GET['online'] ?? ''));
+    $sort = (string)($_GET['sort'] ?? 'name');
+    if (!in_array($sort, ['name','pilot','atc','special','op'], true)) $sort = 'name';
+    $direction = strtolower((string)($_GET['direction'] ?? 'asc')) === 'desc' ? 'desc' : 'asc';
     $page = max(1, (int)($_GET['page'] ?? 1));
     $perPage = min(100, max(10, (int)($_GET['per_page'] ?? 25)));
 
@@ -153,6 +156,9 @@ try {
                 ? $special['code'] . ' – ' . $special['name']
                 : '',
             'op_permission' => (int)$row['op_permission'],
+            'rating_pilot' => (int)$row['rating_pilot'],
+            'rating_atc' => (int)$row['rating_atc'],
+            'rating_special' => (int)$row['rating_special'],
             'email_verified' => (int)$row['email_verified'] === 1,
             'active' => (int)$row['is_active'] === 1,
             'online' => (int)$row['is_online'] === 1,
@@ -165,6 +171,17 @@ try {
         ];
     }
 
+    usort($players, static function (array $left, array $right) use ($sort, $direction): int {
+        $name = static function (array $player): string {
+            return mb_strtolower(trim((string)($player['real_name'] ?: $player['username'])));
+        };
+        $field = ['pilot'=>'rating_pilot','atc'=>'rating_atc','special'=>'rating_special','op'=>'op_permission'][$sort] ?? '';
+        $order = $field !== ''
+            ? ((int)$left[$field] <=> (int)$right[$field])
+            : ($name($left) <=> $name($right));
+        if ($order !== 0) return $direction === 'desc' ? -$order : $order;
+        return $name($left) <=> $name($right);
+    });
     ksort($countries);
     $total = count($players);
     $players = array_slice($players, ($page - 1) * $perPage, $perPage);

@@ -1,6 +1,23 @@
 <?php
 
 return [
+    'admin_filter_filtered_chats'=>'फ़िल्टर की गई चैट','admin_filter_filtered_chats_only'=>'केवल फ़िल्टर की गई चैट दिखाएँ',
+    'admin_activity_sort'=>'स्टाफ गतिविधियाँ क्रमबद्ध करें','admin_activity_search_placeholder'=>'खिलाड़ी, स्टाफ, गतिविधि या तारीख खोजें …','admin_activity_player'=>'खिलाड़ी','admin_activity_staff_member'=>'स्टाफ सदस्य','admin_activity_type'=>'गतिविधि प्रकार','admin_activity_date'=>'तारीख',
+    'admin_online_search_placeholder'=>'नाम, कॉलसाइन, भूमिका, स्टेशन या रेटिंग खोजें …',
+    'admin_online_users_tab'=>'ऑनलाइन','admin_online_users_title'=>'ऑनलाइन उपयोगकर्ता','admin_online_users_text'=>'चरण और रेटिंग सहित सक्रिय पायलट, नियंत्रक, प्रशिक्षक और दर्शक। चरण 1 दस मिनट बाद समाप्त होता है।','admin_online_users_empty'=>'कोई ऑनलाइन नहीं है।','admin_online_role'=>'भूमिका / सत्र','admin_online_role_pilot'=>'पायलट','admin_online_role_spectator'=>'दर्शक','admin_online_role_controller'=>'नियंत्रक','admin_online_role_trainer'=>'प्रशिक्षक','admin_online_role_atc_spectator'=>'ATC दर्शक','admin_online_phase'=>'चरण','admin_online_reason_prompt'=>'कारण दर्ज करें:','admin_online_ban_duration_prompt'=>'प्रतिबंध अवधि (जैसे 30min, 12h, 7d या permanent):','admin_online_action_failed'=>'मॉडरेशन कार्रवाई विफल रही।',
+    'atc_airport_watch_title' => 'हवाई अड्डा लेआउट', 'atc_airport_watch_open' => 'हवाई अड्डे को अलग विंडो में खोलें', 'atc_airport_layout_unavailable' => 'हवाई अड्डे का लेआउट उपलब्ध नहीं है',
+    'atc_position_denied' => 'आपकी ATC रेटिंग इस पद की अनुमति नहीं देती है।', 'atc_trainer_denied' => 'आप प्रशिक्षक मोड का उपयोग करने के लिए अधिकृत नहीं हैं।', 'invalid_station_or_position' => 'स्टेशन पहचान या पद अमान्य है।', 'station_position_unavailable' => 'यह पद चयनित स्टेशन पर उपलब्ध नहीं है।', 'access_denied' => 'पहुँच अस्वीकृत।',
+    'invalid_handoff_target' => 'हैंडऑफ़ के लिए लक्ष्य स्थिति अमान्य है।',
+    'atc_nav_points' => 'बिंदु', 'atc_nav_loading' => 'लोड हो रहा है…', 'atc_nav_hidden' => 'छिपा हुआ', 'atc_nav_error' => 'त्रुटि',
+    'atc_windows' => 'विंडो', 'atc_window_close' => 'विंडो बंद करें',
+    'map_show_sector_waypoints' => 'रडार सेक्टर के सभी वेपॉइंट दिखाएँ',
+    'atc_map_context_title' => 'रडार मानचित्र', 'atc_atis_include_small' => 'छोटे हवाई क्षेत्र भी दिखाएँ',
+    'atc_metar_only_available' => 'केवल उपलब्ध METAR वाले हवाई अड्डे', 'atc_metar_runway_estimate' => 'अनुमानित',
+    'atc_position_busy' => 'यह ATC पद पहले से उपयोग में है या तैयार किया जा रहा है।',
+    'atc_ready_title' => 'चरण 1 · तैयारी', 'atc_ready_loading' => 'रडार और सेक्टर डेटा लोड हो रहा है…',
+    'atc_ready_loaded' => 'रडार और सेक्टर तैयार हैं। नेविगेशन बिंदु पृष्ठभूमि में लोड होते रह सकते हैं।',
+    'atc_ready_open_position' => 'तैयार · पद खोलें', 'atc_ready_activating' => 'पद खोला जा रहा है…',
+    'atc_ready_voice_waiting' => 'वॉइस पद खुलने की प्रतीक्षा कर रहा है।',
     'feature_cpdlc_title' => 'Hoppie के माध्यम से CPDLC',
     'feature_cpdlc_text' => 'संगत FMC और MCDU प्रणालियाँ Hoppie के माध्यम से VFN ATC क्लाइंट के नियंत्रकों से सीधे संवाद करती हैं।',
     'feature_atc_client_title' => 'ATC रडार क्लाइंट',

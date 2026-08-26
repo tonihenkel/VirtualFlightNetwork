@@ -5,6 +5,7 @@ header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../includes/session_bootstrap.php';
 startVfnWebSession();
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/../includes/language.php';
 require_once __DIR__ . '/../includes/web_session.php';
 require_once __DIR__ . '/../includes/atc_permissions.php';
 require_once __DIR__ . '/../includes/airport_atc_data.php';
@@ -156,7 +157,8 @@ try {
         $stationPositions = $spectator
             ? getSpectatorAirportPositions($airport, $classification)
             : $classification['positions'];
-    } elseif ($position === 'CTR') {
+    }
+    if ($position === 'CTR' && !in_array('CTR', $stationPositions, true)) {
         $sourcePath = dirname(__DIR__) . '/data/atc/VATSpy.dat';
         $stationExists = false;
         if (is_file($sourcePath) && is_readable($sourcePath)) {
@@ -201,7 +203,11 @@ try {
                 if (strpos($station, $prefix) === 0) { $divisionAllowed = true; $guestRadar = true; break 2; }
             }
         }
-        if ($stationExists && $divisionAllowed) $stationPositions = ['CTR'];
+        if ($stationExists && $divisionAllowed) {
+            $stationPositions = ['CTR'];
+            $airport = false;
+            $stationDivision = '';
+        }
     }
     if (!in_array($position, $stationPositions, true)) {
         http_response_code(422);
@@ -232,13 +238,7 @@ try {
 
         $base = $station . '_' . $position;
         if ($trainer) {
-            if ($position === 'CTR') {
-                $parts = preg_split('/[_-]+/', $station, 2);
-                $callsign = (string)($parts[0] ?? $station) . '_X';
-                if (!empty($parts[1])) $callsign .= '_' . (string)$parts[1];
-            } else {
-                $callsign = $station . '_X_' . $position;
-            }
+            $callsign = $station . '_X_' . $position;
             $wantedCallsign = $callsign;
             $suffix = 2;
             $occupiedStmt = $pdo->prepare("SELECT 1 FROM atc_sessions WHERE callsign=:callsign AND is_active=1 LIMIT 1");
@@ -294,11 +294,11 @@ try {
         $insert = $pdo->prepare(
             "INSERT INTO atc_sessions
              (user_id, session_token, callsign, station_code, position_code,
-              is_gca, is_spectator, is_trainer, is_invisible, can_control, can_transmit_voice, scope_positions,
+              is_gca, is_spectator, is_trainer, is_ready, is_invisible, can_control, can_transmit_voice, scope_positions,
               map_profile, radar_boundary_code, frequency)
              VALUES
              (:user_id, :token, :callsign, :station, :position,
-              :is_gca, :spectator, :trainer, :is_invisible, :can_control, :can_voice, :scope, :map_profile,
+              :is_gca, :spectator, :trainer, :is_ready, :is_invisible, :can_control, :can_voice, :scope, :map_profile,
               :radar_boundary_code, :frequency)"
         );
         $insert->execute([
@@ -307,9 +307,10 @@ try {
             'is_gca' => $usesGca ? 1 : 0,
             'spectator' => $spectator ? 1 : 0,
             'trainer' => $trainer ? 1 : 0,
+            'is_ready' => ($spectator && !$trainer) ? 1 : 0,
             'is_invisible' => $isInvisible,
-            'can_control' => $spectator ? 0 : 1,
-            'can_voice' => (!$spectator || $trainer) ? 1 : 0,
+            'can_control' => 0,
+            'can_voice' => 0,
             'scope' => implode(',', $scope),
             'map_profile' => $mapProfile,
             'radar_boundary_code' => $radarBoundaryCode,
@@ -317,7 +318,7 @@ try {
         ]);
         $_SESSION['atc_session_id'] = (int)$pdo->lastInsertId();
         $_SESSION['atc_session_token'] = $token;
-        if (!$spectator) {
+        if (!$spectator || $trainer) {
             $atisSession = [
                 'id' => $_SESSION['atc_session_id'],
                 'user_id' => (int)$user['id'],
@@ -345,7 +346,7 @@ try {
                 ->execute(['id'=>$_SESSION['atc_session_id']]);
         }
         $voiceToken = (string)($_SESSION['web_voice_token'] ?? '');
-        if ($voiceToken !== '') {
+        if ($voiceToken !== '' && $spectator && !$trainer) {
             $pdo->prepare(
                 "UPDATE user_sessions
                  SET callsign=:callsign, is_spectator=:spectator
@@ -370,9 +371,10 @@ try {
         'is_spectator' => $spectator,
         'trainer' => $trainer,
         'is_trainer' => $trainer,
+        'is_ready' => ($spectator && !$trainer) ? 1 : 0,
         'is_invisible' => $isInvisible,
-        'can_control' => !$spectator,
-        'can_transmit_voice' => !$spectator || $trainer,
+        'can_control' => false,
+        'can_transmit_voice' => false,
         'voice_mode' => ($spectator && !$trainer) ? 'receive_only' : 'transmit_receive',
         'scope_positions' => $scope,
         'map_profile' => $mapProfile,
@@ -382,5 +384,8 @@ try {
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $error) {
     if (http_response_code() < 400) http_response_code(500);
-    echo json_encode(['success' => false, 'message' => $error->getMessage()]);
+    $message = $error->getMessage();
+    $translated = t($message);
+    if ($translated !== $message) $message = $translated;
+    echo json_encode(['success' => false, 'message' => $message], JSON_UNESCAPED_UNICODE);
 }

@@ -79,16 +79,37 @@ function readCompiledAtisSector(string $station): array
     $dataPath = dirname(__DIR__) . '/data/atc/sector-boundaries.ndjson';
     $index = is_file($indexPath) ? json_decode((string)file_get_contents($indexPath), true) : null;
     $key = normalizeAtcStationCode($station);
-    $entry = is_array($index) ? ($index['stations'][$key] ?? null) : null;
-    if (!is_array($entry) || !is_file($dataPath)) return [];
-    $handle = @fopen($dataPath, 'rb');
-    if ($handle === false || fseek($handle, (int)$entry['offset']) !== 0) {
-        if (is_resource($handle)) fclose($handle);
-        return [];
+    $stations = is_array($index['stations'] ?? null) ? $index['stations'] : [];
+    $entries = [];
+    if (is_array($stations[$key] ?? null)) {
+        $entries[$key] = $stations[$key];
+    } else {
+        // Some selectable VATSpy positions are composites whose operational
+        // VATGlasses records only exist as numbered sub-sectors. BIRD-S, for
+        // example, is stored as BIRD_S1, BIRD_S2 and BIRD_S3. Treat those
+        // records as one scope so airports such as BIRK do not disappear from
+        // navigation, Airport ATIS, METAR watch and airport layouts.
+        foreach ($stations as $stationKey => $candidate) {
+            if (preg_match('/^' . preg_quote($key, '/') . '[0-9]+$/', (string)$stationKey)
+                && is_array($candidate)) {
+                $entries[(string)$stationKey] = $candidate;
+            }
+        }
+        uksort($entries, 'strnatcasecmp');
     }
-    $record = json_decode((string)fread($handle, (int)$entry['length']), true);
+    if (!$entries || !is_file($dataPath)) return [];
+    $handle = @fopen($dataPath, 'rb');
+    if ($handle === false) return [];
+    $features = [];
+    foreach ($entries as $entry) {
+        if (fseek($handle, (int)($entry['offset'] ?? -1)) !== 0) continue;
+        $record = json_decode((string)fread($handle, (int)($entry['length'] ?? 0)), true);
+        if (is_array($record['features'] ?? null)) {
+            array_push($features, ...$record['features']);
+        }
+    }
     fclose($handle);
-    return is_array($record['features'] ?? null) ? $record['features'] : [];
+    return $features;
 }
 
 function readAtisScopeFeatures(array $session): array
@@ -125,18 +146,17 @@ function readAtisScopeFeatures(array $session): array
     return [];
 }
 
-function getAtisAirportsForSession(PDO $pdo, array $session): array
+function getAtisAirportsForSession(PDO $pdo, array $session, bool $includeSmallAirports = false): array
 {
     $station = normalizeAtcStationCode((string)($session['station_code'] ?? ''));
     $position = strtoupper((string)($session['position_code'] ?? ''));
     $frequencies = loadGlobalAtisFrequencies();
     if (!in_array($position, ['APP', 'DEP', 'CTR'], true)) {
-        if (!isset($frequencies[$station])) return [];
-        $wanted = [$station => $frequencies[$station]];
+        if (!isset($frequencies[$station]) && !$includeSmallAirports) return [];
+        $wanted = [$station => $frequencies[$station] ?? ''];
     } else {
         $wanted = $frequencies;
     }
-    if (!$wanted) return [];
     $airports = [];
     foreach (array_chunk(array_keys($wanted), 500) as $codes) {
         $placeholders = implode(',', array_fill(0, count($codes), '?'));
@@ -147,8 +167,42 @@ function getAtisAirportsForSession(PDO $pdo, array $session): array
         );
         $stmt->execute(array_merge($codes, $codes, $codes));
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            // Preserve the established compact ATIS list here. The canonical
+            // `ident` expansion belongs only to the explicit small-airfield mode below.
             $code = strtoupper(trim((string)($row['icao_code'] ?: $row['gps_code'] ?: $row['ident'])));
             if (isset($wanted[$code])) $airports[$code] = $row + ['code' => $code];
+        }
+    }
+    if ($includeSmallAirports && in_array($position, ['APP', 'DEP', 'CTR'], true)) {
+        $features = readAtisScopeFeatures($session);
+        $latitudes = []; $longitudes = [];
+        $visit = static function ($value) use (&$visit, &$latitudes, &$longitudes): void {
+            if (!is_array($value)) return;
+            if (count($value) >= 2 && is_numeric($value[0] ?? null) && is_numeric($value[1] ?? null)) {
+                $longitudes[] = (float)$value[0]; $latitudes[] = (float)$value[1]; return;
+            }
+            foreach ($value as $child) $visit($child);
+        };
+        foreach ($features as $feature) $visit($feature['geometry']['coordinates'] ?? []);
+        if ($latitudes && $longitudes && max($longitudes) - min($longitudes) <= 180.0) {
+            $stmt = $pdo->prepare(
+                "SELECT ident,icao_code,gps_code,name,municipality,latitude_deg,longitude_deg
+                 FROM airports WHERE latitude_deg BETWEEN :min_lat AND :max_lat
+                   AND longitude_deg BETWEEN :min_lon AND :max_lon
+                   AND COALESCE(type,'') NOT IN ('closed_airport','heliport')"
+            );
+            $stmt->execute([
+                'min_lat'=>min($latitudes), 'max_lat'=>max($latitudes),
+                'min_lon'=>min($longitudes), 'max_lon'=>max($longitudes),
+            ]);
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                // `ident` is the canonical OurAirports identifier. Optional
+                // ICAO/GPS columns are often blank or non-ICAO for small fields.
+                $code = strtoupper(trim((string)($row['ident'] ?: $row['icao_code'] ?: $row['gps_code'])));
+                if (!preg_match('/^[A-Z]{4}$/', $code)) continue;
+                $airports[$code] = $row + ['code'=>$code];
+                if (!isset($wanted[$code])) $wanted[$code] = '';
+            }
         }
     }
     if (in_array($position, ['APP', 'DEP', 'CTR'], true)) {

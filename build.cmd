@@ -53,6 +53,4 @@ echo Release v%PLUGIN_VERSION% erstellt:
 echo   %XPL_FILE%
 echo   %ZIP_FILE%
 echo   %HASH_FILE%
-echo   %DOWNLOAD_DIR%\_FlightRadarPlugin_Windows_latest.zip
-echo   %DOWNLOAD_DIR%\_FlightRadarPlugin_Linux_latest.zip
 exit /b 0

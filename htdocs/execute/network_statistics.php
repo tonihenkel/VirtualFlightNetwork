@@ -47,7 +47,7 @@ try {
                 COUNT(DISTINCT callsign) positions,COUNT(DISTINCT station_code) stations,
                 COALESCE(SUM(duration_seconds),0) duration_seconds,
                 COALESCE(AVG(duration_seconds),0) average_duration_seconds
-         FROM atc_session_history WHERE {$atcWhere}disconnected_at>=DATE_SUB(NOW(),INTERVAL $period DAY)"
+         FROM atc_session_history WHERE {$atcWhere}is_trainer=0 AND disconnected_at>=DATE_SUB(NOW(),INTERVAL $period DAY)"
     );
     $atcSummaryStmt->execute($atcParams);
     $atcSummary = $atcSummaryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -55,7 +55,7 @@ try {
         "SELECT callsign,station_code,position_code,COUNT(*) sessions,
                 COALESCE(SUM(duration_seconds),0) duration_seconds,
                 COALESCE(AVG(duration_seconds),0) average_duration_seconds
-         FROM atc_session_history WHERE {$atcWhere}disconnected_at>=DATE_SUB(NOW(),INTERVAL $period DAY)
+         FROM atc_session_history WHERE {$atcWhere}is_trainer=0 AND disconnected_at>=DATE_SUB(NOW(),INTERVAL $period DAY)
          GROUP BY callsign,station_code,position_code ORDER BY $atcOrderColumn DESC,duration_seconds DESC,sessions DESC,callsign LIMIT 10"
     );
     $atcPositionStmt->execute($atcParams);
@@ -67,7 +67,7 @@ try {
                     COALESCE(SUM(h.duration_seconds),0) duration_seconds,
                     COALESCE(AVG(h.duration_seconds),0) average_duration_seconds
              FROM atc_session_history h JOIN users u ON u.id=h.user_id
-             WHERE h.disconnected_at>=DATE_SUB(NOW(),INTERVAL $period DAY)
+             WHERE h.is_trainer=0 AND h.disconnected_at>=DATE_SUB(NOW(),INTERVAL $period DAY)
              GROUP BY h.user_id,u.username,u.real_name,u.country_code
              ORDER BY $atcOrderColumn DESC,duration_seconds DESC,sessions DESC,u.username LIMIT 10"
         )->fetchAll(PDO::FETCH_ASSOC);

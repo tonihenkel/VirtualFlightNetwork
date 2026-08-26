@@ -38,7 +38,7 @@ try {
         $adminUser =
             $adminStmt->fetch(PDO::FETCH_ASSOC);
 
-        if (!$adminUser || (int)$adminUser['op_permission'] <= 1) {
+        if (!$adminUser || (int)$adminUser['op_permission'] < 1) {
             $accessDenied = true;
         } else {
             $_SESSION['web_op_permission'] =
@@ -569,10 +569,35 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             font-weight: 700;
         }
 
+        .online-role{display:inline-block;margin:2px 4px 2px 0;padding:4px 7px;border:1px solid rgba(80,175,235,.38);border-radius:4px;background:#0b2233;color:#9ed7ff;font-size:12px}
+        .online-role.phase-1{border-color:#d99334;color:#ffd28b}.online-role.phase-2{border-color:#31a66c;color:#79efaf}
+        .online-actions{display:flex;gap:5px;flex-wrap:wrap}.online-actions button{padding:6px 8px;border:1px solid #37698d;border-radius:4px;background:#102c40;color:#bce3ff;cursor:pointer}.online-actions button[data-action="ban"]{border-color:#9c4141;color:#ffaaaa}.online-actions button:disabled{opacity:.35;cursor:not-allowed}
+        .sortable-header{cursor:pointer;user-select:none}.sortable-header:hover{color:#bde4ff!important}.sortable-header.sort-asc::after{content:' ▲';font-size:9px}.sortable-header.sort-desc::after{content:' ▼';font-size:9px}
+
         .activity-list {
             display: grid;
             gap: 12px;
         }
+
+        .activity-sort {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 14px 0;
+        }
+
+        .activity-sort button {
+            border: 1px solid rgba(64, 139, 198, 0.45);
+            border-radius: 5px;
+            padding: 7px 10px;
+            background: rgba(9, 29, 45, 0.92);
+            color: #8fb3d5;
+            cursor: pointer;
+        }
+
+        .activity-sort button:hover,
+        .activity-sort button.sort-asc,
+        .activity-sort button.sort-desc { color: #fff; border-color: #55aaff; }
 
         .activity-item {
             border: 1px solid rgba(64, 139, 198, 0.28);
@@ -741,19 +766,22 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
 
         <section class="admin-card">
             <div class="admin-tabs" role="tablist">
-                <button class="admin-tab is-active" type="button" data-tab="chat">
+                <button class="admin-tab <?php echo $adminOpPermission === 1 ? 'is-active' : ''; ?>" type="button" data-tab="online-users">
+                    <?php echo htmlspecialchars(t('admin_online_users_tab')); ?>
+                </button>
+                <button class="admin-tab <?php echo $adminOpPermission >= 2 ? 'is-active' : ''; ?>" type="button" data-tab="chat" <?php echo $adminOpPermission === 1 ? 'hidden' : ''; ?>>
                     <?php echo htmlspecialchars(t('admin_tab_chat')); ?>
                 </button>
-                <button class="admin-tab" type="button" data-tab="activity">
+                <button class="admin-tab" type="button" data-tab="activity" <?php echo $adminOpPermission === 1 ? 'hidden' : ''; ?>>
                     <?php echo htmlspecialchars(t('admin_tab_activity')); ?>
                 </button>
-                <button class="admin-tab" type="button" data-tab="voice">
+                <button class="admin-tab" type="button" data-tab="voice" <?php echo $adminOpPermission === 1 ? 'hidden' : ''; ?>>
                     <?php echo htmlspecialchars(t('admin_tab_voice')); ?>
                 </button>
-                <button class="admin-tab" type="button" data-tab="players">
+                <button class="admin-tab" type="button" data-tab="players" <?php echo $adminOpPermission === 1 ? 'hidden' : ''; ?>>
                     <?php echo htmlspecialchars(t('admin_tab_players')); ?>
                 </button>
-                <button class="admin-tab" type="button" data-tab="transfers">
+                <button class="admin-tab" type="button" data-tab="transfers" <?php echo $adminOpPermission === 1 ? 'hidden' : ''; ?>>
                     <?php echo htmlspecialchars(t('admin_tab_transfers')); ?>
                     <?php if (($pendingDivisionTransferCount ?? 0) > 0): ?>
                         <span class="header-notification-dot" id="transferTabDot"></span>
@@ -783,7 +811,27 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 <?php endif; ?>
             </div>
 
-            <div class="admin-panel is-active" id="admin-panel-chat">
+            <div class="admin-panel <?php echo $adminOpPermission === 1 ? 'is-active' : ''; ?>" id="admin-panel-online-users">
+                <div class="admin-box">
+                    <h2><?php echo htmlspecialchars(t('admin_online_users_title')); ?></h2>
+                    <div class="filter-grid players" style="margin-bottom:14px">
+                        <label class="filter-field"><?php echo htmlspecialchars(t('admin_players_search')); ?><input class="admin-input" id="onlineUsersSearch" type="search" autocomplete="off" placeholder="<?php echo htmlspecialchars(t('admin_online_search_placeholder')); ?>"></label>
+                        <label class="filter-field"><?php echo htmlspecialchars(t('statistics_sort_by')); ?><select class="admin-input" id="onlineUsersSort"><option value="name"><?php echo htmlspecialchars(t('admin_players_name')); ?></option><option value="role"><?php echo htmlspecialchars(t('admin_online_role')); ?></option><option value="pilot">Pilot</option><option value="atc">ATC</option><option value="special">Special</option><option value="op">OP</option></select></label>
+                    </div>
+                    <div id="onlineUsersEmpty" class="empty-state"><?php echo htmlspecialchars(t('admin_loading')); ?></div>
+                    <div class="table-scroll">
+                        <table class="monitor-table" id="onlineUsersTable" hidden>
+                            <thead><tr>
+                                <th class="sortable-header" data-online-sort="name"><?php echo htmlspecialchars(t('admin_players_name')); ?></th><th class="sortable-header" data-online-sort="role"><?php echo htmlspecialchars(t('admin_online_role')); ?></th>
+                                <th class="sortable-header" data-online-sort="atc"><?php echo htmlspecialchars(t('admin_players_rank')); ?></th><th class="sortable-header" data-online-sort="op">OP</th><th><?php echo htmlspecialchars(t('admin_transfer_action')); ?></th>
+                            </tr></thead>
+                            <tbody id="onlineUsersRows"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="admin-panel <?php echo $adminOpPermission >= 2 ? 'is-active' : ''; ?>" id="admin-panel-chat">
                 <div class="admin-grid">
                     <aside class="admin-box">
                         <h2><?php echo htmlspecialchars(t('admin_monitor_title')); ?></h2>
@@ -887,6 +935,10 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                                 <?php echo htmlspecialchars(t('admin_filter_to')); ?>
                                 <input class="admin-input" id="chatDateTo" type="datetime-local">
                             </label>
+                            <label class="filter-field">
+                                <span><?php echo htmlspecialchars(t('admin_filter_filtered_chats')); ?></span>
+                                <span><input id="chatFilteredOnly" type="checkbox"> <?php echo htmlspecialchars(t('admin_filter_filtered_chats_only')); ?></span>
+                            </label>
                         </div>
                         <div id="messageEmpty" class="empty-state">
                             <?php echo htmlspecialchars(t('admin_no_messages')); ?>
@@ -912,6 +964,19 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 <div class="admin-box">
                     <h2><?php echo htmlspecialchars(t('admin_staff_activity_title')); ?></h2>
                     <p><?php echo htmlspecialchars(t('admin_staff_activity_text')); ?></p>
+                    <div class="admin-form-row">
+                        <input id="activitySearchInput"
+                               class="admin-input"
+                               type="search"
+                               autocomplete="off"
+                               placeholder="<?php echo htmlspecialchars(t('admin_activity_search_placeholder')); ?>">
+                    </div>
+                    <div class="activity-sort" aria-label="<?php echo htmlspecialchars(t('admin_activity_sort')); ?>">
+                        <button type="button" class="sortable-header" data-activity-sort="target"><?php echo htmlspecialchars(t('admin_activity_player')); ?></button>
+                        <button type="button" class="sortable-header" data-activity-sort="actor"><?php echo htmlspecialchars(t('admin_activity_staff_member')); ?></button>
+                        <button type="button" class="sortable-header" data-activity-sort="type"><?php echo htmlspecialchars(t('admin_activity_type')); ?></button>
+                        <button type="button" class="sortable-header sort-desc" data-activity-sort="date"><?php echo htmlspecialchars(t('admin_activity_date')); ?></button>
+                    </div>
                     <div id="activityList" class="activity-list">
                         <div class="empty-state"><?php echo htmlspecialchars(t('admin_loading')); ?></div>
                     </div>
@@ -1086,6 +1151,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                                 <option value="offline"><?php echo htmlspecialchars(t('admin_players_offline')); ?></option>
                             </select>
                         </label>
+                        <label class="filter-field"><?php echo htmlspecialchars(t('statistics_sort_by')); ?><select class="admin-input" id="playerSort"><option value="name"><?php echo htmlspecialchars(t('admin_players_name')); ?></option><option value="pilot">Pilot</option><option value="atc">ATC</option><option value="special">Special</option><option value="op">OP</option></select></label>
                     </div>
 
                     <div class="result-count" id="playerResultCount"></div>
@@ -1094,12 +1160,12 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                     <div class="table-scroll">
                         <table class="monitor-table" id="playerTable" hidden>
                             <thead><tr>
-                                <th><?php echo htmlspecialchars(t('admin_players_name')); ?></th>
+                                <th class="sortable-header" data-player-sort="name"><?php echo htmlspecialchars(t('admin_players_name')); ?></th>
                                 <th><?php echo htmlspecialchars(t('admin_players_email')); ?></th>
                                 <th><?php echo htmlspecialchars(t('admin_players_country')); ?></th>
                                 <th><?php echo htmlspecialchars(t('admin_players_division')); ?></th>
-                                <th><?php echo htmlspecialchars(t('admin_players_rank')); ?></th>
-                                <th>OP</th>
+                                <th class="sortable-header" data-player-sort="atc"><?php echo htmlspecialchars(t('admin_players_rank')); ?></th>
+                                <th class="sortable-header" data-player-sort="op">OP</th>
                                 <th><?php echo htmlspecialchars(t('admin_players_status')); ?></th>
                                 <th><?php echo htmlspecialchars(t('admin_players_network_status')); ?></th>
                                 <th><?php echo htmlspecialchars(t('admin_players_registered')); ?></th>
@@ -1288,6 +1354,19 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
 <?php if (!$loginRequired && !$accessDenied): ?>
 <script>
     const ADMIN_I18N = <?php echo json_encode([
+        'onlineEmpty' => t('admin_online_users_empty'),
+        'onlinePilot' => t('admin_online_role_pilot'),
+        'onlineSpectator' => t('admin_online_role_spectator'),
+        'onlineController' => t('admin_online_role_controller'),
+        'onlineTrainer' => t('admin_online_role_trainer'),
+        'onlineAtcSpectator' => t('admin_online_role_atc_spectator'),
+        'onlinePhase' => t('admin_online_phase'),
+        'onlineWarn' => t('moderation_warning'),
+        'onlineKick' => t('moderation_kick'),
+        'onlineBan' => t('moderation_ban'),
+        'onlineReason' => t('admin_online_reason_prompt'),
+        'onlineBanDuration' => t('admin_online_ban_duration_prompt'),
+        'onlineActionFailed' => t('admin_online_action_failed'),
         'noFrequencies' => t('admin_no_frequencies'),
         'invalidFrequency' => t('admin_invalid_frequency'),
         'noMessages' => t('admin_no_messages'),
@@ -1396,6 +1475,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         ]
     ], JSON_UNESCAPED_UNICODE); ?>;
     const ADMIN_CSRF = <?php echo json_encode((string)$_SESSION['admin_csrf']); ?>;
+    const ADMIN_OP_LEVEL = <?php echo (int)$adminOpPermission; ?>;
     const ADMIN_LANGUAGE = <?php echo json_encode(
         vfnNormalizeLanguage($_SESSION['language'] ?? '') ?: 'en'
     ); ?>;
@@ -1428,8 +1508,17 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
     let chatPage = 1;
     let activityLoaded = false;
     let activityPage = 1;
+    let activitySort = 'date';
+    let activitySortDirection = 'desc';
+    let activitySearchTimer = null;
     let playerPage = 1;
     let playersLoaded = false;
+    let onlineUsersLoaded = false;
+    let onlineUsersTimer = null;
+    let onlineUsersData = [];
+    let onlineUsersRequest = false;
+    let onlineSortDirection = 'asc';
+    let playerSortDirection = 'asc';
     let transfersLoaded = false;
     let moderationLoaded = false;
     let chatFilterLoaded = false;
@@ -1687,7 +1776,8 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             frequency: document.getElementById('chatFrequencyFilter').value.trim(),
             type: document.getElementById('chatTypeFilter').value.trim(),
             date_from: document.getElementById('chatDateFrom').value,
-            date_to: document.getElementById('chatDateTo').value
+            date_to: document.getElementById('chatDateTo').value,
+            filtered_only: document.getElementById('chatFilteredOnly').checked ? '1' : ''
         };
 
         Object.entries(chatFilters).forEach(function(entry) {
@@ -1729,8 +1819,21 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         const list = document.getElementById('activityList');
 
         try {
+            const params = new URLSearchParams({
+                page: String(activityPage),
+                per_page: '25',
+                sort: activitySort,
+                direction: activitySortDirection,
+                search: document.getElementById('activitySearchInput')?.value.trim() || ''
+            });
+            document.querySelectorAll('[data-activity-sort]').forEach(function(header) {
+                header.classList.remove('sort-asc', 'sort-desc');
+                if (header.dataset.activitySort === activitySort) {
+                    header.classList.add(activitySortDirection === 'desc' ? 'sort-desc' : 'sort-asc');
+                }
+            });
             const response =
-                await fetch('execute/admin_staff_activity.php?page=' + activityPage + '&per_page=25');
+                await fetch('execute/admin_staff_activity.php?' + params.toString());
 
             const data =
                 await response.json();
@@ -1765,6 +1868,28 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         }
     }
 
+    document.querySelectorAll('[data-activity-sort]').forEach(function(header) {
+        header.addEventListener('click', function() {
+            const selectedSort = header.dataset.activitySort;
+            if (activitySort === selectedSort) {
+                activitySortDirection = activitySortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                activitySort = selectedSort;
+                activitySortDirection = selectedSort === 'date' ? 'desc' : 'asc';
+            }
+            activityPage = 1;
+            loadActivities();
+        });
+    });
+
+    document.getElementById('activitySearchInput')?.addEventListener('input', function() {
+        clearTimeout(activitySearchTimer);
+        activitySearchTimer = setTimeout(function() {
+            activityPage = 1;
+            loadActivities();
+        }, 250);
+    });
+
     function populatePlayerOptions(data)
     {
         if (playerOptionsLoaded) {
@@ -1795,6 +1920,57 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         playerOptionsLoaded = true;
     }
 
+    function onlineRoleHtml(role)
+    {
+        const labels={pilot:ADMIN_I18N.onlinePilot,spectator:ADMIN_I18N.onlineSpectator,controller:ADMIN_I18N.onlineController,trainer:ADMIN_I18N.onlineTrainer,atc_spectator:ADMIN_I18N.onlineAtcSpectator};
+        const details=[role.callsign,role.station&&role.position?role.station+' / '+role.position:''].filter(Boolean).join(' · ');
+        const phase=['controller','trainer'].includes(role.type)?' · '+ADMIN_I18N.onlinePhase+' '+Number(role.phase||1):'';
+        return '<span class="online-role '+(['controller','trainer'].includes(role.type)?'phase-'+Number(role.phase||1):'')+'">'+escapeHtml(labels[role.type]||role.type)+(details?' · '+escapeHtml(details):'')+escapeHtml(phase)+'</span>';
+    }
+
+    function renderOnlineUsers()
+    {
+        const rows=document.getElementById('onlineUsersRows'),table=document.getElementById('onlineUsersTable'),empty=document.getElementById('onlineUsersEmpty');
+        if(!rows)return;
+        const query=String(document.getElementById('onlineUsersSearch')?.value||'').trim().toLocaleLowerCase();
+        let users=query?onlineUsersData.filter(user=>{
+            const roleText=(user.roles||[]).map(role=>[role.type,role.callsign,role.station,role.position,'phase '+role.phase].join(' ')).join(' ');
+            return [user.username,user.real_name,user.pilot_rank,user.atc_rank,user.special_rank,roleText].join(' ').toLocaleLowerCase().includes(query);
+        }):[...onlineUsersData];
+        const sort=document.getElementById('onlineUsersSort')?.value||'name',direction=onlineSortDirection==='desc'?-1:1,name=user=>String(user.real_name||user.username||'').toLocaleLowerCase(),phase=user=>Math.max(0,...(user.roles||[]).map(role=>Number(role.phase||0)));
+        users.sort((left,right)=>{let result=0;if(sort==='op')result=Number(left.op_permission)-Number(right.op_permission);else if(sort==='pilot')result=Number(left.rating_pilot)-Number(right.rating_pilot);else if(sort==='atc')result=Number(left.rating_atc)-Number(right.rating_atc);else if(sort==='special')result=Number(left.rating_special)-Number(right.rating_special);else if(sort==='role')result=phase(left)-phase(right)||String((left.roles||[])[0]?.type||'').localeCompare(String((right.roles||[])[0]?.type||''));else result=name(left).localeCompare(name(right));return result*direction||name(left).localeCompare(name(right));});
+        document.querySelectorAll('[data-online-sort]').forEach(header=>{header.classList.remove('sort-asc','sort-desc');if(header.dataset.onlineSort===sort)header.classList.add(onlineSortDirection==='desc'?'sort-desc':'sort-asc');});
+        rows.innerHTML='';
+        users.forEach(user=>{
+            const row=document.createElement('tr'),display=user.real_name?user.real_name+' ('+user.username+')':user.username,ranks=[user.pilot_rank,user.atc_rank,user.special_rank].filter(Boolean);
+            row.innerHTML='<td class="sender"><a class="player-profile-link" href="profile.php?id='+encodeURIComponent(user.id)+'">'+escapeHtml(display)+'</a></td><td>'+(user.roles||[]).map(onlineRoleHtml).join('')+'</td><td>'+ranks.map(escapeHtml).join('<br>')+'</td><td>'+Number(user.op_permission||0)+'</td><td><div class="online-actions"><button type="button" data-action="warning" data-user="'+user.id+'" '+(user.can_moderate?'':'disabled')+'>'+escapeHtml(ADMIN_I18N.onlineWarn)+'</button><button type="button" data-action="kick" data-user="'+user.id+'" '+(user.can_moderate?'':'disabled')+'>'+escapeHtml(ADMIN_I18N.onlineKick)+'</button><button type="button" data-action="ban" data-user="'+user.id+'" '+(user.can_moderate?'':'disabled')+'>'+escapeHtml(ADMIN_I18N.onlineBan)+'</button></div></td>';
+            rows.appendChild(row);
+        });
+        table.hidden=!users.length;empty.hidden=Boolean(users.length);empty.textContent=ADMIN_I18N.onlineEmpty;
+    }
+
+    async function loadOnlineUsers()
+    {
+        const table=document.getElementById('onlineUsersTable'),empty=document.getElementById('onlineUsersEmpty');
+        if(!table||onlineUsersRequest)return;
+        onlineUsersRequest=true;
+        try{
+            const response=await fetch('execute/admin_online_users.php?_='+Date.now(),{cache:'no-store'}),data=await response.json();
+            if(!response.ok||!data.success)throw new Error(data.message||'online_users_failed');
+            onlineUsersData=Array.isArray(data.users)?data.users:[];renderOnlineUsers();
+        }catch(error){table.hidden=true;empty.hidden=false;empty.textContent=String(error.message||ADMIN_I18N.serverError);}finally{onlineUsersRequest=false;}
+    }
+
+    async function moderateOnlineUser(button)
+    {
+        if(button.disabled)return;const action=button.dataset.action,user=button.dataset.user,reason=window.prompt(ADMIN_I18N.onlineReason);if(!reason)return;let duration='';if(action==='ban'){duration=window.prompt(ADMIN_I18N.onlineBanDuration,'7d')||'';if(!duration)return;}
+        button.disabled=true;try{const body=new URLSearchParams({csrf:ADMIN_CSRF,target_user_id:user,action,reason,duration}),response=await fetch('execute/admin_online_action.php',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body}),data=await response.json();if(!response.ok||!data.success)throw new Error(data.message||ADMIN_I18N.onlineActionFailed);await loadOnlineUsers();}catch(error){window.alert(String(error.message||ADMIN_I18N.onlineActionFailed));button.disabled=false;}
+    }
+    document.getElementById('onlineUsersRows')?.addEventListener('click',event=>{const button=event.target.closest('button[data-action]');if(button)moderateOnlineUser(button);});
+    document.getElementById('onlineUsersSearch')?.addEventListener('input',renderOnlineUsers);
+    document.getElementById('onlineUsersSort')?.addEventListener('change',event=>{onlineSortDirection=event.target.value==='name'?'asc':'desc';renderOnlineUsers();});
+    document.querySelectorAll('[data-online-sort]').forEach(header=>header.addEventListener('click',()=>{const select=document.getElementById('onlineUsersSort'),sort=header.dataset.onlineSort;if(select.value===sort)onlineSortDirection=onlineSortDirection==='asc'?'desc':'asc';else{select.value=sort;onlineSortDirection=sort==='name'?'asc':'desc';}renderOnlineUsers();}));
+
     async function loadPlayers()
     {
         const rows = document.getElementById('playerRows');
@@ -1810,8 +1986,11 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             division: document.getElementById('playerDivisionFilter').value,
             rank: document.getElementById('playerRankFilter').value.trim(),
             status: document.getElementById('playerStatusFilter').value,
-            online: document.getElementById('playerOnlineFilter').value
+            online: document.getElementById('playerOnlineFilter').value,
+            sort: document.getElementById('playerSort').value,
+            direction: playerSortDirection
         };
+        document.querySelectorAll('[data-player-sort]').forEach(header=>{header.classList.remove('sort-asc','sort-desc');if(header.dataset.playerSort===filters.sort)header.classList.add(playerSortDirection==='desc'?'sort-desc':'sort-asc');});
 
         Object.entries(filters).forEach(function(entry) {
             if (entry[1] !== '') {
@@ -2298,6 +2477,16 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 loadActivities();
             }
 
+            if (tabName === 'online-users') {
+                onlineUsersLoaded = true;
+                loadOnlineUsers();
+                clearInterval(onlineUsersTimer);
+                onlineUsersTimer = setInterval(loadOnlineUsers, 3000);
+            } else if (onlineUsersTimer) {
+                clearInterval(onlineUsersTimer);
+                onlineUsersTimer = null;
+            }
+
             if (tabName === 'players' && !playersLoaded) {
                 playersLoaded = true;
                 loadPlayers();
@@ -2606,13 +2795,17 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         'chatFrequencyFilter',
         'chatTypeFilter',
         'chatDateFrom',
-        'chatDateTo'
+        'chatDateTo',
+        'chatFilteredOnly'
     ].forEach(function(id) {
         document.getElementById(id).addEventListener('input', function() {
             window.clearTimeout(chatFilterTimer);
             chatFilterTimer = window.setTimeout(refreshChatFilters, 300);
         });
     });
+    document.getElementById('playerSort')?.addEventListener('change',function(){playerSortDirection=this.value==='name'?'asc':'desc';});
+    document.querySelectorAll('[data-player-sort]').forEach(function(header){header.addEventListener('click',function(){const select=document.getElementById('playerSort'),sort=header.dataset.playerSort;if(select.value===sort)playerSortDirection=playerSortDirection==='asc'?'desc':'asc';else{select.value=sort;playerSortDirection=sort==='name'?'asc':'desc';}playerPage=1;document.querySelectorAll('[data-player-sort]').forEach(item=>item.classList.remove('sort-asc','sort-desc'));header.classList.add(playerSortDirection==='desc'?'sort-desc':'sort-asc');loadPlayers();});});
+    document.querySelector('[data-player-sort="name"]')?.classList.add('sort-asc');
 
     [
         'playerSearchInput',
@@ -2620,7 +2813,8 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         'playerDivisionFilter',
         'playerRankFilter',
         'playerStatusFilter',
-        'playerOnlineFilter'
+        'playerOnlineFilter',
+        'playerSort'
     ].forEach(function(id) {
         const element = document.getElementById(id);
         element.addEventListener(
@@ -3789,10 +3983,12 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
 
     updateVoiceTransmitButton();
 
-    renderFrequencies();
-    pollMessages();
-    refreshVoiceDevices();
-    setInterval(pollMessages, 3000);
+    if (ADMIN_OP_LEVEL >= 2) {
+        renderFrequencies();
+        pollMessages();
+        refreshVoiceDevices();
+        setInterval(pollMessages, 3000);
+    }
 
     const requestedAdminTab =
         new URLSearchParams(window.location.search).get('tab');
@@ -3810,7 +4006,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 'admin-panel-' + savedAdminTab
             );
 
-        if (savedTabButton && savedTabPanel) {
+        if (savedTabButton && savedTabPanel && !savedTabButton.hidden) {
             document.querySelectorAll('.admin-tab').forEach(function(item) {
                 item.classList.remove('is-active');
             });
@@ -3851,7 +4047,18 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                 configurationLoaded = true;
                 loadConfigurationSettings();
             }
+
+            if (savedAdminTab === 'online-users') {
+                onlineUsersLoaded = true;
+                loadOnlineUsers();
+                onlineUsersTimer = setInterval(loadOnlineUsers, 3000);
+            }
         }
+    }
+    if (document.querySelector('.admin-tab[data-tab="online-users"]')?.classList.contains('is-active') && !onlineUsersLoaded) {
+        onlineUsersLoaded = true;
+        loadOnlineUsers();
+        onlineUsersTimer = setInterval(loadOnlineUsers, 3000);
     }
 
     document.addEventListener(

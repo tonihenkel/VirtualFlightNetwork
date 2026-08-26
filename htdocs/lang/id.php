@@ -1,6 +1,23 @@
 <?php
 
 return [
+    'admin_filter_filtered_chats'=>'Obrolan terfilter','admin_filter_filtered_chats_only'=>'Tampilkan hanya obrolan terfilter',
+    'admin_activity_sort'=>'Urutkan aktivitas staf','admin_activity_search_placeholder'=>'Cari pemain, staf, aktivitas, atau tanggal …','admin_activity_player'=>'Pemain','admin_activity_staff_member'=>'Anggota staf','admin_activity_type'=>'Jenis aktivitas','admin_activity_date'=>'Tanggal',
+    'admin_online_search_placeholder'=>'Cari nama, callsign, peran, stasiun, atau peringkat …',
+    'admin_online_users_tab'=>'Online','admin_online_users_title'=>'Pengguna online','admin_online_users_text'=>'Pilot, pengontrol, pelatih, dan penonton aktif beserta fase dan peringkat. Fase 1 berakhir setelah 10 menit.','admin_online_users_empty'=>'Tidak ada yang online.','admin_online_role'=>'Peran / sesi','admin_online_role_pilot'=>'Pilot','admin_online_role_spectator'=>'Penonton','admin_online_role_controller'=>'Pengontrol','admin_online_role_trainer'=>'Pelatih','admin_online_role_atc_spectator'=>'Penonton ATC','admin_online_phase'=>'Fase','admin_online_reason_prompt'=>'Masukkan alasan:','admin_online_ban_duration_prompt'=>'Durasi larangan (mis. 30min, 12h, 7d, atau permanent):','admin_online_action_failed'=>'Tindakan moderasi gagal.',
+    'atc_airport_watch_title' => 'Tata letak bandara', 'atc_airport_watch_open' => 'Buka bandara di jendela terpisah', 'atc_airport_layout_unavailable' => 'Tata letak bandara tidak tersedia',
+    'atc_position_denied' => 'Rating ATC Anda tidak mengizinkan posisi ini.', 'atc_trainer_denied' => 'Anda tidak berwenang menggunakan mode pelatih.', 'invalid_station_or_position' => 'Kode stasiun atau posisi tidak valid.', 'station_position_unavailable' => 'Posisi ini tidak tersedia di stasiun yang dipilih.', 'access_denied' => 'Akses ditolak.',
+    'invalid_handoff_target' => 'Posisi tujuan untuk penyerahan tidak valid.',
+    'atc_nav_points' => 'titik', 'atc_nav_loading' => 'memuat…', 'atc_nav_hidden' => 'disembunyikan', 'atc_nav_error' => 'kesalahan',
+    'atc_windows' => 'Jendela', 'atc_window_close' => 'Tutup jendela',
+    'map_show_sector_waypoints' => 'Tampilkan semua waypoint di sektor radar',
+    'atc_map_context_title' => 'Peta radar', 'atc_atis_include_small' => 'Tampilkan juga lapangan udara kecil',
+    'atc_metar_only_available' => 'Hanya bandara dengan METAR tersedia', 'atc_metar_runway_estimate' => 'Perkiraan',
+    'atc_position_busy' => 'Posisi ATC ini sudah ditempati atau sedang dipersiapkan.',
+    'atc_ready_title' => 'Fase 1 · Persiapan', 'atc_ready_loading' => 'Memuat radar dan data sektor…',
+    'atc_ready_loaded' => 'Radar dan sektor siap. Titik navigasi dapat terus dimuat di latar belakang.',
+    'atc_ready_open_position' => 'Siap · Buka posisi', 'atc_ready_activating' => 'Membuka posisi…',
+    'atc_ready_voice_waiting' => 'Suara menunggu posisi dibuka.',
     'feature_cpdlc_title' => 'CPDLC melalui Hoppie',
     'feature_cpdlc_text' => 'Sistem FMC dan MCDU yang kompatibel berkomunikasi melalui Hoppie langsung dengan pengontrol di klien ATC VFN.',
     'feature_atc_client_title' => 'Klien radar ATC',

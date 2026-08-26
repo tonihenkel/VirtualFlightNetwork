@@ -1,6 +1,23 @@
 <?php
 
 return [
+    'admin_filter_filtered_chats'=>'已过滤聊天','admin_filter_filtered_chats_only'=>'仅显示已过滤聊天',
+    'admin_activity_sort'=>'排序工作人员活动','admin_activity_search_placeholder'=>'搜索玩家、工作人员、活动或日期 …','admin_activity_player'=>'玩家','admin_activity_staff_member'=>'工作人员','admin_activity_type'=>'活动类型','admin_activity_date'=>'日期',
+    'admin_online_search_placeholder'=>'搜索姓名、呼号、角色、席位或等级 …',
+    'admin_online_users_tab'=>'在线','admin_online_users_title'=>'在线用户','admin_online_users_text'=>'显示活跃飞行员、管制员、教员和观察员的阶段与等级。阶段1将在10分钟后结束。','admin_online_users_empty'=>'当前无人在线。','admin_online_role'=>'角色 / 会话','admin_online_role_pilot'=>'飞行员','admin_online_role_spectator'=>'观察员','admin_online_role_controller'=>'管制员','admin_online_role_trainer'=>'教员','admin_online_role_atc_spectator'=>'ATC观察员','admin_online_phase'=>'阶段','admin_online_reason_prompt'=>'请输入原因：','admin_online_ban_duration_prompt'=>'封禁时长（例如30min、12h、7d或permanent）：','admin_online_action_failed'=>'管理操作失败。',
+    'atc_airport_watch_title' => '机场布局', 'atc_airport_watch_open' => '在单独窗口中打开机场', 'atc_airport_layout_unavailable' => '没有可用的机场布局',
+    'atc_position_denied' => '您的 ATC 等级不允许使用此席位。', 'atc_trainer_denied' => '您无权使用教员模式。', 'invalid_station_or_position' => '管制站标识或席位无效。', 'station_position_unavailable' => '所选管制站不提供此席位。', 'access_denied' => '拒绝访问。',
+    'invalid_handoff_target' => '移交的目标管制席位无效。',
+    'atc_nav_points' => '个点', 'atc_nav_loading' => '加载中…', 'atc_nav_hidden' => '已隐藏', 'atc_nav_error' => '错误',
+    'atc_windows' => '窗口', 'atc_window_close' => '关闭窗口',
+    'map_show_sector_waypoints' => '显示雷达扇区内的所有航路点',
+    'atc_map_context_title' => '雷达地图', 'atc_atis_include_small' => '同时显示小型机场',
+    'atc_metar_only_available' => '仅显示有 METAR 的机场', 'atc_metar_runway_estimate' => '预计',
+    'atc_position_busy' => '该管制席位已被占用或正在准备中。',
+    'atc_ready_title' => '阶段 1 · 准备', 'atc_ready_loading' => '正在加载雷达和扇区数据…',
+    'atc_ready_loaded' => '雷达和扇区已就绪。导航点可继续在后台加载。',
+    'atc_ready_open_position' => '准备就绪 · 开放席位', 'atc_ready_activating' => '正在开放席位…',
+    'atc_ready_voice_waiting' => '语音正在等待席位开放。',
     'feature_cpdlc_title' => '通过 Hoppie 使用 CPDLC',
     'feature_cpdlc_text' => '兼容的 FMC 和 MCDU 系统通过 Hoppie 与 VFN ATC 客户端中的管制员直接通信。',
     'feature_atc_client_title' => 'ATC 雷达客户端',

@@ -27,7 +27,7 @@ function findPositionAtcCallsign(
                 ap.latitude_deg,ap.longitude_deg
          FROM atc_sessions a
          LEFT JOIN airports ap ON UPPER(ap.ident)=UPPER(a.station_code)
-         WHERE a.is_active=1 AND a.is_spectator=0
+         WHERE a.is_active=1 AND a.is_ready=1 AND a.is_spectator=0
            AND a.last_seen_at>=DATE_SUB(NOW(),INTERVAL 30 SECOND)
            AND ABS(CAST(a.frequency AS DECIMAL(7,3))-CAST(:frequency AS DECIMAL(7,3)))<0.001"
     );

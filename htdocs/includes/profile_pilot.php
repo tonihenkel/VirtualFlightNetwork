@@ -91,7 +91,7 @@ $flights = $flightStmt->fetchAll(PDO::FETCH_ASSOC);
 
 <?php
 $atcLogStmt = $pdo->prepare(
-    "SELECT callsign,station_code,position_code,connected_at,disconnected_at,duration_seconds
+    "SELECT callsign,station_code,position_code,is_trainer,connected_at,disconnected_at,duration_seconds
      FROM atc_session_history WHERE user_id=:user_id
      ORDER BY connected_at DESC LIMIT 100"
 );

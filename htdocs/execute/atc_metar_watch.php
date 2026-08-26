@@ -172,6 +172,53 @@ function metarWatchScopeAirports(PDO $pdo, string $station, string $position, ar
     return $airports;
 }
 
+function metarWatchRunwayEnds(array $airportCodes): array
+{
+    $wanted = array_fill_keys(array_map('strtoupper', $airportCodes), true);
+    if (!$wanted) return [];
+    $handle = @fopen(dirname(__DIR__) . '/data/airports/runways.csv', 'rb');
+    if ($handle === false) return [];
+    $header = fgetcsv($handle); $columns = is_array($header) ? array_flip($header) : []; $result = [];
+    while (($row = fgetcsv($handle)) !== false) {
+        $icao = strtoupper(trim((string)($row[$columns['airport_ident'] ?? -1] ?? '')));
+        if (!isset($wanted[$icao]) || (int)($row[$columns['closed'] ?? -1] ?? 0) === 1) continue;
+        foreach ([['le_ident', 'le_heading_degT'], ['he_ident', 'he_heading_degT']] as [$identColumn, $headingColumn]) {
+            $ident = strtoupper(trim((string)($row[$columns[$identColumn] ?? -1] ?? '')));
+            if ($ident === '' || strtoupper($ident) === 'H') continue;
+            $headingValue = trim((string)($row[$columns[$headingColumn] ?? -1] ?? ''));
+            $heading = is_numeric($headingValue) ? (float)$headingValue : null;
+            if ($heading === null && preg_match('/^(\d{1,2})/', $ident, $match)) $heading = ((int)$match[1] % 36) * 10.0;
+            if ($heading !== null) $result[$icao][] = ['ident' => $ident, 'heading' => fmod($heading + 360.0, 360.0)];
+        }
+    }
+    fclose($handle); return $result;
+}
+
+function metarWatchRunwayEstimate(array $airport, array $runwayEnds, array $metars): ?array
+{
+    if (!$runwayEnds) return null;
+    $nearest = null; $nearestDistance = INF;
+    foreach ($metars as $metar) {
+        $direction = (string)($metar['wind_direction'] ?? ''); $age = $metar['age_minutes'] ?? null;
+        preg_match('/^(\d+)/', (string)($metar['wind_speed'] ?? ''), $speedMatch);
+        $windSpeed = isset($speedMatch[1]) ? (int)$speedMatch[1] : null;
+        if (!is_numeric($direction) || !is_numeric($age) || (int)$age > 90
+            || $windSpeed === null || $windSpeed <= 2
+            || !is_numeric($metar['latitude'] ?? null) || !is_numeric($metar['longitude'] ?? null)) continue;
+        $distance = atisDistanceNm((float)$airport['latitude'], (float)$airport['longitude'], (float)$metar['latitude'], (float)$metar['longitude']);
+        if ($distance <= 40.0 && $distance < $nearestDistance) { $nearest = $metar; $nearestDistance = $distance; }
+    }
+    if ($nearest === null) return null;
+    $windDirection = (float)$nearest['wind_direction']; $best = null; $bestDifference = INF;
+    foreach ($runwayEnds as $end) {
+        $difference = abs(fmod((float)$end['heading'] - $windDirection + 540.0, 360.0) - 180.0);
+        if ($difference < $bestDifference) { $best = $end; $bestDifference = $difference; }
+    }
+    if ($best === null || $bestDifference > 90.0) return null;
+    return ['runway' => (string)$best['ident'], 'metar' => (string)$nearest['icao'],
+        'distance_nm' => round($nearestDistance), 'age_minutes' => (int)$nearest['age_minutes']];
+}
+
 try {
     $pdo = new PDO("mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4", $dbUser, $dbPass, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -179,7 +226,6 @@ try {
     if (empty($_SESSION['web_user_id']) || !validateVfnWebSession($pdo)) {
         http_response_code(401); throw new RuntimeException('login_required');
     }
-    ensureAtcSchema($pdo);
     $stmt = $pdo->prepare(
         "SELECT station_code,position_code,radar_boundary_code,is_spectator,can_control,user_id
          FROM atc_sessions WHERE user_id=:user AND session_token=:token AND is_active=1
@@ -199,6 +245,12 @@ try {
     libxml_clear_errors(); libxml_use_internal_errors($previous);
     if ($xml === false) throw new RuntimeException('metar_unavailable');
 
+    $metarCandidates = [];
+    foreach ($xml->xpath('//METAR') ?: [] as $node) {
+        $candidate = metarWatchReport($node);
+        if (($candidate['icao'] ?? '') !== '') $metarCandidates[$candidate['icao']] = $candidate;
+    }
+
     $station = normalizeAtcStationCode((string)$session['station_code']);
     $position = strtoupper((string)$session['position_code']);
     $sectorPosition = in_array($position, ['APP', 'DEP', 'CTR'], true);
@@ -213,14 +265,13 @@ try {
         $fallbackCenter = $centerStmt->fetch(PDO::FETCH_ASSOC) ?: null;
     }
     $reports = [];
-    foreach ($xml->xpath('//METAR') ?: [] as $node) {
-        $icao = strtoupper(metarWatchValue($node, 'station_id'));
+    foreach ($metarCandidates as $icao => $candidate) {
         if ($icao === '') continue;
         if (!$sectorPosition) {
             if ($icao !== $station) continue;
         } elseif ($features) {
-            $latitude = metarWatchValue($node, 'latitude');
-            $longitude = metarWatchValue($node, 'longitude');
+            $latitude = (string)($candidate['latitude'] ?? '');
+            $longitude = (string)($candidate['longitude'] ?? '');
             if ($latitude === '' || $longitude === '') continue;
             $inside = false;
             foreach ($features as $feature) {
@@ -230,8 +281,8 @@ try {
             }
             if (!$inside) continue;
         } elseif ($fallbackCenter) {
-            $latitude = metarWatchValue($node, 'latitude');
-            $longitude = metarWatchValue($node, 'longitude');
+            $latitude = (string)($candidate['latitude'] ?? '');
+            $longitude = (string)($candidate['longitude'] ?? '');
             if ($latitude === '' || $longitude === '' || atisDistanceNm(
                 (float)$fallbackCenter['latitude_deg'], (float)$fallbackCenter['longitude_deg'],
                 (float)$latitude, (float)$longitude
@@ -239,7 +290,7 @@ try {
         } else {
             continue;
         }
-        $reports[] = metarWatchReport($node);
+        $reports[] = $candidate;
     }
     // APP/DEP must always see the METAR of their own airport. Sector polygons
     // can be incomplete, overlap or use a regional station name and must not
@@ -249,22 +300,26 @@ try {
         foreach ($reports as $report) {
             if (($report['icao'] ?? '') === $station) { $hasPrimary = true; break; }
         }
-        if (!$hasPrimary) {
-            foreach ($xml->xpath('//METAR') ?: [] as $node) {
-                if (strtoupper(metarWatchValue($node, 'station_id')) === $station) {
-                    $reports[] = metarWatchReport($node);
-                    break;
-                }
-            }
-        }
+        if (!$hasPrimary && isset($metarCandidates[$station])) $reports[] = $metarCandidates[$station];
     }
     // The watch is also the airport overview for the controlled area. Keep
     // airports without a published METAR visible instead of silently dropping
     // them (for example EDAB in the EDMM_MEI sector).
     $scopeAirports = metarWatchScopeAirports($pdo, $station, $position, $features, $fallbackCenter);
-    $reportCodes = array_fill_keys(array_column($reports, 'icao'), true);
+    $reportCodes = [];
+    foreach ($reports as $index => $report) {
+        $reportCodes[strtoupper((string)($report['icao'] ?? ''))] = $index;
+    }
     foreach ($scopeAirports as $code => $airport) {
-        if (isset($reportCodes[$code])) continue;
+        if (isset($reportCodes[$code])) {
+            $index = $reportCodes[$code];
+            $reports[$index]['name'] = $airport['name'];
+            // The airport reference point is more suitable for detecting a
+            // right-click on the map than the METAR sensor coordinates.
+            $reports[$index]['latitude'] = $airport['latitude'];
+            $reports[$index]['longitude'] = $airport['longitude'];
+            continue;
+        }
         $reports[] = [
             'icao' => $code, 'name' => $airport['name'], 'observed_at' => '–', 'age_minutes' => null,
             'wind' => '-', 'wind_direction' => '-', 'wind_speed' => '-', 'wind_gust' => '-',
@@ -295,6 +350,20 @@ try {
                     'departure_runways' => $departure !== '' ? $departure : $automatic,
                 ];
             }
+            // Small airfields can have a manual controller override without an
+            // auto-ATIS broadcast row. Load those overrides independently.
+            $overrideStmt = $pdo->prepare(
+                "SELECT airport_icao,arrival_runways,departure_runways
+                 FROM atc_atis_overrides
+                 WHERE is_active=1 AND airport_icao IN ($placeholders)"
+            );
+            $overrideStmt->execute(array_column($reports, 'icao'));
+            foreach ($overrideStmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $runwayMap[strtoupper((string)$row['airport_icao'])] = [
+                    'arrival_runways' => trim((string)($row['arrival_runways'] ?? '')),
+                    'departure_runways' => trim((string)($row['departure_runways'] ?? '')),
+                ];
+            }
         } catch (Throwable $ignored) {
             $runwayMap = [];
         }
@@ -302,6 +371,17 @@ try {
             $runways = $runwayMap[$report['icao']] ?? [];
             $report['arrival_runways'] = (string)($runways['arrival_runways'] ?? '');
             $report['departure_runways'] = (string)($runways['departure_runways'] ?? '');
+        }
+        unset($report);
+        $runwayEnds = metarWatchRunwayEnds(array_column($reports, 'icao'));
+        foreach ($reports as &$report) {
+            $report['runway_estimate'] = ''; $report['runway_estimate_metar'] = '';
+            $report['runway_estimate_distance_nm'] = null; $report['runway_estimate_age_minutes'] = null;
+            if ($report['arrival_runways'] !== '' || $report['departure_runways'] !== '') continue;
+            $estimate = metarWatchRunwayEstimate($report, $runwayEnds[$report['icao']] ?? [], $metarCandidates);
+            if ($estimate === null) continue;
+            $report['runway_estimate'] = $estimate['runway']; $report['runway_estimate_metar'] = $estimate['metar'];
+            $report['runway_estimate_distance_nm'] = $estimate['distance_nm']; $report['runway_estimate_age_minutes'] = $estimate['age_minutes'];
         }
         unset($report);
     }

@@ -77,12 +77,13 @@ try {
     }
     $stmt = $pdo->prepare(
         "SELECT * FROM atc_sessions WHERE user_id=:user_id AND session_token=:token
-         AND is_active=1 AND is_spectator=0 AND can_control=1
+         AND is_active=1 AND (is_spectator=0 OR is_trainer=1) AND can_control=1
          AND last_seen_at>=DATE_SUB(NOW(),INTERVAL 30 SECOND) LIMIT 1"
     );
     $stmt->execute(['user_id'=>(int)$_SESSION['web_user_id'], 'token'=>(string)($_SESSION['atc_session_token'] ?? '')]);
     $atc = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$atc) contactReply(false, 'atc_control_session_required', 403);
+    $isTrainer = (int)($atc['is_trainer'] ?? 0) === 1;
     $pdo->exec("DELETE aa FROM atc_assumed_aircraft aa LEFT JOIN atc_sessions a ON a.id=aa.atc_session_id WHERE a.id IS NULL OR a.is_active=0 OR a.last_seen_at<DATE_SUB(NOW(),INTERVAL 45 SECOND)");
 
     $callsign = strtoupper(trim((string)($_POST['callsign'] ?? '')));
@@ -105,6 +106,16 @@ try {
 
     $atcCallsign = strtoupper((string)$atc['callsign']);
     $language = strtolower((string)($pilot['plugin_language'] ?? 'en'));
+    if ($action === 'force-act' && !$isTrainer) {
+        $forceActOwner = $pdo->prepare(
+            "SELECT atc_session_id FROM atc_assumed_aircraft
+             WHERE pilot_session_token=:pilot_token LIMIT 1"
+        );
+        $forceActOwner->execute(['pilot_token'=>(string)$pilot['session_token']]);
+        if ((int)$forceActOwner->fetchColumn() !== (int)$atc['id']) {
+            contactReply(false, 'aircraft_not_assumed_by_you', 409);
+        }
+    }
     if (in_array($action, ['assume', 'assumed'], true)) {
         $ownerStatement=$pdo->prepare("SELECT atc_session_id,atc_callsign FROM atc_assumed_aircraft WHERE pilot_session_token=:pilot_token LIMIT 1");
         $ownerStatement->execute(['pilot_token'=>(string)$pilot['session_token']]);
@@ -125,8 +136,10 @@ try {
         contactReply(true, 'aircraft_assumed');
     }
     if (in_array($action, ['unassume', 'un-assume'], true)) {
-        $unassume=$pdo->prepare("DELETE FROM atc_assumed_aircraft WHERE pilot_session_token=:pilot_token AND atc_session_id=:atc_session_id");
-        $unassume->execute(['pilot_token'=>(string)$pilot['session_token'],'atc_session_id'=>(int)$atc['id']]);
+        $unassume=$pdo->prepare("DELETE FROM atc_assumed_aircraft WHERE pilot_session_token=:pilot_token" . ($isTrainer ? "" : " AND atc_session_id=:atc_session_id"));
+        $unassumeParameters=['pilot_token'=>(string)$pilot['session_token']];
+        if (!$isTrainer) $unassumeParameters['atc_session_id']=(int)$atc['id'];
+        $unassume->execute($unassumeParameters);
         contactReply(true, 'aircraft_unassumed');
     }
     if ($action === 'handoff') {
@@ -139,7 +152,7 @@ try {
              WHERE pilot_session_token=:pilot_token LIMIT 1"
         );
         $ownerStatement->execute(['pilot_token'=>(string)$pilot['session_token']]);
-        if ((int)$ownerStatement->fetchColumn() !== (int)$atc['id']) {
+        if (!$isTrainer && (int)$ownerStatement->fetchColumn() !== (int)$atc['id']) {
             contactReply(false, 'aircraft_not_assumed_by_you', 409);
         }
         $targetStatement = $pdo->prepare(
@@ -151,6 +164,21 @@ try {
         $targetStatement->execute(['callsign'=>$targetCallsign]);
         $target = $targetStatement->fetch(PDO::FETCH_ASSOC);
         if (!$target) contactReply(false, 'handoff_target_not_available', 404);
+        if ($isTrainer) {
+            $trainerOwnership = $pdo->prepare(
+                "INSERT INTO atc_assumed_aircraft
+                    (pilot_session_token,pilot_callsign,atc_session_id,atc_user_id,atc_callsign)
+                 VALUES (:pilot_token,:pilot_callsign,:atc_session_id,:atc_user_id,:atc_callsign)
+                 ON DUPLICATE KEY UPDATE atc_session_id=VALUES(atc_session_id),
+                    atc_user_id=VALUES(atc_user_id),atc_callsign=VALUES(atc_callsign),
+                    pilot_callsign=VALUES(pilot_callsign),updated_at=NOW()"
+            );
+            $trainerOwnership->execute([
+                'pilot_token'=>(string)$pilot['session_token'],'pilot_callsign'=>$callsign,
+                'atc_session_id'=>(int)$atc['id'],'atc_user_id'=>(int)$atc['user_id'],
+                'atc_callsign'=>$atcCallsign,
+            ]);
+        }
         $pdo->prepare(
             "UPDATE atc_handoff_requests SET status='cancelled',responded_at=NOW()
              WHERE pilot_session_token=:pilot_token AND status='pending'"
@@ -233,8 +261,10 @@ try {
         contactReply(true, $accepted ? 'handoff_accepted' : 'handoff_rejected');
     }
     if (in_array($action, ['release', 'leave-airspace'], true)) {
-        $release=$pdo->prepare("DELETE FROM atc_assumed_aircraft WHERE pilot_session_token=:pilot_token AND atc_session_id=:atc_session_id");
-        $release->execute(['pilot_token'=>(string)$pilot['session_token'],'atc_session_id'=>(int)$atc['id']]);
+        $release=$pdo->prepare("DELETE FROM atc_assumed_aircraft WHERE pilot_session_token=:pilot_token" . ($isTrainer ? "" : " AND atc_session_id=:atc_session_id"));
+        $releaseParameters=['pilot_token'=>(string)$pilot['session_token']];
+        if (!$isTrainer) $releaseParameters['atc_session_id']=(int)$atc['id'];
+        $release->execute($releaseParameters);
         $clearances=$pdo->prepare("DELETE FROM atc_aircraft_clearances WHERE pilot_session_token=:pilot_token");
         $clearances->execute(['pilot_token'=>(string)$pilot['session_token']]);
         $text=vfnPluginContactMessage($language, 'release', '122.800', $atcCallsign);

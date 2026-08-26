@@ -283,8 +283,11 @@ try {
     );
 } catch (Throwable $error) {
     if (http_response_code() < 400) http_response_code(500);
+    $message = $error->getMessage();
+    $translated = t($message);
+    if ($translated !== $message) $message = $translated;
     echo json_encode(
-        ['success' => false, 'message' => $error->getMessage()],
+        ['success' => false, 'message' => $message],
         JSON_UNESCAPED_UNICODE
     );
 }

@@ -1,6 +1,23 @@
 <?php
 
 return [
+    'admin_filter_filtered_chats'=>'필터링된 채팅','admin_filter_filtered_chats_only'=>'필터링된 채팅만 표시',
+    'admin_activity_sort'=>'스태프 활동 정렬','admin_activity_search_placeholder'=>'플레이어, 스태프, 활동 또는 날짜 검색 …','admin_activity_player'=>'플레이어','admin_activity_staff_member'=>'스태프 멤버','admin_activity_type'=>'활동 유형','admin_activity_date'=>'날짜',
+    'admin_online_search_placeholder'=>'이름, 호출부호, 역할, 관제소 또는 등급 검색 …',
+    'admin_online_users_tab'=>'온라인','admin_online_users_title'=>'온라인 사용자','admin_online_users_text'=>'단계와 등급을 포함한 활성 조종사, 관제사, 훈련관 및 관전자입니다. 1단계는 10분 후 만료됩니다.','admin_online_users_empty'=>'온라인 사용자가 없습니다.','admin_online_role'=>'역할 / 세션','admin_online_role_pilot'=>'조종사','admin_online_role_spectator'=>'관전자','admin_online_role_controller'=>'관제사','admin_online_role_trainer'=>'훈련관','admin_online_role_atc_spectator'=>'ATC 관전자','admin_online_phase'=>'단계','admin_online_reason_prompt'=>'사유를 입력하세요:','admin_online_ban_duration_prompt'=>'차단 기간(예: 30min, 12h, 7d 또는 permanent):','admin_online_action_failed'=>'관리 작업에 실패했습니다.',
+    'atc_airport_watch_title' => '공항 배치도', 'atc_airport_watch_open' => '공항을 별도 창에서 열기', 'atc_airport_layout_unavailable' => '공항 배치도를 사용할 수 없습니다',
+    'atc_position_denied' => '현재 ATC 등급으로는 이 포지션을 사용할 수 없습니다.', 'atc_trainer_denied' => '트레이너 모드를 사용할 권한이 없습니다.', 'invalid_station_or_position' => '관제소 식별자 또는 포지션이 올바르지 않습니다.', 'station_position_unavailable' => '선택한 관제소에서는 이 포지션을 사용할 수 없습니다.', 'access_denied' => '접근이 거부되었습니다.',
+    'invalid_handoff_target' => '핸드오프 대상 관제 포지션이 올바르지 않습니다.',
+    'atc_nav_points' => '포인트', 'atc_nav_loading' => '불러오는 중…', 'atc_nav_hidden' => '숨김', 'atc_nav_error' => '오류',
+    'atc_windows' => '창', 'atc_window_close' => '창 닫기',
+    'map_show_sector_waypoints' => '레이더 섹터의 모든 웨이포인트 표시',
+    'atc_map_context_title' => '레이더 지도', 'atc_atis_include_small' => '소규모 비행장도 표시',
+    'atc_metar_only_available' => 'METAR가 있는 공항만 표시', 'atc_metar_runway_estimate' => '예상',
+    'atc_position_busy' => '이 ATC 포지션은 이미 사용 중이거나 준비 중입니다.',
+    'atc_ready_title' => '1단계 · 준비', 'atc_ready_loading' => '레이더 및 섹터 데이터를 불러오는 중…',
+    'atc_ready_loaded' => '레이더와 섹터가 준비되었습니다. 항법 지점은 백그라운드에서 계속 로드될 수 있습니다.',
+    'atc_ready_open_position' => '준비 완료 · 포지션 열기', 'atc_ready_activating' => '포지션을 여는 중…',
+    'atc_ready_voice_waiting' => '음성 연결이 포지션 열기를 기다리고 있습니다.',
     'feature_cpdlc_title' => 'Hoppie를 통한 CPDLC',
     'feature_cpdlc_text' => '호환되는 FMC 및 MCDU 시스템이 Hoppie를 통해 VFN ATC 클라이언트의 관제사와 직접 통신합니다.',
     'feature_atc_client_title' => 'ATC 레이더 클라이언트',

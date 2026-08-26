@@ -11,23 +11,15 @@ try {
     requireAdminUser($pdo, 2);
     $page = max(1, (int)($_GET['page'] ?? 1));
     $perPage = min(100, max(10, (int)($_GET['per_page'] ?? 25)));
-    $candidateLimit = $page * $perPage;
-    $activityTotal = (int)$pdo->query(
-        "SELECT COUNT(*) FROM user_activity_log
-         WHERE activity_key LIKE '%kick%'
-            OR activity_key LIKE '%ban%'
-            OR activity_key LIKE '%announcement%'
-            OR activity_type IN ('staff', 'admin', 'moderation')"
-    )->fetchColumn();
-    $announcementTotal = (int)$pdo->query(
-        "SELECT COUNT(*) FROM (
-            SELECT 1 FROM chat_messages
-            WHERE message_text LIKE '[ANNOUNCEMENT]%'
-               OR sender_callsign = 'ANNOUNCEMENT'
-            GROUP BY sender_callsign, message_text, created_at
-         ) announcement_groups"
-    )->fetchColumn();
-
+    $sort = (string)($_GET['sort'] ?? 'date');
+    $direction = strtolower((string)($_GET['direction'] ?? 'desc'));
+    $search = trim((string)($_GET['search'] ?? ''));
+    if (!in_array($sort, ['target', 'actor', 'type', 'date'], true)) {
+        $sort = 'date';
+    }
+    if (!in_array($direction, ['asc', 'desc'], true)) {
+        $direction = $sort === 'date' ? 'desc' : 'asc';
+    }
     $activityStmt = $pdo->prepare(
         "SELECT
             l.id,
@@ -46,8 +38,7 @@ try {
             OR l.activity_key LIKE '%ban%'
             OR l.activity_key LIKE '%announcement%'
             OR l.activity_type IN ('staff', 'admin', 'moderation')
-         ORDER BY l.created_at DESC
-         LIMIT $candidateLimit"
+         ORDER BY l.created_at DESC"
     );
 
     $activityStmt->execute();
@@ -76,6 +67,7 @@ try {
             'sort_time' => strtotime((string)$row['created_at']),
             'time' => date('d.m.Y H:i', strtotime((string)$row['created_at'])),
             'title' => t((string)$row['activity_key']),
+            'sort_type' => (string)$row['activity_type'],
             'target' => $targetName,
             'actor' => $actorName,
             'detail' => (string)($row['activity_value'] ?? '')
@@ -92,8 +84,7 @@ try {
          WHERE message_text LIKE '[ANNOUNCEMENT]%'
             OR sender_callsign = 'ANNOUNCEMENT'
          GROUP BY sender_callsign, message_text, created_at
-         ORDER BY created_at DESC
-         LIMIT $candidateLimit"
+         ORDER BY created_at DESC"
     );
 
     $announcementStmt->execute();
@@ -104,25 +95,54 @@ try {
             'sort_time' => strtotime((string)$row['created_at']),
             'time' => date('d.m.Y H:i', strtotime((string)$row['created_at'])),
             'title' => t('admin_activity_announcement'),
+            'sort_type' => 'announcement',
             'target' => t('admin_all_online_pilots'),
             'actor' => (string)($row['sender_callsign'] ?? 'ANNOUNCEMENT'),
             'detail' => preg_replace('/^\[ANNOUNCEMENT\]\s*/', '', (string)$row['message_text'])
         ];
     }
 
+    if ($search !== '') {
+        $needle = mb_strtolower($search, 'UTF-8');
+        $items = array_values(array_filter(
+            $items,
+            static function (array $item) use ($needle): bool {
+                $haystack = implode(' ', [
+                    $item['target'] ?? '',
+                    $item['actor'] ?? '',
+                    $item['title'] ?? '',
+                    $item['sort_type'] ?? '',
+                    $item['detail'] ?? '',
+                    $item['time'] ?? ''
+                ]);
+                return mb_strpos(mb_strtolower($haystack, 'UTF-8'), $needle) !== false;
+            }
+        ));
+    }
+
     usort(
         $items,
-        static function (array $a, array $b): int {
-            return (int)$b['sort_time'] <=> (int)$a['sort_time'];
+        static function (array $a, array $b) use ($sort, $direction): int {
+            if ($sort === 'date') {
+                $comparison = (int)$a['sort_time'] <=> (int)$b['sort_time'];
+            } else {
+                $field = $sort === 'type' ? 'title' : $sort;
+                $comparison = strnatcasecmp((string)$a[$field], (string)$b[$field]);
+            }
+            if ($comparison === 0) {
+                $comparison = (int)$a['sort_time'] <=> (int)$b['sort_time'];
+            }
+            return $direction === 'desc' ? -$comparison : $comparison;
         }
     );
 
     foreach ($items as &$item) {
         unset($item['sort_time']);
+        unset($item['sort_type']);
     }
     unset($item);
 
-    $total = $activityTotal + $announcementTotal;
+    $total = count($items);
     echo json_encode([
         'success' => true,
         'items' => array_slice($items, ($page - 1) * $perPage, $perPage),

@@ -17,7 +17,6 @@ try {
     if (empty($_SESSION['web_user_id']) || !validateVfnWebSession($pdo)) {
         http_response_code(401); throw new RuntimeException('login_required');
     }
-    ensureAtcSchema($pdo);
     $stmt = $pdo->prepare(
         "SELECT station_code,position_code,radar_boundary_code,is_spectator,can_control,user_id
          FROM atc_sessions WHERE user_id=:user AND session_token=:token AND is_active=1

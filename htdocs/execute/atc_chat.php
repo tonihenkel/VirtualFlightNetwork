@@ -35,7 +35,6 @@ try {
         throw new RuntimeException('login_required');
     }
 
-    ensureAtcSchema($pdo);
     $sessionStmt = $pdo->prepare(
         "SELECT * FROM atc_sessions
          WHERE user_id=:user_id AND session_token=:token AND is_active=1
@@ -53,7 +52,7 @@ try {
     }
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        if (!(int)$session['can_control'] || (int)$session['is_spectator']) {
+        if (!(int)$session['can_control'] || ((int)$session['is_spectator'] && !(int)($session['is_trainer'] ?? 0))) {
             http_response_code(403);
             throw new RuntimeException('atc_chat_receive_only');
         }
@@ -250,8 +249,30 @@ try {
     }
 
     $channel = strtolower(trim((string)($_GET['channel'] ?? 'frequency')));
-    if (!in_array($channel, ['frequency', 'nearby', 'unicom', 'private'], true)) $channel = 'frequency';
+    if (!in_array($channel, ['frequency', 'nearby', 'unicom', 'private', 'overview'], true)) $channel = 'frequency';
     $sinceId = max(0, (int)($_GET['since_id'] ?? 0));
+
+    if ($channel === 'overview') {
+        $userId = (int)$session['user_id'];
+        $frequency = normalizeChatFrequency((string)$session['frequency']);
+        $overview = ['frequency'=>0,'nearby'=>0,'unicom'=>0,'private'=>0];
+        if ($frequency !== null) {
+            $statement = $pdo->prepare("SELECT COALESCE(MAX(id),0) FROM chat_messages WHERE ((frequency=:frequency AND recipient_user_id IS NULL) OR (recipient_user_id=:announcement_user AND sender_callsign='ANNOUNCEMENT')) AND COALESCE(sender_user_id,0)<>:user_id");
+            $statement->execute(['frequency'=>$frequency,'announcement_user'=>$userId,'user_id'=>$userId]);
+            $overview['frequency'] = (int)$statement->fetchColumn();
+        }
+        $statement = $pdo->prepare("SELECT COALESCE(MAX(id),0) FROM chat_messages WHERE ((frequency='122.800' AND recipient_user_id IS NULL) OR (recipient_user_id=:announcement_user AND sender_callsign='ANNOUNCEMENT')) AND COALESCE(sender_user_id,0)<>:user_id");
+        $statement->execute(['announcement_user'=>$userId,'user_id'=>$userId]);
+        $overview['unicom'] = (int)$statement->fetchColumn();
+        $statement = $pdo->prepare("SELECT COALESCE(MAX(id),0) FROM chat_messages WHERE recipient_user_id=:user_id");
+        $statement->execute(['user_id'=>$userId]);
+        $overview['private'] = (int)$statement->fetchColumn();
+        $statement = $pdo->prepare("SELECT COALESCE(MAX(id),0) FROM atc_coordination_messages WHERE LEFT(sender_station,2)=LEFT(:station,2) AND sender_user_id<>:user_id AND created_at>=DATE_SUB(NOW(),INTERVAL 12 HOUR)");
+        $statement->execute(['station'=>(string)$session['station_code'],'user_id'=>$userId]);
+        $overview['nearby'] = (int)$statement->fetchColumn();
+        echo json_encode(['success'=>true,'last_ids'=>$overview], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+        exit;
+    }
 
     if ($channel === 'nearby') {
         $maxId = (int)$pdo->query('SELECT COALESCE(MAX(id),0) FROM atc_coordination_messages')->fetchColumn();
@@ -284,10 +305,12 @@ try {
              WHERE m.id>:since_id AND m.id<=:max_id
                AND m.recipient_user_id IS NOT NULL
                AND (m.recipient_user_id=:viewer_recipient OR m.sender_user_id=:viewer_sender2)
+               AND NOT (m.recipient_user_id=:viewer_announcement AND m.sender_callsign='ANNOUNCEMENT')
              ORDER BY m.id ASC LIMIT 100"
         );
         $stmt->execute(['viewer_sender'=>(int)$session['user_id'],'since_id'=>$floor,'max_id'=>$maxId,
-            'viewer_recipient'=>(int)$session['user_id'],'viewer_sender2'=>(int)$session['user_id']]);
+            'viewer_recipient'=>(int)$session['user_id'],'viewer_sender2'=>(int)$session['user_id'],
+            'viewer_announcement'=>(int)$session['user_id']]);
         echo json_encode(['success'=>true,'last_id'=>$maxId,'messages'=>$stmt->fetchAll(PDO::FETCH_ASSOC)], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
         exit;
     }
@@ -305,14 +328,15 @@ try {
                 message_text AS text, DATE_FORMAT(created_at,'%H:%i') AS time
          FROM chat_messages
          WHERE id>:since_id AND id<=:max_id
-           AND frequency=:frequency
-           AND recipient_user_id IS NULL
+           AND ((frequency=:frequency AND recipient_user_id IS NULL)
+                OR (recipient_user_id=:announcement_user AND sender_callsign='ANNOUNCEMENT'))
          ORDER BY id ASC LIMIT 100"
     );
     $messageStmt->execute([
         'since_id'=>$sinceId,
         'max_id'=>$maxId,
         'frequency'=>$frequency,
+        'announcement_user'=>(int)$session['user_id'],
     ]);
     echo json_encode([
         'success'=>true,

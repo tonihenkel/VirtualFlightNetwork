@@ -220,7 +220,7 @@ try {
          FROM atc_sessions a
          INNER JOIN users u ON u.id = a.user_id
          LEFT JOIN airports ap ON UPPER(ap.ident) = UPPER(a.station_code)
-         WHERE a.is_active = 1
+         WHERE a.is_active = 1 AND a.is_ready=1
            AND a.is_spectator = 0
            AND a.last_seen_at >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
          ORDER BY a.callsign"

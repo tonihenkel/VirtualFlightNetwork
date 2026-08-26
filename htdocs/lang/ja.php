@@ -1,6 +1,23 @@
 <?php
 
 return [
+    'admin_filter_filtered_chats'=>'フィルター済みチャット','admin_filter_filtered_chats_only'=>'フィルター済みチャットのみ表示',
+    'admin_activity_sort'=>'スタッフ活動を並べ替え','admin_activity_search_placeholder'=>'プレイヤー、スタッフ、活動、日付を検索 …','admin_activity_player'=>'プレイヤー','admin_activity_staff_member'=>'スタッフメンバー','admin_activity_type'=>'活動タイプ','admin_activity_date'=>'日付',
+    'admin_online_search_placeholder'=>'名前、コールサイン、役割、局、レーティングを検索 …',
+    'admin_online_users_tab'=>'オンライン','admin_online_users_title'=>'オンラインユーザー','admin_online_users_text'=>'フェーズとレーティングを含むアクティブなパイロット、管制官、訓練官、観戦者。フェーズ1は10分後に終了します。','admin_online_users_empty'=>'オンラインのユーザーはいません。','admin_online_role'=>'役割 / セッション','admin_online_role_pilot'=>'パイロット','admin_online_role_spectator'=>'観戦者','admin_online_role_controller'=>'管制官','admin_online_role_trainer'=>'訓練官','admin_online_role_atc_spectator'=>'ATC観戦者','admin_online_phase'=>'フェーズ','admin_online_reason_prompt'=>'理由を入力してください：','admin_online_ban_duration_prompt'=>'BAN期間（例：30min、12h、7d、permanent）：','admin_online_action_failed'=>'モデレーション操作に失敗しました。',
+    'atc_airport_watch_title' => '空港レイアウト', 'atc_airport_watch_open' => '空港を別ウィンドウで開く', 'atc_airport_layout_unavailable' => '空港レイアウトがありません',
+    'atc_position_denied' => 'あなたのATC資格ではこのポジションを担当できません。', 'atc_trainer_denied' => 'トレーナーモードを使用する権限がありません。', 'invalid_station_or_position' => '管制局識別子またはポジションが無効です。', 'station_position_unavailable' => '選択した管制局ではこのポジションを利用できません。', 'access_denied' => 'アクセスが拒否されました。',
+    'invalid_handoff_target' => 'ハンドオフ先の管制ポジションが無効です。',
+    'atc_nav_points' => 'ポイント', 'atc_nav_loading' => '読み込み中…', 'atc_nav_hidden' => '非表示', 'atc_nav_error' => 'エラー',
+    'atc_windows' => 'ウィンドウ', 'atc_window_close' => 'ウィンドウを閉じる',
+    'map_show_sector_waypoints' => 'レーダーセクター内の全ウェイポイントを表示',
+    'atc_map_context_title' => 'レーダーマップ', 'atc_atis_include_small' => '小規模飛行場も表示',
+    'atc_metar_only_available' => 'METARがある空港のみ', 'atc_metar_runway_estimate' => '推定',
+    'atc_position_busy' => 'このATCポジションは使用中または準備中です。',
+    'atc_ready_title' => 'フェーズ1・準備', 'atc_ready_loading' => 'レーダーとセクターデータを読み込んでいます…',
+    'atc_ready_loaded' => 'レーダーとセクターの準備が完了しました。航法点はバックグラウンドで読み込みを続けます。',
+    'atc_ready_open_position' => '準備完了・ポジションを開く', 'atc_ready_activating' => 'ポジションを開いています…',
+    'atc_ready_voice_waiting' => '音声通信はポジションが開くのを待っています。',
     'feature_cpdlc_title' => 'Hoppie 経由の CPDLC',
     'feature_cpdlc_text' => '対応する FMC と MCDU は、Hoppie を通じて VFN ATC クライアントの管制官と直接通信します。',
     'feature_atc_client_title' => 'ATCレーダークライアント',

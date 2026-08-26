@@ -64,6 +64,12 @@ try {
         trim((string)($_GET['date_from'] ?? ''));
     $dateTo =
         trim((string)($_GET['date_to'] ?? ''));
+    $filteredOnly =
+        (string)($_GET['filtered_only'] ?? '') === '1';
+
+    if ($filteredOnly) {
+        $where[] = 'm.was_filtered = 1';
+    }
 
     if ($search !== '') {
         $where[] =

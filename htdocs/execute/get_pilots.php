@@ -567,7 +567,7 @@ try {
          FROM atc_sessions a
          INNER JOIN users u ON u.id = a.user_id
          LEFT JOIN airports ap ON UPPER(ap.ident) = UPPER(a.station_code)
-         WHERE a.is_active = 1 AND (a.is_spectator = 0 OR a.is_trainer = 1)
+         WHERE a.is_active = 1 AND a.is_ready=1 AND (a.is_spectator = 0 OR a.is_trainer = 1)
            AND a.last_seen_at >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
          ORDER BY a.station_code, a.position_code, a.callsign"
     );
@@ -591,10 +591,7 @@ try {
     ));
     foreach ($atcs as &$atc) {
         $atc['is_trainer'] = (int)($atc['is_trainer'] ?? 0) === 1;
-        if ($atc['is_trainer']) {
-            // Trainers are observers on the public map, not active control positions.
-            $atc['frequency'] = '';
-        } elseif (normalizeAtcVoiceFrequency((string)($atc['frequency'] ?? '')) === '') {
+        if (normalizeAtcVoiceFrequency((string)($atc['frequency'] ?? '')) === '') {
             $knownFrequencies = findAtcFrequencies(
                 $pdo,
                 (string)($atc['station_code'] ?? ''),
@@ -645,7 +642,7 @@ try {
              FROM atc_session_atis_airports s
              INNER JOIN atc_sessions a ON a.id = s.session_id
              INNER JOIN users u ON u.id = a.user_id
-             WHERE a.is_active = 1 AND a.is_spectator = 0
+             WHERE a.is_active = 1 AND a.is_ready=1 AND (a.is_spectator = 0 OR a.is_trainer=1)
                AND a.last_seen_at >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
              ORDER BY s.airport_icao, a.callsign"
         );

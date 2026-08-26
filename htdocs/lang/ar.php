@@ -1,6 +1,23 @@
 <?php
 
 return [
+    'admin_filter_filtered_chats'=>'الدردشات المفلترة','admin_filter_filtered_chats_only'=>'عرض الدردشات المفلترة فقط',
+    'admin_activity_sort'=>'ترتيب أنشطة الطاقم','admin_activity_search_placeholder'=>'ابحث عن لاعب أو عضو طاقم أو نشاط أو تاريخ …','admin_activity_player'=>'اللاعب','admin_activity_staff_member'=>'عضو الطاقم','admin_activity_type'=>'نوع النشاط','admin_activity_date'=>'التاريخ',
+    'admin_online_search_placeholder'=>'ابحث بالاسم أو النداء أو الدور أو المحطة أو التصنيف …',
+    'admin_online_users_tab'=>'متصل','admin_online_users_title'=>'المستخدمون المتصلون','admin_online_users_text'=>'الطيارون والمراقبون والمدربون والمتفرجون النشطون مع المرحلة والتصنيفات. تنتهي المرحلة 1 بعد 10 دقائق.','admin_online_users_empty'=>'لا يوجد أحد متصل.','admin_online_role'=>'الدور / الجلسة','admin_online_role_pilot'=>'طيار','admin_online_role_spectator'=>'متفرج','admin_online_role_controller'=>'مراقب','admin_online_role_trainer'=>'مدرب','admin_online_role_atc_spectator'=>'متفرج ATC','admin_online_phase'=>'المرحلة','admin_online_reason_prompt'=>'أدخل السبب:','admin_online_ban_duration_prompt'=>'مدة الحظر (مثال 30min أو 12h أو 7d أو permanent):','admin_online_action_failed'=>'فشل إجراء الإشراف.',
+    'atc_airport_watch_title' => 'مخطط المطار', 'atc_airport_watch_open' => 'فتح المطار في نافذة منفصلة', 'atc_airport_layout_unavailable' => 'مخطط المطار غير متوفر',
+    'atc_position_denied' => 'تصنيف المراقبة الجوية الخاص بك لا يسمح بهذا الموقع.', 'atc_trainer_denied' => 'غير مصرح لك باستخدام وضع المدرب.', 'invalid_station_or_position' => 'معرّف المحطة أو الموقع غير صالح.', 'station_position_unavailable' => 'هذا الموقع غير متاح في المحطة المحددة.', 'access_denied' => 'تم رفض الوصول.',
+    'invalid_handoff_target' => 'موضع الهدف لعملية التسليم غير صالح.',
+    'atc_nav_points' => 'نقاط', 'atc_nav_loading' => 'جارٍ التحميل…', 'atc_nav_hidden' => 'مخفي', 'atc_nav_error' => 'خطأ',
+    'atc_windows' => 'النوافذ', 'atc_window_close' => 'إغلاق النافذة',
+    'map_show_sector_waypoints' => 'إظهار جميع نقاط المسار في قطاع الرادار',
+    'atc_map_context_title' => 'خريطة الرادار', 'atc_atis_include_small' => 'إظهار المطارات الصغيرة أيضًا',
+    'atc_metar_only_available' => 'المطارات التي يتوفر لها METAR فقط', 'atc_metar_runway_estimate' => 'تقديري',
+    'atc_position_busy' => 'موقع المراقبة هذا مشغول أو قيد الإعداد حاليًا.',
+    'atc_ready_title' => 'المرحلة 1 · التحضير', 'atc_ready_loading' => 'جارٍ تحميل الرادار وبيانات القطاع…',
+    'atc_ready_loaded' => 'الرادار والقطاع جاهزان. يمكن متابعة تحميل نقاط الملاحة في الخلفية.',
+    'atc_ready_open_position' => 'جاهز · فتح الموقع', 'atc_ready_activating' => 'جارٍ فتح الموقع…',
+    'atc_ready_voice_waiting' => 'الاتصال الصوتي ينتظر فتح الموقع.',
     'feature_cpdlc_title' => 'اتصال CPDLC عبر Hoppie',
     'feature_cpdlc_text' => 'تتواصل أنظمة FMC وMCDU المتوافقة عبر Hoppie مباشرة مع المراقبين في عميل VFN للمراقبة الجوية.',
     'feature_atc_client_title' => 'عميل رادار المراقبة الجوية',

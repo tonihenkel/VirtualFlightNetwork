@@ -3658,26 +3658,27 @@ void InitializePluginPaths()
         nullptr
     );
 
-    std::string fullPath = pluginPath;
+    std::filesystem::path binaryPath(pluginPath);
+    std::filesystem::path pluginRoot = binaryPath.parent_path();
 
-    size_t lastSlash =
-        fullPath.find_last_of("\\/");
-
-    if (lastSlash != std::string::npos)
+    // In a normal X-Plane installation the native binary lives in
+    //   <plugin>/64/win.xpl   or   <plugin>/64/lin.xpl
+    // while configuration, languages, and XPMP2 resources live below the
+    // plugin root. Keep supporting the flat development installation too.
+    if (pluginRoot.filename() == "64")
     {
-        gPluginDirectory =
-            fullPath.substr(0, lastSlash);
-    }
-    else
-    {
-        gPluginDirectory = ".";
+        pluginRoot = pluginRoot.parent_path();
     }
 
-    gConfigPath =
-        gPluginDirectory + "\\config.txt";
+    if (pluginRoot.empty())
+    {
+        pluginRoot = ".";
+    }
 
+    gPluginDirectory = pluginRoot.lexically_normal().string();
+    gConfigPath = (pluginRoot / "config.txt").string();
     gLanguageDirectory =
-        gPluginDirectory + "\\resources\\languages";
+        (pluginRoot / "resources" / "languages").string();
 
     XPLMDebugString(T("debug.plugin_path"));
     XPLMDebugString(gPluginDirectory.c_str());
@@ -4917,21 +4918,30 @@ void ApplyPluginWindowScale()
 
 std::string GetPrimaryChatFrequency()
 {
-    int com1 =
-        gCom1 ? XPLMGetDatai(gCom1) : 0;
+    // Text radio follows the same selected transmit radio as voice. Previously
+    // chat always used COM1, so a pilot transmitting on COM2 wrote messages to
+    // the wrong frequency even though the UI showed COM2 as the TX radio.
+    XPLMDataRef primaryCom =
+        gVoiceTransmitCom == 2 ? gCom2 : gCom1;
+
+    XPLMDataRef fallbackCom =
+        gVoiceTransmitCom == 2 ? gCom1 : gCom2;
+
+    int primary =
+        primaryCom ? XPLMGetDatai(primaryCom) : 0;
 
     std::string frequency =
-        FormatComFrequency(com1);
+        FormatComFrequency(primary);
 
     if (frequency != "0.000")
     {
         return frequency;
     }
 
-    int com2 =
-        gCom2 ? XPLMGetDatai(gCom2) : 0;
+    int fallback =
+        fallbackCom ? XPLMGetDatai(fallbackCom) : 0;
 
-    return FormatComFrequency(com2);
+    return FormatComFrequency(fallback);
 }
 
 

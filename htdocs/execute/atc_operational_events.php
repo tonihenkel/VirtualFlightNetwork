@@ -26,7 +26,6 @@ try {
     if (empty($_SESSION['web_user_id']) || !validateVfnWebSession($pdo)) {
         operationalEventReply(['success' => false, 'message' => 'login_required'], 401);
     }
-    ensureAtcSchema($pdo);
     $token = (string)($_SESSION['atc_session_token'] ?? '');
     $sessionStmt = $pdo->prepare(
         "SELECT id,user_id,station_code,position_code,radar_boundary_code,is_spectator

@@ -1,6 +1,14 @@
 <?php
 
 return [
+    'admin_filter_filtered_chats'=>'Gefilterte Chats','admin_filter_filtered_chats_only'=>'Nur gefilterte Chats anzeigen',
+    'admin_activity_sort'=>'Staff-Aktivitäten sortieren','admin_activity_search_placeholder'=>'Spieler, Staff-Mitglied, Aktivität oder Datum suchen …','admin_activity_player'=>'Spieler','admin_activity_staff_member'=>'Staff-Mitglied','admin_activity_type'=>'Aktivitätstyp','admin_activity_date'=>'Datum',
+    'admin_online_search_placeholder'=>'Name, Callsign, Rolle, Station oder Rang suchen …',
+    'admin_online_users_tab'=>'Online','admin_online_users_title'=>'Online-Spieler','admin_online_users_text'=>'Aktive Piloten, Lotsen, Trainer und Zuschauer mit Phase und Ratings. Phase 1 endet nach 10 Minuten.','admin_online_users_empty'=>'Niemand ist online.','admin_online_role'=>'Rolle / Sitzung','admin_online_role_pilot'=>'Pilot','admin_online_role_spectator'=>'Zuschauer','admin_online_role_controller'=>'Lotse','admin_online_role_trainer'=>'Trainer','admin_online_role_atc_spectator'=>'ATC-Zuschauer','admin_online_phase'=>'Phase','admin_online_reason_prompt'=>'Grund eingeben:','admin_online_ban_duration_prompt'=>'Bandauer (z. B. 30min, 12h, 7d oder permanent):','admin_online_action_failed'=>'Moderationsaktion fehlgeschlagen.',
+    'atc_airport_watch_title' => 'Airport-Layout', 'atc_airport_watch_open' => 'Airport in eigenem Fenster anzeigen', 'atc_airport_layout_unavailable' => 'Kein Airport-Layout verfügbar',
+    'atc_position_denied' => 'Dein ATC-Rating erlaubt diese Position nicht.', 'atc_trainer_denied' => 'Du bist für den Trainermodus nicht berechtigt.', 'invalid_station_or_position' => 'Die Stationskennung oder Position ist ungültig.', 'station_position_unavailable' => 'Diese Position ist an der gewählten Station nicht verfügbar.', 'access_denied' => 'Zugriff verweigert.',
+    'invalid_handoff_target' => 'Ungültige Zielposition für die Übergabe.',
+    'atc_nav_points' => 'Punkte', 'atc_nav_loading' => 'wird geladen…', 'atc_nav_hidden' => 'ausgeblendet', 'atc_nav_error' => 'Fehler',
     'feature_cpdlc_title' => 'CPDLC über Hoppie',
     'feature_cpdlc_text' => 'Kompatible FMC- und MCDU-Systeme kommunizieren über Hoppie direkt mit den Lotsen im VFN-ATC-Client.',
     'feature_atc_client_title' => 'ATC-Radar-Client',
@@ -12,6 +20,8 @@ return [
     'auth_forgot_password' => 'Passwort vergessen?',
     'auth_ban_appeal' => 'Entbannungsantrag stellen',
     'atc_options' => 'Optionen',
+    'atc_windows' => 'Fenster',
+    'atc_window_close' => 'Fenster schließen',
     'atc_options_navigation' => 'Navigationspunkte anzeigen',
     'atc_options_hide_invisible' => 'Unsichtbare OPs ausblenden',
     'atc_options_invisible_atc' => 'Als ATC unsichtbar',
@@ -977,7 +987,7 @@ return [
         'Chat / Frequenzueberwachung',
 
     'admin_tab_activity' =>
-        'Staff-Aktivitaeten',
+        'Staff-Aktivitäten',
 
     'admin_tab_voice' =>
         'Voice Monitor',
@@ -1146,13 +1156,13 @@ return [
         'Nachricht',
 
     'admin_staff_activity_title' =>
-        'Staff-Aktivitaeten',
+        'Staff-Aktivitäten',
 
     'admin_staff_activity_text' =>
         'Kicks, Bans, Announcements und weitere Staff-relevante Ereignisse.',
 
     'admin_no_activity' =>
-        'Keine Staff-Aktivitaeten vorhanden.',
+        'Keine Staff-Aktivitäten vorhanden.',
 
     'admin_activity_announcement' =>
         'Announcement',
@@ -1587,6 +1597,7 @@ return [
     'map_navigation_region' => 'ICAO-Region',
     'map_navigation_frequency' => 'Frequenz',
     'map_navigation_waypoint' => 'Wegpunkt',
+    'map_show_sector_waypoints' => 'Alle Wegpunkte im Radarbereich anzeigen',
     'map_navigation_navaid' => 'Navigationsanlage',
     'map_navigation_airway' => 'Luftstraße',
     'map_airway_segments' => 'Wegpunkte',
@@ -1839,8 +1850,17 @@ return [
     'atc_voice_connected' => 'Voice verbunden.',
     'atc_voice_receive_only' => 'Nur Empfang',
     'atc_atis_control' => 'Flughafen-ATIS',
+    'atc_ready_title' => 'Phase 1 · Vorbereitung',
+    'atc_ready_loading' => 'Radar und Sektordaten werden geladen …',
+    'atc_ready_loaded' => 'Radar und Sektor sind bereit. Navigationspunkte können im Hintergrund weiterladen.',
+    'atc_ready_open_position' => 'Bereit · Position öffnen',
+    'atc_ready_activating' => 'Position wird geöffnet …',
+    'atc_ready_voice_waiting' => 'Voice wartet auf Freigabe der Position.',
+    'atc_map_context_title' => 'Radarkarte',
+    'atc_atis_include_small' => 'Auch kleinere Flugplätze anzeigen',
     'atc_metar_watch' => 'METAR- & Flughafen-Watch',
     'atc_metar_search_placeholder' => 'ICAO suchen …',
+    'atc_metar_only_available' => 'Nur Flughäfen mit vorhandenem METAR',
     'atc_metar_jump_airport' => 'Zum Flughafen',
     'atc_metar_loading' => 'METAR-Daten werden geladen …',
     'atc_metar_empty' => 'Keine METAR-Station im Zuständigkeitsbereich.',
@@ -1865,6 +1885,7 @@ return [
     'atc_atis_current' => 'Aktuelle Ansage',
     'atc_atis_manual' => 'Manuelle Vorgaben aktiv',
     'atc_atis_auto' => 'Automatische Auswahl aktiv',
+    'atc_metar_runway_estimate' => 'Voraussichtlich',
     'atc_chat' => 'Frequenz-Chat',
     'atc_chat_frequency' => 'Frequenz',
     'atc_chat_tab_frequency' => 'Eigene Frequenz',
@@ -1973,5 +1994,6 @@ return [
     'atc_traffic_outbound' => 'Outbound',
     'atc_traffic_through' => 'Durchflug',
     'atc_session_required' => 'Eine aktive ATC- oder Zuschauersitzung ist erforderlich.',
+    'atc_position_busy' => 'Diese ATC-Position ist bereits besetzt oder wird gerade vorbereitet.',
     'atc_control_session_required' => 'Diese Aktion ist nur mit einer aktiven Lotsenposition möglich.',
 ];

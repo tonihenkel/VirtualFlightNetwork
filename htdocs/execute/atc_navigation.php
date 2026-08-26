@@ -28,6 +28,35 @@ function navigationCoordinates($value, array &$latitudes, array &$longitudes): v
     foreach ($value as $child) navigationCoordinates($child, $latitudes, $longitudes);
 }
 
+function navigationPointInScope(
+    float $latitude,
+    float $longitude,
+    array $features,
+    array $responsibleAirports,
+    float $airportRadiusNm = 35.0
+): bool {
+    foreach ($features as $feature) {
+        if (pointInAtisGeometry($longitude, $latitude, $feature['geometry'] ?? [])) {
+            return true;
+        }
+    }
+    // Airport procedures and VFR entry/exit points can extend across an ACC
+    // or APP boundary. Keep the complete local airport environment visible
+    // whenever that airport belongs to the controller's responsibility.
+    foreach ($responsibleAirports as $airport) {
+        $airportLatitude = $airport['latitude'] ?? $airport['latitude_deg'] ?? null;
+        $airportLongitude = $airport['longitude'] ?? $airport['longitude_deg'] ?? null;
+        if (!is_numeric($airportLatitude) || !is_numeric($airportLongitude)) continue;
+        if (atisDistanceNm(
+            (float)$airportLatitude,
+            (float)$airportLongitude,
+            $latitude,
+            $longitude
+        ) <= $airportRadiusNm) return true;
+    }
+    return false;
+}
+
 function navigationFetch(string $kind, float $latitude, float $longitude, float $radius, int $page): array
 {
     $parameters = [
@@ -77,7 +106,6 @@ try {
     if (empty($_SESSION['web_user_id']) || !validateVfnWebSession($pdo)) {
         navigationJson(['success' => false, 'message' => 'login_required'], 401);
     }
-    ensureAtcSchema($pdo);
     $stmt = $pdo->prepare(
         "SELECT a.* FROM atc_sessions a
          WHERE a.user_id=:user AND a.session_token=:token AND a.is_active=1
@@ -89,11 +117,30 @@ try {
     ]);
     $session = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$session) navigationJson(['success' => false, 'message' => 'atc_session_inactive'], 409);
+    $positionCode = strtoupper((string)$session['position_code']);
+    $scopeCacheKey = hash('sha256', implode('|', [
+        (string)$session['station_code'], $positionCode,
+        (string)($session['radar_boundary_code'] ?? ''),
+    ]));
+    $scopeCache = $_SESSION['atc_navigation_scope_cache'] ?? null;
+    if (is_array($scopeCache) && ($scopeCache['key'] ?? '') === $scopeCacheKey
+        && time() - (int)($scopeCache['created_at'] ?? 0) < 21600) {
+        $features = is_array($scopeCache['features'] ?? null) ? $scopeCache['features'] : [];
+        $responsibleAirports = is_array($scopeCache['airports'] ?? null) ? $scopeCache['airports'] : [];
+    } else {
+        $features = readAtisScopeFeatures($session);
+        $responsibleAirports = in_array($positionCode, ['APP', 'DEP', 'CTR'], true)
+            ? getAtisAirportsForSession($pdo, $session, true)
+            : [];
+        $_SESSION['atc_navigation_scope_cache'] = [
+            'key' => $scopeCacheKey, 'created_at' => time(),
+            'features' => $features, 'airports' => $responsibleAirports,
+        ];
+    }
     // Release the PHP session lock before the external AIRAC requests. Otherwise
     // the navigation loader can delay the ATC heartbeat while loading pages.
     if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
 
-    $features = readAtisScopeFeatures($session);
     // Aerodrome positions use the local airport environment. Applying the
     // parent sector polygon here could hide valid VFR reporting points.
     if (in_array(strtoupper((string)$session['position_code']), ['INFO', 'DEL', 'GND', 'TWR'], true)) {
@@ -107,9 +154,12 @@ try {
     if ($latitudes && $longitudes) {
         $latitude = (min($latitudes) + max($latitudes)) / 2;
         $longitude = (min($longitudes) + max($longitudes)) / 2;
-        $radius = max(20.0, min(600.0, atisDistanceNm(
+        // AIRAC's nearby endpoint accepts a maximum radius of 250 NM. Larger
+        // FIR bounding circles return HTTP 422 and previously produced an
+        // apparently successful but empty navigation result.
+        $radius = max(20.0, min(250.0, atisDistanceNm(
             $latitude, $longitude, min($latitudes), min($longitudes)
-        ) * 1.15));
+        ) * 1.15 + 35.0));
     } else {
         $airport = $pdo->prepare(
             "SELECT latitude_deg,longitude_deg FROM airports
@@ -137,14 +187,9 @@ try {
             $lon = $coordinates['lon'] ?? $item['longitude'] ?? null;
             if (!is_numeric($lat) || !is_numeric($lon)) continue;
             if ($features) {
-                $inside = false;
-                foreach ($features as $feature) {
-                    if (pointInAtisGeometry((float)$lon, (float)$lat, $feature['geometry'] ?? [])) {
-                        $inside = true;
-                        break;
-                    }
-                }
-                if (!$inside) continue;
+                if (!navigationPointInScope(
+                    (float)$lat, (float)$lon, $features, $responsibleAirports
+                )) continue;
             }
             $identifier = strtoupper(trim((string)($item['identifier'] ?? '')));
             if ($identifier === '') continue;
@@ -172,12 +217,6 @@ try {
             }
             $vfrPayload = json_decode($vfrJson, true);
         }
-        // Local VFR reporting points are a valid navigation source of their
-        // own. Keep them available even if the remote AIRAC endpoint has a
-        // temporary outage.
-        if (is_array($vfrPayload) && isset($vfrPayload['points'])) {
-            $sourceAvailable = true;
-        }
         foreach ((array)($vfrPayload['points'] ?? []) as $item) {
             $lat = $item['latitude'] ?? null;
             $lon = $item['longitude'] ?? null;
@@ -185,14 +224,9 @@ try {
             $lat = (float)$lat;
             $lon = (float)$lon;
             if ($features) {
-                $inside = false;
-                foreach ($features as $feature) {
-                    if (pointInAtisGeometry($lon, $lat, $feature['geometry'] ?? [])) {
-                        $inside = true;
-                        break;
-                    }
-                }
-                if (!$inside) continue;
+                if (!navigationPointInScope(
+                    $lat, $lon, $features, $responsibleAirports
+                )) continue;
             } elseif (atisDistanceNm($latitude, $longitude, $lat, $lon) > $radius) {
                 continue;
             }
@@ -206,6 +240,9 @@ try {
                 'longitude' => $lon,
                 'compulsory' => !empty($item['compulsory']),
             ];
+            // The local file only counts as an available source when it
+            // actually contributes a point to this controller's scope.
+            $sourceAvailable = true;
         }
     }
     if (!$sourceAvailable) navigationJson(['success' => false, 'message' => 'airac_unavailable'], 502);

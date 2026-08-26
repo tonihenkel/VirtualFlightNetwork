@@ -61,7 +61,7 @@ function atcGeometryEdgeDistanceNm(float $latitude,float $longitude,array $geome
 try {
     $pdo=new PDO("mysql:host=$dbHost;dbname=$dbName;charset=utf8mb4",$dbUser,$dbPass,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
     if(empty($_SESSION['web_user_id'])||!validateVfnWebSession($pdo)){http_response_code(401);throw new RuntimeException('login_required');}
-    ensureAtcSchema($pdo);$token=(string)($_SESSION['atc_session_token']??'');
+    $token=(string)($_SESSION['atc_session_token']??'');
     $sessionStmt=$pdo->prepare("SELECT a.*,u.op_permission FROM atc_sessions a INNER JOIN users u ON u.id=a.user_id WHERE a.user_id=:uid AND a.session_token=:token AND a.is_active=1 AND a.last_seen_at>=DATE_SUB(NOW(),INTERVAL 30 SECOND) LIMIT 1");
     $sessionStmt->execute(['uid'=>(int)$_SESSION['web_user_id'],'token'=>$token]);$session=$sessionStmt->fetch(PDO::FETCH_ASSOC);
     if(!$session){http_response_code(409);throw new RuntimeException('atc_session_inactive');}
