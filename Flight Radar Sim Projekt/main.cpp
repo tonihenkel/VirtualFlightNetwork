@@ -158,6 +158,63 @@ inline int strncpy_s(
 #define GL_BGRA_EXT 0x80E1
 #endif
 
+void VfnDebugString(const char* text)
+{
+    if (text == nullptr || *text == '\0')
+    {
+        return;
+    }
+
+    static std::mutex logMutex;
+    static bool atLineStart = true;
+    std::lock_guard<std::mutex> lock(logMutex);
+
+    const char* cursor = text;
+    while (*cursor != '\0')
+    {
+        if (atLineStart)
+        {
+            const auto now = std::chrono::system_clock::now();
+            const std::time_t seconds =
+                std::chrono::system_clock::to_time_t(now);
+            std::tm localTime = {};
+            localtime_s(&localTime, &seconds);
+            const auto milliseconds =
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now.time_since_epoch()
+                ).count() % 1000;
+
+            char prefix[40] = {};
+            std::snprintf(
+                prefix,
+                sizeof(prefix),
+                "[%04d-%02d-%02d %02d:%02d:%02d.%03lld] ",
+                localTime.tm_year + 1900,
+                localTime.tm_mon + 1,
+                localTime.tm_mday,
+                localTime.tm_hour,
+                localTime.tm_min,
+                localTime.tm_sec,
+                static_cast<long long>(milliseconds)
+            );
+            XPLMDebugString(prefix);
+            atLineStart = false;
+        }
+
+        const char* newline = std::strchr(cursor, '\n');
+        if (newline == nullptr)
+        {
+            XPLMDebugString(cursor);
+            break;
+        }
+
+        const std::string linePart(cursor, newline + 1);
+        XPLMDebugString(linePart.c_str());
+        atLineStart = true;
+        cursor = newline + 1;
+    }
+}
+
 static std::string gPluginDirectory;
 static std::string gConfigPath;
 static std::string gLanguageDirectory;
@@ -265,6 +322,8 @@ static bool gHideInvisibleTraffic = false;
 static bool gCloseFlightplanAfterSend = false;
 static int gPositionUpdateFailureCount = 0;
 static float gPositionUpdateFirstFailureTime = -1.0f;
+static float gLastPositionUpdateFailureLogTime = -1.0f;
+static std::string gLastPositionUpdateFailureMessage = "";
 static std::atomic<bool> gPositionUpdateInProgress(false);
 static std::atomic<bool> gPositionUpdateResultReady(false);
 static std::atomic<bool> gPositionUpdateLastSuccess(true);
@@ -996,16 +1055,23 @@ public:
     int userId = 0;
     int missedPolls = 0;
 
-    bool GetCameraTarget(double& latitude, double& longitude,
-                         double& altitudeFeet, float& heading) const
+    bool GetCameraTargetLocal(double& x, double& y, double& z,
+                              float& heading)
     {
         if (!hasPosition)
         {
             return false;
         }
-        latitude = currentLatitude;
-        longitude = currentLongitude;
-        altitudeFeet = currentAltitudeFeet;
+
+        // Follow the aircraft at its actual rendered XPMP2 position. Ground
+        // traffic is clamped to the receiver's local scenery after SetLocation,
+        // so converting its network altitude (training aircraft use 0 ft on
+        // the ground) would point the camera below the visible model.
+        x = drawInfo.x;
+        y = targetOnGround && hasGroundProbeHeight
+            ? groundLocalY + GetVertOfs()
+            : drawInfo.y;
+        z = drawInfo.z;
         heading = currentHeading;
         return true;
     }
@@ -1816,7 +1882,7 @@ bool StartVoiceCapture()
     if (result != MMSYSERR_NOERROR)
     {
         gVoiceWaveIn = nullptr;
-        XPLMDebugString("VFN Voice: microphone could not be opened.\n");
+        VfnDebugString("VFN Voice: microphone could not be opened.\n");
         return false;
     }
 
@@ -2014,7 +2080,7 @@ void ProcessIncomingVoiceMessage(const std::string& message)
     if (type == "hello" && message.find("\"success\":true") != std::string::npos)
     {
         gVoiceAuthenticated = true;
-        XPLMDebugString("VFN Voice: authenticated.\n");
+        VfnDebugString("VFN Voice: authenticated.\n");
         SendVoiceState();
         if (gVoicePttActive && !gSpectatorMode)
         {
@@ -3640,9 +3706,9 @@ void LoadLanguage()
             "Hauptfenster oeffnen / schliessen";
     }
 
-    XPLMDebugString("Flight Radar Plugin: Language loaded: ");
-    XPLMDebugString(gCurrentLanguage.c_str());
-    XPLMDebugString("\n");
+    VfnDebugString("Flight Radar Plugin: Language loaded: ");
+    VfnDebugString(gCurrentLanguage.c_str());
+    VfnDebugString("\n");
 }
 
 
@@ -3680,9 +3746,9 @@ void InitializePluginPaths()
     gLanguageDirectory =
         (pluginRoot / "resources" / "languages").string();
 
-    XPLMDebugString(T("debug.plugin_path"));
-    XPLMDebugString(gPluginDirectory.c_str());
-    XPLMDebugString("\n");
+    VfnDebugString(T("debug.plugin_path"));
+    VfnDebugString(gPluginDirectory.c_str());
+    VfnDebugString("\n");
 }
 
 
@@ -3887,37 +3953,21 @@ std::string GetFlagImagePath(
     const std::string& code
 )
 {
-    std::vector<std::string> candidates;
+    const std::filesystem::path pluginDirectory(gPluginDirectory);
+    const std::string fileName = code + ".png";
+    const std::vector<std::filesystem::path> candidates = {
+        pluginDirectory / "resources" / "images" / "flags" / fileName,
+        pluginDirectory / "images" / "flags" / fileName,
+        pluginDirectory.parent_path() / "resources" / "images" / "flags" / fileName,
+        pluginDirectory.parent_path() / "images" / "flags" / fileName
+    };
 
-    candidates.push_back(
-        gPluginDirectory + "\\images\\flags\\" + code + ".png"
-    );
-
-    candidates.push_back(
-        gPluginDirectory + "\\resources\\images\\flags\\" + code + ".png"
-    );
-
-    candidates.push_back(
-        gPluginDirectory + "\\..\\images\\flags\\" + code + ".png"
-    );
-
-    candidates.push_back(
-        gPluginDirectory + "\\..\\..\\images\\flags\\" + code + ".png"
-    );
-
-    candidates.push_back(
-        "C:\\Users\\tonih\\Desktop\\Xplane Development\\Flight Radar Sim Projekt\\htdocs\\images\\flags\\" + code + ".png"
-    );
-
-    candidates.push_back(
-        "C:\\xampp\\htdocs\\images\\flags\\" + code + ".png"
-    );
-
-    for (const std::string& candidate : candidates)
+    for (const std::filesystem::path& candidate : candidates)
     {
-        if (FileExists(candidate))
+        const std::string candidatePath = candidate.lexically_normal().string();
+        if (FileExists(candidatePath))
         {
-            return candidate;
+            return candidatePath;
         }
     }
 
@@ -4111,6 +4161,19 @@ void DrawTextureImage(
         return;
     }
 
+    // X-Plane does not guarantee that the OpenGL state left by the previous
+    // drawing callback is suitable for textured quads. In particular, merely
+    // enabling GL_TEXTURE_2D is insufficient when no texture unit is active.
+    XPLMSetGraphicsState(
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        0
+    );
+
     glEnable(GL_TEXTURE_2D);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -4146,7 +4209,17 @@ void LoadFlagTextures()
     for (int index = 0; index < gPluginLanguageCount; ++index)
     {
         TextureImage texture = { 0, 0, 0, false };
-        LoadPngTexture(GetFlagImagePath(gPluginLanguages[index].flag), texture);
+        const std::string flagPath =
+            GetFlagImagePath(gPluginLanguages[index].flag);
+
+        if (!LoadPngTexture(flagPath, texture))
+        {
+            VfnDebugString("VFN Plugin: flag texture could not be loaded: ");
+            VfnDebugString(gPluginLanguages[index].flag);
+            VfnDebugString(" (");
+            VfnDebugString(flagPath.empty() ? "file not found" : flagPath.c_str());
+            VfnDebugString(")\n");
+        }
         gLanguageFlagTextures[gPluginLanguages[index].code] = texture;
     }
 }
@@ -4191,7 +4264,7 @@ void CreateDefaultConfigIfMissing()
 
     if (!configFile.is_open())
     {
-        XPLMDebugString(T("debug.config_create_failed"));
+        VfnDebugString(T("debug.config_create_failed"));
         return;
     }
 
@@ -4201,7 +4274,7 @@ void CreateDefaultConfigIfMissing()
 
     configFile.close();
 
-    XPLMDebugString(T("debug.config_created"));
+    VfnDebugString(T("debug.config_created"));
 }
 
 
@@ -4225,7 +4298,7 @@ void LoadConfig()
 
     if (!configFile.is_open())
     {
-        XPLMDebugString(T("debug.config_load_failed"));
+        VfnDebugString(T("debug.config_load_failed"));
         return;
     }
 
@@ -4309,16 +4382,16 @@ void LoadConfig()
 
     if (gDebugEnabled)
     {
-        XPLMDebugString(T("debug.debug_enabled"));
+        VfnDebugString(T("debug.debug_enabled"));
     }
     else
     {
-        XPLMDebugString(T("debug.debug_disabled"));
+        VfnDebugString(T("debug.debug_disabled"));
     }
 
-    XPLMDebugString(T("debug.server_address"));
-    XPLMDebugString(gServerAddress.c_str());
-    XPLMDebugString("\n");
+    VfnDebugString(T("debug.server_address"));
+    VfnDebugString(gServerAddress.c_str());
+    VfnDebugString("\n");
 }
 
 
@@ -4848,7 +4921,7 @@ void SaveConfig()
 
     if (!configFile.is_open())
     {
-        XPLMDebugString(T("debug.config_create_failed"));
+        VfnDebugString(T("debug.config_create_failed"));
         return;
     }
 
@@ -4883,33 +4956,80 @@ void ApplyPluginWindowScale()
 
     XPLMWindowID windows[] = {
         gCustomLoginWindow, gCompactWindow, gLogoutConfirmWindow,
-        gSettingsWindow, gAtcWindow, gPlayersWindow, gMessagesWindow,
+        gSettingsWindow, gCpdlcWindow, gAtcWindow, gPlayersWindow, gMessagesWindow,
         gDatisWindow, gKickNoticeWindow, gWebFlightplanSelectorWindow,
         gCustomFlightplanWindow, gFrequencyWindow
+    };
+
+    const auto scaled = [target](int value)
+    {
+        return (std::max)(1, value * target / 100);
     };
 
     for (XPLMWindowID window : windows)
     {
         if (window == nullptr) continue;
-        int left, top, right, bottom;
-        XPLMGetWindowGeometry(window, &left, &top, &right, &bottom);
-        int minimumWidth = 240;
-        int minimumHeight = 180;
+
+        // Most VFN windows intentionally have fixed resize limits. Temporarily
+        // relax those limits so the global scale setting can change their
+        // geometry, then restore limits at the newly selected scale.
+        XPLMSetWindowResizingLimits(window, 1, 1, 4096, 4096);
+
+        int width = 0;
+        int height = 0;
+        if (XPLMWindowIsPoppedOut(window))
+        {
+            int left, top, right, bottom;
+            XPLMGetWindowGeometryOS(window, &left, &top, &right, &bottom);
+            width = (std::max)(1, std::abs(right - left) * target / source);
+            height = (std::max)(1, std::abs(bottom - top) * target / source);
+            XPLMSetWindowGeometryOS(
+                window,
+                left,
+                top,
+                left + width,
+                top + height
+            );
+        }
+        else
+        {
+            int left, top, right, bottom;
+            XPLMGetWindowGeometry(window, &left, &top, &right, &bottom);
+            width = (std::max)(1, (right - left) * target / source);
+            height = (std::max)(1, (top - bottom) * target / source);
+            XPLMSetWindowGeometry(
+                window,
+                left,
+                top,
+                left + width,
+                top - height
+            );
+        }
+
         if (window == gSettingsWindow)
         {
-            minimumWidth = 500;
-            minimumHeight = 640;
+            XPLMSetWindowResizingLimits(
+                window, scaled(500), scaled(640), scaled(760), scaled(820));
         }
         else if (window == gCustomFlightplanWindow)
         {
-            minimumWidth = 760;
-            minimumHeight = 615;
+            XPLMSetWindowResizingLimits(
+                window, scaled(760), scaled(615), scaled(1100), scaled(800));
         }
-        const int width =
-            (std::max)(minimumWidth, ((right - left) * target) / source);
-        const int height =
-            (std::max)(minimumHeight, ((top - bottom) * target) / source);
-        XPLMSetWindowGeometry(window, left, top, left + width, top - height);
+        else if (window == gWebFlightplanSelectorWindow)
+        {
+            XPLMSetWindowResizingLimits(
+                window, scaled(520), scaled(300), scaled(900), scaled(700));
+        }
+        else if (window == gCpdlcWindow)
+        {
+            XPLMSetWindowResizingLimits(
+                window, scaled(520), scaled(340), scaled(900), scaled(800));
+        }
+        else
+        {
+            XPLMSetWindowResizingLimits(window, width, height, width, height);
+        }
     }
 
     gAppliedPluginWindowScalePercent = target;
@@ -5160,12 +5280,63 @@ std::string GetLocalizedChatText(
     return std::string(T("chat.award_unlocked")) + ": " + T(awardKey);
 }
 
+#if defined(_WIN32)
+const char* GetWinHttpErrorName(DWORD errorCode)
+{
+    switch (errorCode)
+    {
+    case ERROR_WINHTTP_TIMEOUT:
+        return "timeout";
+    case ERROR_WINHTTP_CANNOT_CONNECT:
+        return "cannot_connect";
+    case ERROR_WINHTTP_CONNECTION_ERROR:
+        return "connection_error";
+    case ERROR_WINHTTP_NAME_NOT_RESOLVED:
+        return "name_not_resolved";
+    case ERROR_WINHTTP_SECURE_FAILURE:
+        return "secure_failure";
+    case ERROR_WINHTTP_OPERATION_CANCELLED:
+        return "operation_cancelled";
+    default:
+        return "winhttp_error";
+    }
+}
+
+std::string MakeWinHttpFailureResponse(
+    const char* operation,
+    DWORD errorCode,
+    long long elapsedMilliseconds
+)
+{
+    std::ostringstream response;
+    response
+        << "{\"success\":false,\"message\":\"WinHTTP "
+        << operation
+        << " failed: "
+        << GetWinHttpErrorName(errorCode)
+        << " (code "
+        << errorCode
+        << ", "
+        << elapsedMilliseconds
+        << " ms)\"}";
+    return response.str();
+}
+#endif
+
 
 std::string HttpPost(
     const std::string& url,
     const std::string& postData
 )
 {
+    const auto requestStartedAt = std::chrono::steady_clock::now();
+    const auto elapsedMilliseconds = [&]() -> long long
+    {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - requestStartedAt
+        ).count();
+    };
+
 #if defined(_WIN32)
     std::wstring wideUrl =
         StringToWString(url);
@@ -5279,10 +5450,15 @@ std::string HttpPost(
 
     if (!result)
     {
+        const DWORD errorCode = GetLastError();
         WinHttpCloseHandle(hRequest);
         WinHttpCloseHandle(hConnect);
         WinHttpCloseHandle(hSession);
-        return "{\"success\":false,\"message\":\"HTTP Request senden fehlgeschlagen.\"}";
+        return MakeWinHttpFailureResponse(
+            "send",
+            errorCode,
+            elapsedMilliseconds()
+        );
     }
 
     result =
@@ -5293,14 +5469,32 @@ std::string HttpPost(
 
     if (!result)
     {
+        const DWORD errorCode = GetLastError();
         WinHttpCloseHandle(hRequest);
         WinHttpCloseHandle(hConnect);
         WinHttpCloseHandle(hSession);
-        return "{\"success\":false,\"message\":\"Keine Serverantwort erhalten.\"}";
+        return MakeWinHttpFailureResponse(
+            "receive",
+            errorCode,
+            elapsedMilliseconds()
+        );
     }
+
+    DWORD httpStatus = 0;
+    DWORD httpStatusSize = sizeof(httpStatus);
+    WinHttpQueryHeaders(
+        hRequest,
+        WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+        WINHTTP_HEADER_NAME_BY_INDEX,
+        &httpStatus,
+        &httpStatusSize,
+        WINHTTP_NO_HEADER_INDEX
+    );
 
     std::string response;
     DWORD size = 0;
+    DWORD readErrorCode = ERROR_SUCCESS;
+    const char* readOperation = nullptr;
 
     do
     {
@@ -5311,6 +5505,8 @@ std::string HttpPost(
             &size
         ))
         {
+            readErrorCode = GetLastError();
+            readOperation = "query_data";
             break;
         }
 
@@ -5328,6 +5524,8 @@ std::string HttpPost(
             &downloaded
         ))
         {
+            readErrorCode = GetLastError();
+            readOperation = "read_data";
             break;
         }
 
@@ -5340,9 +5538,23 @@ std::string HttpPost(
     WinHttpCloseHandle(hConnect);
     WinHttpCloseHandle(hSession);
 
+    if (readOperation != nullptr)
+    {
+        return MakeWinHttpFailureResponse(
+            readOperation,
+            readErrorCode,
+            elapsedMilliseconds()
+        );
+    }
+
     if (response.empty())
     {
-        return "{\"success\":false,\"message\":\"Leere Serverantwort.\"}";
+        std::ostringstream failure;
+        failure
+            << "{\"success\":false,\"message\":\"Empty HTTP response"
+            << " (status " << httpStatus
+            << ", " << elapsedMilliseconds() << " ms)\"}";
+        return failure.str();
     }
 
     return response;
@@ -5509,27 +5721,15 @@ int FollowTrafficCamera(
         return 0;
     }
 
-    double latitude = 0.0;
-    double longitude = 0.0;
-    double altitudeFeet = 0.0;
-    float heading = 0.0f;
-    if (!found->second->GetCameraTarget(
-            latitude, longitude, altitudeFeet, heading))
-    {
-        return 1;
-    }
-
     double targetX = 0.0;
     double targetY = 0.0;
     double targetZ = 0.0;
-    XPLMWorldToLocal(
-        latitude,
-        longitude,
-        altitudeFeet * 0.3048,
-        &targetX,
-        &targetY,
-        &targetZ
-    );
+    float heading = 0.0f;
+    if (!found->second->GetCameraTargetLocal(
+            targetX, targetY, targetZ, heading))
+    {
+        return 1;
+    }
 
     const int wheelSteps = gFollowCameraWheelDelta.exchange(0);
     if (wheelSteps != 0)
@@ -5739,11 +5939,11 @@ void ProcessTrafficPollResult()
         }
         catch (const std::exception& error)
         {
-            XPLMDebugString(
+            VfnDebugString(
                 "VFN Multiplayer: Invalid traffic row: "
             );
-            XPLMDebugString(error.what());
-            XPLMDebugString("\n");
+            VfnDebugString(error.what());
+            VfnDebugString("\n");
         }
     }
 
@@ -5961,7 +6161,7 @@ bool InitializeMultiplayer()
             gAvailableCslTypes.size(),
             gRelatedCslFallbackTypes.size()
         );
-        XPLMDebugString(fallbackLog);
+        VfnDebugString(fallbackLog);
     }
 
     auto xpmpPreferences =
@@ -6015,11 +6215,11 @@ bool InitializeMultiplayer()
 
     if (result && result[0] != '\0')
     {
-        XPLMDebugString(
+        VfnDebugString(
             "VFN Multiplayer: XPMP2 initialization failed: "
         );
-        XPLMDebugString(result);
-        XPLMDebugString("\n");
+        VfnDebugString(result);
+        VfnDebugString("\n");
         return false;
     }
 
@@ -6028,11 +6228,11 @@ bool InitializeMultiplayer()
 
     if (result && result[0] != '\0')
     {
-        XPLMDebugString(
+        VfnDebugString(
             "VFN Multiplayer: CSL loading failed: "
         );
-        XPLMDebugString(result);
-        XPLMDebugString("\n");
+        VfnDebugString(result);
+        VfnDebugString("\n");
         XPMPMultiplayerCleanup();
         return false;
     }
@@ -6049,13 +6249,13 @@ bool InitializeMultiplayer()
 
         if (xCslResult && xCslResult[0] != '\0')
         {
-            XPLMDebugString(
+            VfnDebugString(
                 "VFN Multiplayer: X-CSL loading failed at "
             );
-            XPLMDebugString(xCslPath.c_str());
-            XPLMDebugString(": ");
-            XPLMDebugString(xCslResult);
-            XPLMDebugString("\n");
+            VfnDebugString(xCslPath.c_str());
+            VfnDebugString(": ");
+            VfnDebugString(xCslResult);
+            VfnDebugString("\n");
         }
         else
         {
@@ -6069,28 +6269,28 @@ bool InitializeMultiplayer()
                 loadedModels,
                 xCslPath.c_str()
             );
-            XPLMDebugString(modelLog);
+            VfnDebugString(modelLog);
         }
     }
 
     const char* tcasResult = XPMPMultiplayerEnable();
     if (tcasResult && tcasResult[0] != '\0')
     {
-        XPLMDebugString(
+        VfnDebugString(
             "VFN Multiplayer: TCAS control unavailable: "
         );
-        XPLMDebugString(tcasResult);
-        XPLMDebugString("\n");
+        VfnDebugString(tcasResult);
+        VfnDebugString("\n");
     }
     else
     {
-        XPLMDebugString(
+        VfnDebugString(
             "VFN Multiplayer: TCAS targets enabled.\n"
         );
     }
 
     gMultiplayerInitialized = true;
-    XPLMDebugString(
+    VfnDebugString(
         "VFN Multiplayer: XPMP2 initialized.\n"
     );
     return true;
@@ -6358,7 +6558,7 @@ void OpenExternalUrl(
 {
     if (!IsHttpUrl(url))
     {
-        XPLMDebugString(
+        VfnDebugString(
             "Flight Radar Plugin: Refused to open non-http URL.\n"
         );
 
@@ -6378,7 +6578,7 @@ void OpenExternalUrl(
 
     if ((INT_PTR)result <= 32)
     {
-        XPLMDebugString(
+        VfnDebugString(
             "Flight Radar Plugin: Failed to open profile URL.\n"
         );
     }
@@ -6391,7 +6591,7 @@ void OpenExternalUrl(
     }
     if (child < 0)
     {
-        XPLMDebugString("Flight Radar Plugin: Failed to open profile URL.\n");
+        VfnDebugString("Flight Radar Plugin: Failed to open profile URL.\n");
     }
 #endif
 }
@@ -7011,9 +7211,9 @@ void DoLogout()
 
     if (gDebugEnabled)
     {
-        XPLMDebugString("LOGOUT RESPONSE: ");
-        XPLMDebugString(response.c_str());
-        XPLMDebugString("\n");
+        VfnDebugString("LOGOUT RESPONSE: ");
+        VfnDebugString(response.c_str());
+        VfnDebugString("\n");
     }
 
     StopVoiceService();
@@ -7075,7 +7275,7 @@ void DoLogout()
             T("status.logout_success")
         );
 
-        XPLMDebugString(
+        VfnDebugString(
             T("debug.logout_success")
         );
     }
@@ -7092,7 +7292,7 @@ void DoLogout()
             status.c_str()
         );
 
-        XPLMDebugString(
+        VfnDebugString(
             T("debug.logout_local_error")
         );
     }
@@ -7301,15 +7501,15 @@ void ForceLocalLogoutAfterConnectionFailures(
         T("status.connection_lost_auto_logout")
     );
 
-    XPLMDebugString(
+    VfnDebugString(
         "Flight Radar Plugin: Auto logout after repeated position update failures: "
     );
 
-    XPLMDebugString(
+    VfnDebugString(
         reason.c_str()
     );
 
-    XPLMDebugString("\n");
+    VfnDebugString("\n");
 }
 
 
@@ -7453,9 +7653,9 @@ void ProcessPositionUpdateResult()
 
     if (gDebugEnabled)
     {
-        XPLMDebugString("POSITION RESPONSE: ");
-        XPLMDebugString(response.c_str());
-        XPLMDebugString("\n");
+        VfnDebugString("POSITION RESPONSE: ");
+        VfnDebugString(response.c_str());
+        VfnDebugString("\n");
     }
 
     if (
@@ -7500,6 +7700,8 @@ void ProcessPositionUpdateResult()
 
         gPositionUpdateFailureCount = 0;
         gPositionUpdateFirstFailureTime = -1.0f;
+        gLastPositionUpdateFailureLogTime = -1.0f;
+        gLastPositionUpdateFailureMessage.clear();
         return;
     }
 
@@ -7528,24 +7730,38 @@ void ProcessPositionUpdateResult()
 
     gPositionUpdateFailureCount++;
 
+    const float now = XPLMGetElapsedTime();
+
     if (gPositionUpdateFirstFailureTime < 0.0f)
     {
-        gPositionUpdateFirstFailureTime =
-            XPLMGetElapsedTime();
+        gPositionUpdateFirstFailureTime = now;
     }
 
-    XPLMDebugString(
-        T("debug.position_failed")
-    );
+    const bool failureMessageChanged =
+        message != gLastPositionUpdateFailureMessage;
+    // Report an identical error only once for a continuous outage. A
+    // successful update resets this state above, so a later, new outage is
+    // still visible without flooding X-Plane's log every update cycle.
+    const bool firstFailureInCurrentOutage =
+        gLastPositionUpdateFailureLogTime < 0.0f;
 
-    XPLMDebugString(
-        message.c_str()
-    );
+    if (failureMessageChanged || firstFailureInCurrentOutage)
+    {
+        VfnDebugString(
+            T("debug.position_failed")
+        );
 
-    XPLMDebugString("\n");
+        VfnDebugString(
+            message.c_str()
+        );
+
+        VfnDebugString("\n");
+        gLastPositionUpdateFailureLogTime = now;
+        gLastPositionUpdateFailureMessage = message;
+    }
 
     float failureSeconds =
-        XPLMGetElapsedTime() -
+        now -
         gPositionUpdateFirstFailureTime;
 
     if (
@@ -7714,7 +7930,7 @@ void ProcessChatPollResult()
 
     if (gotNewLine && gDebugEnabled)
     {
-        XPLMDebugString("Flight Radar Plugin: New chat message received.\n");
+        VfnDebugString("Flight Radar Plugin: New chat message received.\n");
     }
 }
 
@@ -7900,7 +8116,7 @@ void SendChatMessage()
 {
     if (!gLoggedIn || gAuthToken.empty())
     {
-        XPLMDebugString(
+        VfnDebugString(
             "Flight Radar Plugin: Chat send ignored, not logged in or missing token.\n"
         );
 
@@ -7912,7 +8128,7 @@ void SendChatMessage()
 
     if (message.empty())
     {
-        XPLMDebugString(
+        VfnDebugString(
             "Flight Radar Plugin: Chat send ignored, message is empty.\n"
         );
 
@@ -7934,14 +8150,14 @@ void SendChatMessage()
 
     if (frequency == "0.000")
     {
-        XPLMDebugString(
+        VfnDebugString(
             "Flight Radar Plugin: Chat send ignored, no active chat frequency.\n"
         );
 
         return;
     }
 
-    XPLMDebugString(
+    VfnDebugString(
         "Flight Radar Plugin: Chat send started.\n"
     );
 
@@ -8550,9 +8766,9 @@ void SendFlightplan()
 
     if (gDebugEnabled)
     {
-        XPLMDebugString("FLIGHTPLAN RESPONSE: ");
-        XPLMDebugString(response.c_str());
-        XPLMDebugString("\n");
+        VfnDebugString("FLIGHTPLAN RESPONSE: ");
+        VfnDebugString(response.c_str());
+        VfnDebugString("\n");
     }
 
     if (ResponseIsSuccess(response))
@@ -8561,7 +8777,7 @@ void SendFlightplan()
             T("flightplan.saved")
         );
 
-        XPLMDebugString(
+        VfnDebugString(
             T("flightplan.saved_log")
         );
 
@@ -8623,7 +8839,7 @@ void SendFlightplan()
             status
         );
 
-        XPLMDebugString(
+        VfnDebugString(
             T("flightplan.failed_log")
         );
     }
@@ -9007,9 +9223,9 @@ void PerformCustomLogin()
 
     if (gDebugEnabled)
     {
-        XPLMDebugString("LOGIN RESPONSE: ");
-        XPLMDebugString(response.c_str());
-        XPLMDebugString("\n");
+        VfnDebugString("LOGIN RESPONSE: ");
+        VfnDebugString(response.c_str());
+        VfnDebugString("\n");
     }
 
     if (ResponseIsSuccess(response))
@@ -9134,13 +9350,13 @@ void PerformCustomLogin()
                 XPLMSetWindowIsVisible(gDatisWindow, 0);
         }
 
-        XPLMDebugString(
+        VfnDebugString(
             T("debug.login_success")
         );
 
         if (gDebugEnabled)
         {
-            XPLMDebugString(
+            VfnDebugString(
                 T("debug.token_saved")
             );
         }
@@ -9193,7 +9409,7 @@ void PerformCustomLogin()
         ExtractMessageFromResponse(response)
     );
 
-    XPLMDebugString(
+    VfnDebugString(
         T("status.login_failed_log")
     );
 }
@@ -12010,7 +12226,7 @@ void OpenXPlaneKeyboardSettings()
         }
     }
 
-    XPLMDebugString(
+    VfnDebugString(
         "VFN: X-Plane settings command is not available in this version.\n"
     );
 }
@@ -12272,17 +12488,7 @@ void DrawSettingsFlagBadge(
     const std::string& code
 )
 {
-    // Texture creation must happen while X-Plane has an active graphics
-    // context. Loading lazily from the settings draw callback guarantees
-    // that context and avoids all non-German flags falling back to the
-    // missing-texture badge.
-    if (!gLanguageFlagTexturesLoadAttempted)
-    {
-        LoadFlagTextures();
-    }
-
-    std::string normalizedCode =
-        code;
+    std::string normalizedCode = code;
 
     std::transform(
         normalizedCode.begin(),
@@ -12316,166 +12522,121 @@ void DrawSettingsFlagBadge(
     CustomRect flag =
         { badge.left + 4, badge.top - 4, badge.right - 4, badge.bottom + 4 };
 
+    // Draw the compact flags as native OpenGL geometry. Image textures work
+    // inconsistently between X-Plane 11/12, detached windows and live reloads
+    // and can show up as two empty rectangles although loading reported
+    // success. The vector variants need no external assets and therefore look
+    // the same in every supported plugin layout.
+
     int flagTop =
         flag.top > flag.bottom ? flag.top : flag.bottom;
 
     int flagBottom =
         flag.top < flag.bottom ? flag.top : flag.bottom;
 
-    const auto texture = gLanguageFlagTextures.find(normalizedCode);
-    if (texture != gLanguageFlagTextures.end() && texture->second.loaded)
+    const auto fill = [&](int left, int top, int right, int bottom,
+                          float red, float green, float blue)
     {
-        DrawTextureImage(texture->second, flag);
-        DrawRectOutline(flag, 0.85f, 0.90f, 0.95f, 0.75f);
-        return;
+        DrawFilledRect({ left, top, right, bottom }, red, green, blue, 1.00f);
+    };
+    const auto horizontal = [&](float r1, float g1, float b1,
+                                float r2, float g2, float b2,
+                                float r3, float g3, float b3)
+    {
+        const int one = flagBottom + (flagTop - flagBottom) / 3;
+        const int two = flagBottom + ((flagTop - flagBottom) * 2) / 3;
+        fill(flag.left, flagTop, flag.right, two, r1, g1, b1);
+        fill(flag.left, two, flag.right, one, r2, g2, b2);
+        fill(flag.left, one, flag.right, flagBottom, r3, g3, b3);
+    };
+    const auto vertical = [&](float r1, float g1, float b1,
+                              float r2, float g2, float b2,
+                              float r3, float g3, float b3)
+    {
+        const int one = flag.left + (flag.right - flag.left) / 3;
+        const int two = flag.left + ((flag.right - flag.left) * 2) / 3;
+        fill(flag.left, flagTop, one, flagBottom, r1, g1, b1);
+        fill(one, flagTop, two, flagBottom, r2, g2, b2);
+        fill(two, flagTop, flag.right, flagBottom, r3, g3, b3);
+    };
+    const auto twoHorizontal = [&](float r1, float g1, float b1,
+                                   float r2, float g2, float b2)
+    {
+        const int middle = flagBottom + (flagTop - flagBottom) / 2;
+        fill(flag.left, flagTop, flag.right, middle, r1, g1, b1);
+        fill(flag.left, middle, flag.right, flagBottom, r2, g2, b2);
+    };
+
+    const float white = 0.96f;
+    const float red = 0.86f;
+    const float blue = 0.08f;
+    const float green = 0.08f;
+    const int centerX = (flag.left + flag.right) / 2;
+    const int centerY = (flagTop + flagBottom) / 2;
+
+    if (normalizedCode == "de") horizontal(0.02f,0.02f,0.02f, red,0.02f,0.03f, 1.0f,0.78f,0.0f);
+    else if (normalizedCode == "nl") horizontal(red,0.02f,0.04f, white,white,white, 0.03f,0.20f,0.58f);
+    else if (normalizedCode == "ru") horizontal(white,white,white, 0.04f,0.24f,0.70f, red,0.02f,0.04f);
+    else if (normalizedCode == "fr") vertical(0.03f,0.20f,0.65f, white,white,white, red,0.02f,0.04f);
+    else if (normalizedCode == "it") vertical(0.02f,0.55f,0.22f, white,white,white, red,0.02f,0.04f);
+    else if (normalizedCode == "pl") twoHorizontal(white,white,white, red,0.02f,0.08f);
+    else if (normalizedCode == "id") twoHorizontal(red,0.02f,0.04f, white,white,white);
+    else if (normalizedCode == "es") horizontal(red,0.03f,0.04f, 1.0f,0.76f,0.0f, red,0.03f,0.04f);
+    else if (normalizedCode == "pt")
+    {
+        const int split = flag.left + (flag.right - flag.left) * 2 / 5;
+        fill(flag.left, flagTop, split, flagBottom, 0.02f,0.48f,0.20f);
+        fill(split, flagTop, flag.right, flagBottom, red,0.02f,0.04f);
+        fill(split - 2, centerY + 2, split + 2, centerY - 2, 1.0f,0.82f,0.0f);
     }
-
-    if (normalizedCode == "de")
+    else if (normalizedCode == "bn")
     {
-        int height =
-            (flagTop - flagBottom) > 3
-            ? (flagTop - flagBottom)
-            : 3;
-
-        int stripeOne =
-            flagTop - (height / 3);
-
-        int stripeTwo =
-            flagTop - ((height * 2) / 3);
-
-        for (int y = flagTop; y >= stripeOne; --y)
-        {
-            DrawLine(
-                flag.left,
-                y,
-                flag.right,
-                y,
-                0.00f,
-                0.00f,
-                0.00f,
-                1.00f
-            );
-        }
-
-        for (int y = stripeOne; y >= stripeTwo; --y)
-        {
-            DrawLine(
-                flag.left,
-                y,
-                flag.right,
-                y,
-                0.92f,
-                0.05f,
-                0.08f,
-                1.00f
-            );
-        }
-
-        for (int y = stripeTwo; y >= flagBottom; --y)
-        {
-            DrawLine(
-                flag.left,
-                y,
-                flag.right,
-                y,
-                1.00f,
-                0.84f,
-                0.00f,
-                1.00f
-            );
-        }
+        fill(flag.left, flagTop, flag.right, flagBottom, 0.02f,0.42f,0.22f);
+        fill(centerX - 4, centerY + 4, centerX + 4, centerY - 4, red,0.02f,0.04f);
+    }
+    else if (normalizedCode == "ja")
+    {
+        fill(flag.left, flagTop, flag.right, flagBottom, white,white,white);
+        fill(centerX - 4, centerY + 4, centerX + 4, centerY - 4, red,0.02f,0.04f);
+    }
+    else if (normalizedCode == "zh")
+    {
+        fill(flag.left, flagTop, flag.right, flagBottom, red,0.02f,0.04f);
+        fill(flag.left + 4, flagTop - 4, flag.left + 8, flagTop - 8, 1.0f,0.82f,0.0f);
+    }
+    else if (normalizedCode == "tr")
+    {
+        fill(flag.left, flagTop, flag.right, flagBottom, red,0.02f,0.04f);
+        fill(centerX - 6, centerY + 5, centerX + 2, centerY - 5, white,white,white);
+        fill(centerX - 3, centerY + 4, centerX + 3, centerY - 4, red,0.02f,0.04f);
+    }
+    else if (normalizedCode == "ar")
+    {
+        fill(flag.left, flagTop, flag.right, flagBottom, 0.02f,0.48f,0.20f);
+        fill(flag.left + 7, centerY + 1, flag.right - 5, centerY - 1, white,white,white);
+    }
+    else if (normalizedCode == "hi")
+    {
+        horizontal(1.0f,0.48f,0.05f, white,white,white, 0.02f,0.52f,0.20f);
+        fill(centerX - 2, centerY + 2, centerX + 2, centerY - 2, 0.02f,0.18f,0.58f);
+    }
+    else if (normalizedCode == "ko")
+    {
+        fill(flag.left, flagTop, flag.right, flagBottom, white,white,white);
+        fill(centerX - 4, centerY + 4, centerX + 4, centerY, red,0.02f,0.04f);
+        fill(centerX - 4, centerY, centerX + 4, centerY - 4, 0.02f,0.22f,0.64f);
+    }
+    else if (normalizedCode == "en")
+    {
+        fill(flag.left, flagTop, flag.right, flagBottom, 0.03f,0.15f,0.46f);
+        fill(centerX - 3, flagTop, centerX + 3, flagBottom, white,white,white);
+        fill(flag.left, centerY + 3, flag.right, centerY - 3, white,white,white);
+        fill(centerX - 1, flagTop, centerX + 1, flagBottom, red,0.02f,0.04f);
+        fill(flag.left, centerY + 1, flag.right, centerY - 1, red,0.02f,0.04f);
     }
     else
     {
-        DrawFilledRect(
-            flag,
-            0.02f,
-            0.18f,
-            0.54f,
-            1.00f
-        );
-
-        for (int offset = -4; offset <= 4; offset += 2)
-        {
-            DrawLine(
-                flag.left,
-                flag.top + offset,
-                flag.right,
-                flag.bottom + offset,
-                0.94f,
-                0.94f,
-                0.98f,
-                1.00f
-            );
-
-            DrawLine(
-                flag.left,
-                flag.bottom + offset,
-                flag.right,
-                flag.top + offset,
-                0.94f,
-                0.94f,
-                0.98f,
-                1.00f
-            );
-        }
-
-        for (int offset = -1; offset <= 1; ++offset)
-        {
-            DrawLine(
-                flag.left,
-                flag.top + offset,
-                flag.right,
-                flag.bottom + offset,
-                0.78f,
-                0.06f,
-                0.10f,
-                1.00f
-            );
-
-            DrawLine(
-                flag.left,
-                flag.bottom + offset,
-                flag.right,
-                flag.top + offset,
-                0.78f,
-                0.06f,
-                0.10f,
-                1.00f
-            );
-        }
-
-        DrawFilledRect(
-            { flag.left + 13, flag.top, flag.left + 21, flag.bottom },
-            0.94f,
-            0.94f,
-            0.98f,
-            1.00f
-        );
-
-        DrawFilledRect(
-            { flag.left, flag.top - 8, flag.right, flag.top - 16 },
-            0.94f,
-            0.94f,
-            0.98f,
-            1.00f
-        );
-
-        DrawFilledRect(
-            { flag.left + 15, flag.top, flag.left + 19, flag.bottom },
-            0.78f,
-            0.06f,
-            0.10f,
-            1.00f
-        );
-
-        DrawFilledRect(
-            { flag.left, flag.top - 10, flag.right, flag.top - 14 },
-            0.78f,
-            0.06f,
-            0.10f,
-            1.00f
-        );
+        fill(flag.left, flagTop, flag.right, flagBottom, 0.12f,0.18f,0.24f);
     }
 
     DrawRectOutline(
@@ -12490,7 +12651,7 @@ void DrawSettingsFlagBadge(
 
 void DrawSettingsLanguageOption(
     const CustomRect& rect,
-    const std::string& code,
+    const std::string&,
     const std::string& label,
     bool selected
 )
@@ -12511,13 +12672,8 @@ void DrawSettingsLanguageOption(
         0.95f
     );
 
-    DrawSettingsFlagBadge(
-        { rect.left + 12, rect.top - 8, rect.left + 56, rect.bottom + 8 },
-        code
-    );
-
     DrawText(
-        rect.left + 72,
+        rect.left + 16,
         rect.top - 24,
         label,
         0.86f,
@@ -13574,6 +13730,41 @@ int SettingsHandleMouse(
             return 1;
         }
 
+        // Handle the open language menu before the controls underneath it.
+        // The popup intentionally extends beyond the settings viewport, so its
+        // entries must not be clipped to the window content rectangle here.
+        if (gSettingsLanguageDropdownOpen)
+        {
+            for (int index = 0; index < gPluginLanguageCount; ++index)
+            {
+                if (PointInRect(
+                    x,
+                    y,
+                    GetSettingsLanguageOptionRect(left, contentTop, right, index)
+                ))
+                {
+                    ApplyPluginLanguageSelection(gPluginLanguages[index].code);
+                    gSettingsLanguageDropdownOpen = false;
+                    return 1;
+                }
+            }
+        }
+
+        if (PointInWindowRect(
+            x,
+            y,
+            GetSettingsLanguageSelectRect(left, contentTop, right),
+            left,
+            top,
+            bottom
+        ))
+        {
+            gSettingsVoiceInputDropdownOpen = false;
+            gSettingsVoiceOutputDropdownOpen = false;
+            gSettingsLanguageDropdownOpen = !gSettingsLanguageDropdownOpen;
+            return 1;
+        }
+
         if (
             gCanUseInvisible &&
             PointInWindowRect(x, y, GetSettingsInvisibleRect(left, contentTop, right), left, top, bottom)
@@ -13720,29 +13911,6 @@ int SettingsHandleMouse(
             OpenXPlaneKeyboardSettings();
             gVoiceShortcutLastRefresh = -100.0f;
             return 1;
-        }
-
-        if (PointInWindowRect(x, y, GetSettingsLanguageSelectRect(left, contentTop, right), left, top, bottom))
-        {
-            gSettingsVoiceInputDropdownOpen = false;
-            gSettingsVoiceOutputDropdownOpen = false;
-            gSettingsLanguageDropdownOpen =
-                !gSettingsLanguageDropdownOpen;
-
-            return 1;
-        }
-
-        if (gSettingsLanguageDropdownOpen)
-        {
-            for (int index = 0; index < gPluginLanguageCount; ++index)
-            {
-                if (PointInWindowRect(x, y, GetSettingsLanguageOptionRect(left, contentTop, right, index), left, top, bottom))
-                {
-                    ApplyPluginLanguageSelection(gPluginLanguages[index].code);
-                    gSettingsLanguageDropdownOpen = false;
-                    return 1;
-                }
-            }
         }
 
         gSettingsLanguageDropdownOpen = false;
@@ -13975,6 +14143,26 @@ const NearbyAtcEntry* FindNearbyAtc(int userId)
     return nullptr;
 }
 
+std::string FormatAtcFrequencyDisplay(const std::string& frequency)
+{
+    try
+    {
+        std::size_t parsedLength = 0;
+        const double value = std::stod(frequency, &parsedLength);
+        if (parsedLength == frequency.size())
+        {
+            std::ostringstream formatted;
+            formatted << std::fixed << std::setprecision(3) << value;
+            return formatted.str();
+        }
+    }
+    catch (...)
+    {
+    }
+
+    return frequency;
+}
+
 int AtcAtWindowRow(int y, int top)
 {
     const int firstRowTop = top - 126;
@@ -14162,7 +14350,7 @@ void DrawAtcWindow(
                  TruncateForField(atc.callsign, 22),
                  0.25f, 0.82f, 1.0f);
         DrawText(listRect.left + 10, rowTop - 31,
-                 atc.frequency + " MHz",
+                 FormatAtcFrequencyDisplay(atc.frequency) + " MHz",
                  0.65f, 0.78f, 0.88f);
         std::ostringstream distance;
         distance << std::fixed << std::setprecision(1)
@@ -17791,7 +17979,7 @@ void PollCompactChatMouseFocus()
         {
             gChatSendButtonPressed = false;
 
-            XPLMDebugString(
+            VfnDebugString(
                 "Flight Radar Plugin: Chat send button clicked by mouse poll.\n"
             );
 
@@ -18230,7 +18418,7 @@ int CompactHandleMouse(
         {
             gChatSendButtonPressed = false;
 
-            XPLMDebugString(
+            VfnDebugString(
                 "Flight Radar Plugin: Chat send button clicked.\n"
             );
 
@@ -18260,7 +18448,7 @@ int CompactHandleMouse(
 
         if (gDebugEnabled)
         {
-            XPLMDebugString(
+            VfnDebugString(
                 "Flight Radar Plugin: Compact window focused chat input.\n"
             );
         }
@@ -18797,9 +18985,9 @@ int LoginWindowHandler(
 
             if (gDebugEnabled)
             {
-                XPLMDebugString("LOGIN RESPONSE: ");
-                XPLMDebugString(response.c_str());
-                XPLMDebugString("\n");
+                VfnDebugString("LOGIN RESPONSE: ");
+                VfnDebugString(response.c_str());
+                VfnDebugString("\n");
             }
 
             if (ResponseIsSuccess(response))
@@ -18911,13 +19099,13 @@ int LoginWindowHandler(
 
                 AddLoginChatSummary();
 
-                XPLMDebugString(
+                VfnDebugString(
                     T("debug.login_success")
                 );
 
                 if (gDebugEnabled)
                 {
-                    XPLMDebugString(
+                    VfnDebugString(
                         T("debug.token_saved")
                     );
                 }
@@ -18969,7 +19157,7 @@ int LoginWindowHandler(
                     message.c_str()
                 );
 
-                XPLMDebugString(
+                VfnDebugString(
                     T("status.login_failed_log")
                 );
             }
@@ -19008,9 +19196,9 @@ int LoginWindowHandler(
 
             if (gDebugEnabled)
             {
-                XPLMDebugString("INVISIBLE RESPONSE: ");
-                XPLMDebugString(response.c_str());
-                XPLMDebugString("\n");
+                VfnDebugString("INVISIBLE RESPONSE: ");
+                VfnDebugString(response.c_str());
+                VfnDebugString("\n");
             }
 
             if (ResponseIsSuccess(response))
@@ -21466,7 +21654,7 @@ float FlightLoopCallback(
             verticalSpeed
         );
 
-        XPLMDebugString(buffer);
+        VfnDebugString(buffer);
     }
 
     SendPositionUpdate();
@@ -21514,7 +21702,7 @@ PLUGIN_API int XPluginStart(
 
     LoadInternalEnglishLanguage();
 
-    XPLMDebugString(
+    VfnDebugString(
         T("debug.plugin_loaded")
     );
 
@@ -22163,7 +22351,7 @@ PLUGIN_API void XPluginStop(void)
     }
 #endif
 
-    XPLMDebugString(
+    VfnDebugString(
         T("debug.plugin_stopped")
     );
 }
@@ -22173,7 +22361,7 @@ PLUGIN_API void XPluginDisable(void)
 {
     ShutdownMultiplayer();
 
-    XPLMDebugString(
+    VfnDebugString(
         T("debug.plugin_disabled")
     );
 }
@@ -22183,12 +22371,12 @@ PLUGIN_API int XPluginEnable(void)
 {
     if (!InitializeMultiplayer())
     {
-        XPLMDebugString(
+        VfnDebugString(
             "VFN Multiplayer: Rendering disabled; core plugin remains active.\n"
         );
     }
 
-    XPLMDebugString(
+    VfnDebugString(
         T("debug.plugin_enabled")
     );
 

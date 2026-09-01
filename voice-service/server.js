@@ -295,8 +295,20 @@ function transmissionRegionsOverlap(first, second, frequency) {
 }
 
 function findBlockingTransmitter(client, frequency) {
+  const now = Date.now();
   for (const other of clients.values()) {
     if (other.id === client.id || !other.authenticated || !other.ptt) continue;
+    // A lost PTT-up packet must not reserve a channel forever. Active voice
+    // clients continuously send audio while PTT is held, including silence,
+    // so a transmitter without a recent PTT/audio event is stale.
+    const lastActivityAt = Math.max(
+      Date.parse(other.lastPttAt || '') || 0,
+      Date.parse(other.lastAudioAt || '') || 0
+    );
+    if (lastActivityAt && now - lastActivityAt > 3000) {
+      other.ptt = false;
+      continue;
+    }
     if (transmittingFrequency(other) !== frequency) continue;
     if (transmissionRegionsOverlap(client, other, frequency)) return other;
   }

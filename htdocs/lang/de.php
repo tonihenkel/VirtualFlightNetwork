@@ -1,6 +1,14 @@
 <?php
 
 return [
+    'atc_training_callsign_exists'=>'Das Callsign wird bereits von einem anderen Trainingsflugzeug verwendet.','atc_training_control'=>'Trainingssteuerung','atc_training_control_mode'=>'Steuerungsmodus','atc_training_control_manual'=>'Manuell','atc_training_control_automatic'=>'Automatik','atc_training_motion_state'=>'Bewegungszustand','atc_training_motion_parked'=>'Geparkt','atc_training_motion_pushback'=>'Pushback','atc_training_motion_taxi_out'=>'Taxi zur Startbahn','atc_training_motion_taxi_in'=>'Taxi zum Gate','atc_training_motion_takeoff'=>'Start','atc_training_motion_climb'=>'Steigflug','atc_training_motion_cruise'=>'Reiseflug','atc_training_motion_descent'=>'Sinkflug','atc_training_motion_landing'=>'Landung','atc_training_target_speed'=>'Zielgeschwindigkeit (kt)','atc_training_target_altitude'=>'Zielhöhe (ft)','atc_training_vertical_speed'=>'Vertikalgeschwindigkeit (ft/min)','atc_training_control_apply'=>'Steuerung übernehmen','atc_training_control_stop'=>'Anhalten',
+    'atc_training_properties_edit'=>'Eigenschaften ändern','atc_training_callsign_edit'=>'Callsign','atc_training_aircraft_edit'=>'Flugzeugtyp','atc_training_position_type'=>'Positionstyp','atc_training_heading_edit'=>'Blickrichtung','atc_training_position_gate'=>'Gate','atc_training_position_taxiway'=>'Rollweg','atc_training_position_runway'=>'Start-/Landebahn','atc_training_position_air'=>'In der Luft',
+    'atc_training_transponder'=>'Transponder','atc_training_transponder_status'=>'Status','atc_training_transponder_standby'=>'Standby','atc_training_transponder_on'=>'Ein','atc_training_transponder_ident'=>'IDENT','atc_training_transponder_code'=>'Transpondercode','atc_training_transponder_code_prompt'=>'Transpondercode eingeben (vier Ziffern von 0 bis 7):',
+    'atc_training_assignment_reset'=>'Zuordnung freigeben','atc_training_assignment_reset_confirm'=>'Zuordnung von %callsign% wirklich freigeben?',
+    'atc_training_aircraft_create'=>'Trainingsflugzeug setzen','atc_training_aircraft_delete'=>'Trainingsflugzeug löschen','atc_training_callsign_prompt'=>'Callsign des Trainingsflugzeugs:','atc_training_aircraft_prompt'=>'Flugzeugtyp (ICAO):','atc_training_placement_prompt'=>'Positionstyp: runway, taxiway, gate oder air','atc_training_altitude_prompt'=>'Höhe in Fuß:','atc_training_heading_prompt'=>'Kurs (0–359°):','atc_training_aircraft_invalid'=>'Ungültige Angaben für das Trainingsflugzeug.','atc_training_delete_confirm'=>'Trainingsflugzeug %callsign% löschen?',
+    'settings_personal_password_required'=>'Änderungen an Benutzername, Name oder Land müssen mit dem aktuellen Passwort bestätigt werden.',
+    'profile_home_airport'=>'Heimatflughafen',
+    'register_home_airport'=>'Heimatflughafen nach ICAO, Kennung oder Name suchen','register_home_airport_help'=>'Nach ICAO, lokaler Kennung, Flughafen- oder Flugplatzname suchen und auswählen; ZZZZ ist ebenfalls erlaubt.','register_home_airport_invalid'=>'Bitte einen vorhandenen Flughafen oder Flugplatz auswählen oder ZZZZ eingeben.','settings_home_airport'=>'Heimatflughafen / Flugplatz','settings_home_airport_help'=>'ICAO- oder lokale Flugplatzkennung, zum Beispiel EDDP oder DE-…; ZZZZ ist ebenfalls erlaubt.',
     'admin_filter_filtered_chats'=>'Gefilterte Chats','admin_filter_filtered_chats_only'=>'Nur gefilterte Chats anzeigen',
     'admin_activity_sort'=>'Staff-Aktivitäten sortieren','admin_activity_search_placeholder'=>'Spieler, Staff-Mitglied, Aktivität oder Datum suchen …','admin_activity_player'=>'Spieler','admin_activity_staff_member'=>'Staff-Mitglied','admin_activity_type'=>'Aktivitätstyp','admin_activity_date'=>'Datum',
     'admin_online_search_placeholder'=>'Name, Callsign, Rolle, Station oder Rang suchen …',
@@ -55,6 +63,7 @@ return [
     'atc_clearance_departure_runway' => 'Freigegebene Startbahn',
     'atc_clearance_landing_runway' => 'Landefreigabe / Landebahn',
     'atc_clearance_gate' => 'Gate / Standplatz',
+    'atc_clearance_taxi_route' => 'Taxi-Freigabe',
     'atc_context_clearance_delete' => 'Freigaben löschen',
     'atc_clearance_delete_confirm' => 'Alle Freigaben für %callsign% wirklich löschen?',
     'invalid_departure_runway' => 'Ungültige Startbahn. Beispiel: 08R oder 26L.',
@@ -1653,6 +1662,7 @@ return [
     'statistics_period_30' => 'Letzte 30 Tage',
     'statistics_period_90' => 'Letzte 90 Tage',
     'statistics_period_365' => 'Letztes Jahr',
+    'statistics_period_0' => 'Gesamt',
     'statistics_flights' => 'Flüge',
     'statistics_pilots' => 'Piloten',
     'statistics_distance' => 'Distanz',
@@ -1996,4 +2006,11 @@ return [
     'atc_session_required' => 'Eine aktive ATC- oder Zuschauersitzung ist erforderlich.',
     'atc_position_busy' => 'Diese ATC-Position ist bereits besetzt oder wird gerade vorbereitet.',
     'atc_control_session_required' => 'Diese Aktion ist nur mit einer aktiven Lotsenposition möglich.',
+    'atc_training_aircraft_menu' => 'Trainingsflugzeug',
+    'atc_context_measurement_menu' => 'Distanz / Peilung',
+    'atc_options_center_windows' => 'Aktive Fenster zentrieren',
+    'atc_training_radios_edit' => 'Funkgeräte ändern',
+    'atc_training_radios_title' => 'COM1-/COM2-Frequenzen',
+    'atc_training_com1_frequency' => 'COM1-Frequenz',
+    'atc_training_com2_frequency' => 'COM2-Frequenz',
 ];

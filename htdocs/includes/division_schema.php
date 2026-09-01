@@ -2,6 +2,15 @@
 
 function ensureDivisionManagementSchema(PDO $pdo): void
 {
+    static $checked = false;
+    if ($checked) return;
+    $marker = rtrim(sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'vfn-division-schema-20260827.ready';
+    if (is_file($marker)) {
+        $checked = true;
+        return;
+    }
+    $checked = true;
+
     $joinColumn = $pdo->query(
         "SELECT COUNT(*) FROM information_schema.COLUMNS
          WHERE TABLE_SCHEMA = DATABASE()
@@ -73,6 +82,7 @@ function ensureDivisionManagementSchema(PDO $pdo): void
             KEY idx_gca_user_status (user_id, status)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+    @file_put_contents($marker, gmdate('c'));
 }
 
 function canManageDivisionGca(PDO $pdo, int $userId, int $opPermission, string $divisionCode): bool

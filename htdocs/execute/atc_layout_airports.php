@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 header('Content-Type: application/json; charset=utf-8');
-header('Cache-Control: no-store');
+header('Cache-Control: private, max-age=15');
 require_once __DIR__ . '/../includes/session_bootstrap.php';
 startVfnWebSession();
 require_once __DIR__ . '/config.php';
@@ -28,6 +28,9 @@ try {
     ]);
     $session = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$session) { http_response_code(409); throw new RuntimeException('atc_session_inactive'); }
+    // This endpoint is read-only. Release the PHP session lock so layout,
+    // traffic, navigation and heartbeat requests can run concurrently.
+    if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
 
     $south = max(-90.0, min(90.0, (float)($_GET['south'] ?? -90)));
     $north = max(-90.0, min(90.0, (float)($_GET['north'] ?? 90)));
@@ -54,8 +57,8 @@ try {
         $primaryQuery = $pdo->prepare(
             "SELECT ident,icao_code,gps_code,name,latitude_deg,longitude_deg
              FROM airports
-             WHERE UPPER(ident)=:ident OR UPPER(icao_code)=:icao OR UPPER(gps_code)=:gps
-             ORDER BY UPPER(icao_code)=:order_icao DESC, UPPER(ident)=:order_ident DESC
+             WHERE ident=:ident OR icao_code=:icao OR gps_code=:gps
+             ORDER BY icao_code=:order_icao DESC, ident=:order_ident DESC
              LIMIT 1"
         );
         $primaryQuery->execute([

@@ -49,6 +49,10 @@ $settingsMessageType = (string)($_GET['type'] ?? '');
     .avatar-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
     .avatar-actions .settings-button{margin-top:0}
     .settings-button.danger{background:#8f2631;border-color:#d55360}
+    .settings-airport-search{position:relative}
+    .settings-airport-results{position:absolute;left:0;right:0;top:100%;z-index:50;max-height:260px;overflow:auto;background:#08131e;border:1px solid #2d5a82;border-radius:4px;box-shadow:0 12px 28px rgba(0,0,0,.45)}
+    .settings-airport-result{display:block;width:100%;padding:10px 12px;border:0;border-bottom:1px solid #18334c;background:transparent;color:#e8f2ff;text-align:left;cursor:pointer}
+    .settings-airport-result:hover{background:#102b42}.settings-airport-result strong{color:#58d8ff}.settings-airport-result small{display:block;color:#8faac2;margin-top:3px}
     @media(max-width:760px){.settings-grid{grid-template-columns:1fr}}
     @media(max-width:760px){.avatar-settings-layout{grid-template-columns:1fr}}
 </style>
@@ -137,8 +141,30 @@ $settingsMessageType = (string)($_GET['type'] ?? '');
 </div>
 
 <div class="settings-section">
+    <h2><?php echo h(t('settings_home_airport')); ?></h2>
+    <form method="post" action="execute/profile_settings.php" id="homeAirportSettingsForm">
+        <input type="hidden" name="csrf" value="<?php echo h($csrf); ?>">
+        <input type="hidden" name="action" value="home_airport">
+        <label class="settings-field">
+            <?php echo h(t('settings_home_airport')); ?>
+            <span class="settings-airport-search">
+                <input id="settingsHomeAirportSearch" required maxlength="60" autocomplete="off"
+                       value="<?php echo h($homeAirportCode); ?>"
+                       title="<?php echo h(t('settings_home_airport_help')); ?>">
+                <input type="hidden" id="settingsHomeAirportCode" name="home_airport_icao"
+                       value="<?php echo h($homeAirportCode); ?>">
+                <span id="settingsHomeAirportResults" class="settings-airport-results" hidden></span>
+            </span>
+            <span class="settings-note"><?php echo h(t('settings_home_airport_help')); ?></span>
+        </label>
+        <button class="settings-button"><?php echo h(t('settings_save')); ?></button>
+    </form>
+</div>
+
+<div class="settings-section">
     <h2><?php echo h(t('settings_personal_title')); ?></h2>
-    <form method="post" action="execute/profile_settings.php">
+    <p class="settings-note"><?php echo h(t('settings_personal_password_required')); ?></p>
+    <form method="post" action="execute/profile_settings.php" id="personalSettingsForm">
         <input type="hidden" name="csrf" value="<?php echo h($csrf); ?>">
         <input type="hidden" name="action" value="personal">
         <div class="settings-grid">
@@ -255,6 +281,65 @@ twoFactorMethod.addEventListener('change', updateTotpSetup);
 updateTotpSetup();
 </script>
 <?php endif; ?>
+
+<script>
+(() => {
+    const form = document.getElementById('homeAirportSettingsForm');
+    const input = document.getElementById('settingsHomeAirportSearch');
+    const codeInput = document.getElementById('settingsHomeAirportCode');
+    const results = document.getElementById('settingsHomeAirportResults');
+    if (!form || !input || !codeInput || !results) return;
+    let timer = null;
+    let controller = null;
+    const escapeText = value => String(value || '').replace(/[&<>'"]/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[character]));
+    const closeResults = () => { results.hidden = true; results.innerHTML = ''; };
+
+    input.addEventListener('input', () => {
+        const query = input.value.trim();
+        codeInput.value = query.toUpperCase() === 'ZZZZ' ? 'ZZZZ' : '';
+        input.setCustomValidity('');
+        clearTimeout(timer);
+        if (controller) controller.abort();
+        if (query.toUpperCase() === 'ZZZZ' || query.length < 2) {
+            closeResults();
+            return;
+        }
+        timer = setTimeout(async () => {
+            controller = new AbortController();
+            try {
+                const response = await fetch('execute/airport_lookup.php?q=' + encodeURIComponent(query), {signal:controller.signal});
+                const data = await response.json();
+                const airports = (Array.isArray(data.airports) ? data.airports : [])
+                    .filter(airport => /^[A-Z0-9][A-Z0-9-]{1,13}$/.test(String(airport.code || '').toUpperCase()));
+                results.innerHTML = airports.map(airport =>
+                    '<button type="button" class="settings-airport-result" data-code="' + escapeText(airport.code) + '" data-name="' + escapeText(airport.name) + '">' +
+                    '<strong>' + escapeText(airport.code) + '</strong> · ' + escapeText(airport.name) +
+                    '<small>' + escapeText(airport.municipality || '') + '</small></button>'
+                ).join('');
+                results.hidden = airports.length === 0;
+            } catch (error) {
+                if (error.name !== 'AbortError') closeResults();
+            }
+        }, 250);
+    });
+    results.addEventListener('mousedown', event => {
+        const option = event.target.closest('[data-code]');
+        if (!option) return;
+        event.preventDefault();
+        input.value = option.dataset.code;
+        codeInput.value = option.dataset.code;
+        input.setCustomValidity('');
+        closeResults();
+    });
+    input.addEventListener('blur', () => setTimeout(closeResults, 120));
+    form.addEventListener('submit', event => {
+        if (codeInput.value) return;
+        event.preventDefault();
+        input.setCustomValidity(<?php echo json_encode(t('register_home_airport_invalid')); ?>);
+        input.reportValidity();
+    });
+})();
+</script>
 
 <script>
 (() => {

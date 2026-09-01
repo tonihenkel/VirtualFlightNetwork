@@ -6,7 +6,6 @@ require_once 'config.php';
 require_once '../includes/maintenance_access.php';
 require_once 'aircraft_types.php';
 require_once '../includes/awards_checks.php';
-require_once '../includes/track_maintenance.php';
 require_once '../includes/flightplan_schema.php';
 
 
@@ -591,12 +590,6 @@ try {
         ]
     );
     ensurePilotFlightplanCommunicationColumn($pdo);
-
-    try {
-        vfnRunTrackMaintenance($pdo);
-    } catch (Throwable $maintenanceError) {
-        error_log('Track maintenance failed: ' . $maintenanceError->getMessage());
-    }
 
     $stmt = $pdo->prepare(
         "SELECT
@@ -1516,26 +1509,45 @@ try {
         (float)$longitude
     );
 
-    $com1AtcCallsign = findPositionAtcCallsign(
-        $pdo, (string)$com1, (float)$latitude, (float)$longitude
-    );
-    $com2AtcCallsign = findPositionAtcCallsign(
-        $pdo, (string)$com2, (float)$latitude, (float)$longitude
-    );
+    $contextCachePath = rtrim(sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR
+        . 'vfn_position_context_' . hash('sha256', $token) . '.json';
+    $positionContext = null;
+    if (is_file($contextCachePath) && time() - (int)filemtime($contextCachePath) < 10) {
+        $cachedContext = json_decode((string)@file_get_contents($contextCachePath), true);
+        if (is_array($cachedContext)) $positionContext = $cachedContext;
+    }
+    if ($positionContext === null) {
+        $com1AtcCallsign = findPositionAtcCallsign(
+            $pdo, (string)$com1, (float)$latitude, (float)$longitude
+        );
+        $com2AtcCallsign = findPositionAtcCallsign(
+            $pdo, (string)$com2, (float)$latitude, (float)$longitude
+        );
 
-    $currentFlightplanStmt = $pdo->prepare(
-        "SELECT flight_rules,flight_type,communication_mode,departure_time,departure_airport,arrival_airport,
-                alternate1_airport,alternate2_airport,route_text,cruising_level,
-                cruising_speed,remarks,
-                (CRC32(CONCAT_WS('|',flight_rules,flight_type,communication_mode,departure_time,
-                    departure_airport,arrival_airport,alternate1_airport,
-                    alternate2_airport,route_text,cruising_level,cruising_speed,remarks)) & 2147483647) AS revision
-         FROM pilot_flightplans WHERE session_token=:token LIMIT 1"
-    );
-    $currentFlightplanStmt->execute(['token' => $token]);
-    $currentFlightplan = $currentFlightplanStmt->fetch(PDO::FETCH_ASSOC) ?: null;
-    if ($currentFlightplan !== null) {
-        $currentFlightplan['revision'] = (int)($currentFlightplan['revision'] ?? 0);
+        $currentFlightplanStmt = $pdo->prepare(
+            "SELECT flight_rules,flight_type,communication_mode,departure_time,departure_airport,arrival_airport,
+                    alternate1_airport,alternate2_airport,route_text,cruising_level,
+                    cruising_speed,remarks,
+                    (CRC32(CONCAT_WS('|',flight_rules,flight_type,communication_mode,departure_time,
+                        departure_airport,arrival_airport,alternate1_airport,
+                        alternate2_airport,route_text,cruising_level,cruising_speed,remarks)) & 2147483647) AS revision
+             FROM pilot_flightplans WHERE session_token=:token LIMIT 1"
+        );
+        $currentFlightplanStmt->execute(['token' => $token]);
+        $currentFlightplan = $currentFlightplanStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        if ($currentFlightplan !== null) {
+            $currentFlightplan['revision'] = (int)($currentFlightplan['revision'] ?? 0);
+        }
+        $positionContext = [
+            'com1_atc_callsign' => $com1AtcCallsign,
+            'com2_atc_callsign' => $com2AtcCallsign,
+            'flightplan' => $currentFlightplan,
+        ];
+        @file_put_contents(
+            $contextCachePath,
+            json_encode($positionContext, JSON_UNESCAPED_SLASHES),
+            LOCK_EX
+        );
     }
 
     echo json_encode([
@@ -1548,9 +1560,9 @@ try {
         "op_permission" => (int)$session["op_permission"],
         "can_use_invisible" => $canUseInvisible,
         "is_invisible" => ((int)$session["is_invisible"] === 1)
-        ,"com1_atc_callsign" => $com1AtcCallsign
-        ,"com2_atc_callsign" => $com2AtcCallsign
-        ,"flightplan" => $currentFlightplan
+        ,"com1_atc_callsign" => (string)($positionContext['com1_atc_callsign'] ?? '')
+        ,"com2_atc_callsign" => (string)($positionContext['com2_atc_callsign'] ?? '')
+        ,"flightplan" => $positionContext['flightplan'] ?? null
     ]);
 
 } catch (Exception $e) {

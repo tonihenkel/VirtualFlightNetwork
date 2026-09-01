@@ -98,12 +98,6 @@ fmod.h
 /mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/XPMP2.h
 -
 
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/build-linux/third_party/XPMP2/CMakeFiles/XPMP2.dir/cmake_pch.hxx.cxx
-
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/2D.cpp
-XPMP2.h
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/XPMP2.h
-
 /mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/2D.h
 
 /mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/AIMultiplayer.cpp
@@ -112,51 +106,13 @@ XPMP2.h
 
 /mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/AIMultiplayer.h
 
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/Aircraft.cpp
-XPMP2.h
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/XPMP2.h
-
 /mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/Aircraft.h
-
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/CSLCopy.cpp
-XPMP2.h
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/XPMP2.h
-
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/CSLModels.cpp
-XPMP2.h
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/XPMP2.h
 
 /mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/CSLModels.h
 
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/Contrail.cpp
-XPMP2.h
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/XPMP2.h
-
 /mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/Contrail.h
 
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/Map.cpp
-XPMP2.h
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/XPMP2.h
-
 /mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/Map.h
-
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/Network.cpp
-XPMP2.h
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/XPMP2.h
-winsock2.h
--
-ws2tcpip.h
--
-ws2def.h
--
-unistd.h
--
-arpa/inet.h
--
-fcntl.h
--
-net/if.h
--
 
 /mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/Network.h
 sys/types.h
@@ -180,35 +136,13 @@ ifaddrs.h
 stdexcept
 -
 
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/RelatedDoc8643.cpp
-XPMP2.h
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/XPMP2.h
-
 /mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/RelatedDoc8643.h
 
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/Remote.cpp
-XPMP2.h
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/XPMP2.h
-unistd.h
--
-sys/fcntl.h
--
-
 /mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/Remote.h
-
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/Sound.cpp
-XPMP2.h
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/XPMP2.h
 
 /mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/Sound.h
 
 /mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/SoundFMOD.h
-
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/Utilities.cpp
-XPMP2.h
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/XPMP2.h
-Carbon/Carbon.h
--
 
 /mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/Utilities.h
 
@@ -325,12 +259,6 @@ Sound.h
 /mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/Sound.h
 SoundFMOD.h
 /mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/SoundFMOD.h
-
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/XPMPMultiplayer.cpp
-XPMP2.h
-/mnt/c/Users/Administrator/Desktop/VFN-Projekt/Flight Radar Sim Projekt/third_party/XPMP2/src/XPMP2.h
-cstring
--
 
 /mnt/c/Users/Administrator/Desktop/VFN-Projekt/SDK/CHeaders/XPLM/XPLMCamera.h
 XPLMDefs.h

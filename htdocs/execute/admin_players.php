@@ -15,6 +15,7 @@ try {
     $rank = strtoupper(trim((string)($_GET['rank'] ?? '')));
     $status = trim((string)($_GET['status'] ?? ''));
     $online = trim((string)($_GET['online'] ?? ''));
+    $ban = trim((string)($_GET['ban'] ?? ''));
     $sort = (string)($_GET['sort'] ?? 'name');
     if (!in_array($sort, ['name','pilot','atc','special','op'], true)) $sort = 'name';
     $direction = strtolower((string)($_GET['direction'] ?? 'asc')) === 'desc' ? 'desc' : 'asc';
@@ -46,6 +47,15 @@ try {
     if ($status === 'active' || $status === 'inactive') {
         $where[] = 'u.is_active = :is_active';
         $params['is_active'] = $status === 'active' ? 1 : 0;
+    }
+
+    $activeBanCondition =
+        '(u.is_banned = 1
+          AND (u.ban_expires_at IS NULL OR u.ban_expires_at > NOW()))';
+    if ($ban === 'banned') {
+        $where[] = $activeBanCondition;
+    } elseif ($ban === 'not_banned') {
+        $where[] = 'NOT ' . $activeBanCondition;
     }
 
     if ($online === 'online') {
@@ -82,6 +92,7 @@ try {
             u.op_permission,
             u.email_verified,
             u.is_active,
+            $activeBanCondition AS is_banned,
             u.created_at,
             u.last_login,
             d.name AS division_name,
@@ -161,6 +172,7 @@ try {
             'rating_special' => (int)$row['rating_special'],
             'email_verified' => (int)$row['email_verified'] === 1,
             'active' => (int)$row['is_active'] === 1,
+            'banned' => (int)$row['is_banned'] === 1,
             'online' => (int)$row['is_online'] === 1,
             'registered' => !empty($row['created_at'])
                 ? date('d.m.Y H:i', strtotime((string)$row['created_at']))

@@ -59,6 +59,22 @@ try {
     );
     $targetStatement->execute(['callsign' => $callsign]);
     $target = $targetStatement->fetch(PDO::FETCH_ASSOC);
+    $isTrainingTarget = false;
+    if (!$target) {
+        $trainingStatement = $pdo->prepare(
+            "SELECT ta.id,creator.user_id FROM atc_training_aircraft ta
+             INNER JOIN atc_sessions creator ON creator.id=ta.trainer_session_id
+             WHERE UPPER(ta.callsign)=:callsign AND creator.is_active=1 AND creator.is_trainer=1
+               AND creator.last_seen_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE) LIMIT 1"
+        );
+        $trainingStatement->execute(['callsign'=>$callsign]);
+        $trainingTarget=$trainingStatement->fetch(PDO::FETCH_ASSOC);
+        $trainingId=(int)($trainingTarget['id']??0);
+        if($trainingId>0){
+            $target=['session_token'=>'training:'.$trainingId,'user_id'=>(int)$trainingTarget['user_id'],'training_id'=>$trainingId];
+            $isTrainingTarget=true;
+        }
+    }
     if (!$target) atcFplReply(false, ['message' => 'pilot_not_online'], 404);
 
     $fields = [
@@ -66,11 +82,10 @@ try {
         'alternate1_airport', 'alternate2_airport', 'route_text',
         'cruising_level', 'cruising_speed', 'remarks',
     ];
-    $flightplanStatement = $pdo->prepare(
-        "SELECT " . implode(',', $fields) . " FROM pilot_flightplans
-         WHERE session_token=:token LIMIT 1"
-    );
-    $flightplanStatement->execute(['token' => (string)$target['session_token']]);
+    $flightplanStatement = $pdo->prepare($isTrainingTarget
+        ? "SELECT " . implode(',', $fields) . " FROM atc_training_aircraft WHERE id=:target LIMIT 1"
+        : "SELECT " . implode(',', $fields) . " FROM pilot_flightplans WHERE session_token=:target LIMIT 1");
+    $flightplanStatement->execute(['target' => $isTrainingTarget ? (int)$target['training_id'] : (string)$target['session_token']]);
     $flightplan = $flightplanStatement->fetch(PDO::FETCH_ASSOC);
     if (!$flightplan) {
         $flightplan = [
@@ -139,9 +154,20 @@ try {
     $values['cruising_speed'] = strtoupper(substr($values['cruising_speed'], 0, 20));
     $values['route_text'] = mb_substr(strtoupper($values['route_text']), 0, 5000, 'UTF-8');
     $values['remarks'] = mb_substr($values['remarks'], 0, 2000, 'UTF-8');
-    $values['token'] = (string)$target['session_token'];
-    $values['callsign'] = $callsign;
-    $update = $pdo->prepare(
+    if($isTrainingTarget){
+        $values['training_id']=(int)$target['training_id'];
+        $update=$pdo->prepare(
+            "UPDATE atc_training_aircraft SET flight_rules=:flight_rules,flight_type=:flight_type,
+             communication_mode=:communication_mode,departure_airport=:departure_airport,
+             arrival_airport=:arrival_airport,alternate1_airport=:alternate1_airport,
+             alternate2_airport=:alternate2_airport,route_text=:route_text,
+             cruising_level=:cruising_level,cruising_speed=:cruising_speed,remarks=:remarks
+             WHERE id=:training_id"
+        );
+    }else{
+        $values['token'] = (string)$target['session_token'];
+        $values['callsign'] = $callsign;
+        $update = $pdo->prepare(
         "INSERT INTO pilot_flightplans
             (session_token,callsign,flight_rules,flight_type,communication_mode,departure_airport,
              arrival_airport,alternate1_airport,alternate2_airport,route_text,
@@ -156,9 +182,10 @@ try {
              alternate1_airport=VALUES(alternate1_airport),alternate2_airport=VALUES(alternate2_airport),
              route_text=VALUES(route_text),cruising_level=VALUES(cruising_level),
              cruising_speed=VALUES(cruising_speed),remarks=VALUES(remarks),updated_at=NOW()"
-    );
+        );
+    }
     $update->execute($values);
-    try {
+    if(!$isTrainingTarget) try {
         $log = $pdo->prepare(
             "INSERT INTO user_activity_log
              (user_id,actor_user_id,activity_type,activity_key,activity_value)

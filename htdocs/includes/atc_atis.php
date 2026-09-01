@@ -3,6 +3,15 @@ declare(strict_types=1);
 
 function ensureAtcAtisOverrideSchema(PDO $pdo): void
 {
+    static $ready = false;
+    if ($ready) {
+        return;
+    }
+    $marker = rtrim(sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'vfn-atc-atis-schema-20260827.ready';
+    if (is_file($marker)) {
+        $ready = true;
+        return;
+    }
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS atc_atis_overrides (
             airport_icao VARCHAR(12) NOT NULL,
@@ -20,5 +29,6 @@ function ensureAtcAtisOverrideSchema(PDO $pdo): void
             KEY idx_atc_atis_active (is_active)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
+    $ready = true;
+    @file_put_contents($marker, gmdate('c'));
 }
-

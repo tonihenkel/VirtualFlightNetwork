@@ -116,16 +116,20 @@ function readAtisScopeFeatures(array $session): array
 {
     $station = normalizeAtcStationCode((string)($session['station_code'] ?? ''));
     $position = strtoupper((string)($session['position_code'] ?? ''));
+    $boundary = strtoupper((string)($session['radar_boundary_code'] ?? ''));
+    static $requestCache = [];
+    $cacheKey = $station . '|' . $position . '|' . $boundary;
+    if (array_key_exists($cacheKey, $requestCache)) return $requestCache[$cacheKey];
     if ($position === 'CTR') {
         $features = readCompiledAtisSector($station);
-        if ($features) return $features;
+        if ($features) return $requestCache[$cacheKey] = $features;
         $fallback = strtoupper((string)($session['radar_boundary_code'] ?? $station));
         $path = dirname(__DIR__) . '/data/atc/fir-boundaries.geojson';
         $geojson = is_file($path) ? json_decode((string)file_get_contents($path), true) : null;
         foreach (is_array($geojson['features'] ?? null) ? $geojson['features'] : [] as $feature) {
-            if (strtoupper((string)($feature['properties']['id'] ?? '')) === $fallback) return [$feature];
+            if (strtoupper((string)($feature['properties']['id'] ?? '')) === $fallback) return $requestCache[$cacheKey] = [$feature];
         }
-        return [];
+        return $requestCache[$cacheKey] = [];
     }
     if (in_array($position, ['APP', 'DEP'], true)) {
         $path = dirname(__DIR__) . '/data/atc/tracon-boundaries.geojson';
@@ -141,9 +145,9 @@ function readAtisScopeFeatures(array $session): array
             $suffix = strtoupper((string)($properties['suffix'] ?? 'APP'));
             if (in_array($station, $prefixes, true) && $suffix === $position) $features[] = $feature;
         }
-        return $features;
+        return $requestCache[$cacheKey] = $features;
     }
-    return [];
+    return $requestCache[$cacheKey] = [];
 }
 
 function getAtisAirportsForSession(PDO $pdo, array $session, bool $includeSmallAirports = false): array

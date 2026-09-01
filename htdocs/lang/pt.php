@@ -1,6 +1,14 @@
 <?php
 
 return [
+    'atc_training_callsign_exists'=>'O indicativo já é usado por outra aeronave de treino.','atc_training_control'=>'Controlos de treino','atc_training_control_mode'=>'Modo de controlo','atc_training_control_manual'=>'Manual','atc_training_control_automatic'=>'Automático','atc_training_motion_state'=>'Estado do movimento','atc_training_motion_parked'=>'Estacionado','atc_training_motion_pushback'=>'Pushback','atc_training_motion_taxi_out'=>'Táxi para a pista','atc_training_motion_taxi_in'=>'Táxi para o portão','atc_training_motion_takeoff'=>'Descolagem','atc_training_motion_climb'=>'Subida','atc_training_motion_cruise'=>'Cruzeiro','atc_training_motion_descent'=>'Descida','atc_training_motion_landing'=>'Aterragem','atc_training_target_speed'=>'Velocidade alvo (kt)','atc_training_target_altitude'=>'Altitude alvo (ft)','atc_training_vertical_speed'=>'Velocidade vertical (ft/min)','atc_training_control_apply'=>'Aplicar controlos','atc_training_control_stop'=>'Parar',
+    'atc_training_properties_edit'=>'Editar propriedades','atc_training_callsign_edit'=>'Indicativo','atc_training_aircraft_edit'=>'Tipo de aeronave','atc_training_position_type'=>'Tipo de posição','atc_training_heading_edit'=>'Rumo','atc_training_position_gate'=>'Portão','atc_training_position_taxiway'=>'Taxiway','atc_training_position_runway'=>'Pista','atc_training_position_air'=>'No ar',
+    'atc_training_transponder'=>'Transponder','atc_training_transponder_status'=>'Estado','atc_training_transponder_standby'=>'Espera','atc_training_transponder_on'=>'Ligado','atc_training_transponder_ident'=>'IDENT','atc_training_transponder_code'=>'Código do transponder','atc_training_transponder_code_prompt'=>'Introduza o código do transponder (quatro dígitos de 0 a 7):',
+    'atc_training_assignment_reset'=>'Libertar atribuição','atc_training_assignment_reset_confirm'=>'Libertar a atribuição de %callsign%?',
+    'atc_training_aircraft_create'=>'Colocar aeronave de treino','atc_training_aircraft_delete'=>'Eliminar aeronave de treino','atc_training_callsign_prompt'=>'Indicativo da aeronave:','atc_training_aircraft_prompt'=>'Tipo de aeronave (ICAO):','atc_training_placement_prompt'=>'Tipo de posição: runway, taxiway, gate ou air','atc_training_altitude_prompt'=>'Altitude em pés:','atc_training_heading_prompt'=>'Rumo (0–359°):','atc_training_aircraft_invalid'=>'Dados da aeronave de treino inválidos.','atc_training_delete_confirm'=>'Eliminar a aeronave %callsign%?',
+    'settings_personal_password_required'=>'As alterações ao nome de utilizador, nome ou país devem ser confirmadas com a palavra-passe atual.',
+    'profile_home_airport'=>'Aeroporto base',
+    'register_home_airport'=>'Pesquisar aeroporto base (ex. EDDP, DE-… ou ZZZZ)','register_home_airport_help'=>'Pesquise e selecione um identificador ICAO ou de aeródromo; ZZZZ é aceite.','register_home_airport_invalid'=>'Selecione um aeroporto existente ou introduza ZZZZ.','settings_home_airport'=>'Aeroporto / aeródromo base','settings_home_airport_help'=>'Identificador ICAO ou de aeródromo, por exemplo EDDP ou DE-…; ZZZZ é aceite.',
     'admin_filter_filtered_chats'=>'Chats filtrados','admin_filter_filtered_chats_only'=>'Mostrar apenas chats filtrados',
     'admin_activity_sort'=>'Ordenar atividades da equipa','admin_activity_search_placeholder'=>'Pesquisar jogador, equipa, atividade ou data …','admin_activity_player'=>'Jogador','admin_activity_staff_member'=>'Membro da equipa','admin_activity_type'=>'Tipo de atividade','admin_activity_date'=>'Data',
     'admin_online_search_placeholder'=>'Pesquisar nome, indicativo, função, estação ou classificação …',
@@ -872,6 +880,7 @@ return [
     'statistics_period_30' => 'Últimos 30 dias',
     'statistics_period_90' => 'Últimos 90 dias',
     'statistics_period_365' => 'No ano passado',
+    'statistics_period_0' => 'Todo o período',
     'statistics_flights' => 'Voos',
     'statistics_pilots' => 'Pilotos',
     'statistics_distance' => 'Distância',
@@ -1335,4 +1344,11 @@ return [
     'atc_traffic_through' => 'Sobrevoos',
     'atc_session_required' => 'É necessária uma sessão ATC ou de espectador ativa.',
     'atc_control_session_required' => 'Esta ação requer uma posição de controlador ativa.',
+    'atc_training_aircraft_menu' => 'Aeronave de treino',
+    'atc_context_measurement_menu' => 'Distância / rumo',
+    'atc_options_center_windows' => 'Centralizar janelas ativas',
+    'atc_training_radios_edit' => 'Editar rádios',
+    'atc_training_radios_title' => 'Frequências COM1/COM2',
+    'atc_training_com1_frequency' => 'Frequência COM1',
+    'atc_training_com2_frequency' => 'Frequência COM2',
 ];

@@ -1,6 +1,14 @@
 <?php
 
 return [
+    'atc_training_callsign_exists'=>'该呼号已被另一架训练飞机使用。','atc_training_control'=>'训练飞机控制','atc_training_control_mode'=>'控制模式','atc_training_control_manual'=>'手动','atc_training_control_automatic'=>'自动','atc_training_motion_state'=>'运动状态','atc_training_motion_parked'=>'停放','atc_training_motion_pushback'=>'推出','atc_training_motion_taxi_out'=>'滑行至跑道','atc_training_motion_taxi_in'=>'滑行至登机口','atc_training_motion_takeoff'=>'起飞','atc_training_motion_climb'=>'爬升','atc_training_motion_cruise'=>'巡航','atc_training_motion_descent'=>'下降','atc_training_motion_landing'=>'着陆','atc_training_target_speed'=>'目标速度 (kt)','atc_training_target_altitude'=>'目标高度 (ft)','atc_training_vertical_speed'=>'垂直速度 (ft/min)','atc_training_control_apply'=>'应用控制','atc_training_control_stop'=>'停止',
+    'atc_training_properties_edit'=>'编辑属性','atc_training_callsign_edit'=>'呼号','atc_training_aircraft_edit'=>'机型','atc_training_position_type'=>'位置类型','atc_training_heading_edit'=>'航向','atc_training_position_gate'=>'登机口','atc_training_position_taxiway'=>'滑行道','atc_training_position_runway'=>'跑道','atc_training_position_air'=>'空中',
+    'atc_training_transponder'=>'应答机','atc_training_transponder_status'=>'状态','atc_training_transponder_standby'=>'待机','atc_training_transponder_on'=>'开启','atc_training_transponder_ident'=>'IDENT','atc_training_transponder_code'=>'应答机代码','atc_training_transponder_code_prompt'=>'请输入应答机代码（由0至7组成的四位数字）:',
+    'atc_training_assignment_reset'=>'解除分配','atc_training_assignment_reset_confirm'=>'解除 %callsign% 的分配吗？',
+    'atc_training_aircraft_create'=>'放置训练飞机','atc_training_aircraft_delete'=>'删除训练飞机','atc_training_callsign_prompt'=>'训练飞机呼号：','atc_training_aircraft_prompt'=>'机型（ICAO）：','atc_training_placement_prompt'=>'位置类型：runway、taxiway、gate 或 air','atc_training_altitude_prompt'=>'高度（英尺）：','atc_training_heading_prompt'=>'航向（0–359°）：','atc_training_aircraft_invalid'=>'训练飞机数据无效。','atc_training_delete_confirm'=>'删除训练飞机 %callsign%？',
+    'settings_personal_password_required'=>'更改用户名、姓名或国家/地区时，必须使用当前密码确认。',
+    'profile_home_airport'=>'主场机场',
+    'register_home_airport'=>'按 ICAO、标识符或名称搜索主场机场','register_home_airport_help'=>'可按 ICAO、本地标识符或机场名称搜索；也接受 ZZZZ。','register_home_airport_invalid'=>'请选择现有机场或输入 ZZZZ。','settings_home_airport'=>'主场机场','settings_home_airport_help'=>'ICAO 或本地机场标识符；也接受 ZZZZ。',
     'admin_filter_filtered_chats'=>'已过滤聊天','admin_filter_filtered_chats_only'=>'仅显示已过滤聊天',
     'admin_activity_sort'=>'排序工作人员活动','admin_activity_search_placeholder'=>'搜索玩家、工作人员、活动或日期 …','admin_activity_player'=>'玩家','admin_activity_staff_member'=>'工作人员','admin_activity_type'=>'活动类型','admin_activity_date'=>'日期',
     'admin_online_search_placeholder'=>'搜索姓名、呼号、角色、席位或等级 …',
@@ -876,6 +884,7 @@ return [
     'statistics_period_30' => '过去 30 天',
     'statistics_period_90' => '过去 90 天',
     'statistics_period_365' => '去年',
+    'statistics_period_0' => '全部时间',
     'statistics_flights' => '航班',
     'statistics_pilots' => '飞行员',
     'statistics_distance' => '距离',
@@ -1333,4 +1342,11 @@ return [
     'atc_clearance_delete_confirm' => '删除 %callsign% 的所有许可吗？',
     'atc_session_required' => '需要有效的空管或观察员会话。',
     'atc_control_session_required' => '此操作需要有效的管制员席位。',
+    'atc_training_aircraft_menu' => '训练飞机',
+    'atc_context_measurement_menu' => '距离 / 方位',
+    'atc_options_center_windows' => '将活动窗口居中',
+    'atc_training_radios_edit' => '编辑无线电',
+    'atc_training_radios_title' => 'COM1/COM2 频率',
+    'atc_training_com1_frequency' => 'COM1 频率',
+    'atc_training_com2_frequency' => 'COM2 频率',
 ];

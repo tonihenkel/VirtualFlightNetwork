@@ -42,9 +42,18 @@ try {
     if (!validateVfnWebSession($pdo)) {
         settingsRedirect('error', 'login_required');
     }
+    $homeAirportColumn = $pdo->query("SHOW COLUMNS FROM users LIKE 'home_airport_icao'");
+    if (!$homeAirportColumn->fetch(PDO::FETCH_ASSOC)) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN home_airport_icao VARCHAR(14) NOT NULL DEFAULT 'ZZZZ' AFTER country_code");
+    } else {
+        $column = $pdo->query("SHOW COLUMNS FROM users LIKE 'home_airport_icao'")->fetch(PDO::FETCH_ASSOC);
+        if ($column && strtolower((string)$column['Type']) !== 'varchar(14)') {
+            $pdo->exec("ALTER TABLE users MODIFY COLUMN home_airport_icao VARCHAR(14) NOT NULL DEFAULT 'ZZZZ'");
+        }
+    }
     $userId = (int)$_SESSION['web_user_id'];
     $stmt = $pdo->prepare(
-        "SELECT username, real_name, password_hash, country_code, division_code, op_permission
+        "SELECT username, real_name, password_hash, country_code, home_airport_icao, division_code, op_permission
          FROM users WHERE id = :id LIMIT 1"
     );
     $stmt->execute(['id' => $userId]);
@@ -54,6 +63,31 @@ try {
     }
 
     $action = (string)($_POST['action'] ?? '');
+
+    if ($action === 'home_airport') {
+        $homeAirportRaw = trim((string)($_POST['home_airport_icao'] ?? ''));
+        $homeAirportParts = preg_split('/\s*·\s*/u', $homeAirportRaw, 2);
+        $homeAirportIcao = strtoupper(trim((string)($homeAirportParts[0] ?? '')));
+        if (!preg_match('/^[A-Z0-9][A-Z0-9-]{1,13}$/', $homeAirportIcao)) {
+            settingsRedirect('error', 'settings_invalid_data');
+        }
+        if ($homeAirportIcao !== 'ZZZZ') {
+            $airportStmt = $pdo->prepare(
+                "SELECT 1 FROM airports
+                 WHERE UPPER(ident)=:ident OR UPPER(icao_code)=:icao OR UPPER(gps_code)=:gps
+                 LIMIT 1"
+            );
+            $airportStmt->execute(['ident'=>$homeAirportIcao,'icao'=>$homeAirportIcao,'gps'=>$homeAirportIcao]);
+            if (!$airportStmt->fetchColumn()) {
+                settingsRedirect('error', 'settings_invalid_data');
+            }
+        }
+        $pdo->prepare(
+            "UPDATE users SET home_airport_icao=:home_airport_icao, updated_at=NOW()
+             WHERE id=:id"
+        )->execute(['home_airport_icao'=>$homeAirportIcao,'id'=>$userId]);
+        settingsRedirect('success', 'settings_saved');
+    }
 
     if ($action === 'personal') {
         $username = trim((string)($_POST['username'] ?? ''));

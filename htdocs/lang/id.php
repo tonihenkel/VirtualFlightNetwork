@@ -1,6 +1,14 @@
 <?php
 
 return [
+    'atc_training_callsign_exists'=>'Callsign sudah digunakan pesawat latihan lain.','atc_training_control'=>'Kontrol pesawat latihan','atc_training_control_mode'=>'Mode kontrol','atc_training_control_manual'=>'Manual','atc_training_control_automatic'=>'Otomatis','atc_training_motion_state'=>'Status gerak','atc_training_motion_parked'=>'Parkir','atc_training_motion_pushback'=>'Pushback','atc_training_motion_taxi_out'=>'Taksi ke landasan','atc_training_motion_taxi_in'=>'Taksi ke gate','atc_training_motion_takeoff'=>'Lepas landas','atc_training_motion_climb'=>'Menanjak','atc_training_motion_cruise'=>'Jelajah','atc_training_motion_descent'=>'Turun','atc_training_motion_landing'=>'Mendarat','atc_training_target_speed'=>'Kecepatan target (kt)','atc_training_target_altitude'=>'Ketinggian target (ft)','atc_training_vertical_speed'=>'Kecepatan vertikal (ft/min)','atc_training_control_apply'=>'Terapkan kontrol','atc_training_control_stop'=>'Berhenti',
+    'atc_training_properties_edit'=>'Ubah properti','atc_training_callsign_edit'=>'Callsign','atc_training_aircraft_edit'=>'Jenis pesawat','atc_training_position_type'=>'Jenis posisi','atc_training_heading_edit'=>'Arah','atc_training_position_gate'=>'Gate','atc_training_position_taxiway'=>'Taxiway','atc_training_position_runway'=>'Landasan','atc_training_position_air'=>'Di udara',
+    'atc_training_transponder'=>'Transponder','atc_training_transponder_status'=>'Status','atc_training_transponder_standby'=>'Siaga','atc_training_transponder_on'=>'Aktif','atc_training_transponder_ident'=>'IDENT','atc_training_transponder_code'=>'Kode transponder','atc_training_transponder_code_prompt'=>'Masukkan kode transponder (empat digit dari 0 sampai 7):',
+    'atc_training_assignment_reset'=>'Lepaskan penugasan','atc_training_assignment_reset_confirm'=>'Lepaskan penugasan %callsign%?',
+    'atc_training_aircraft_create'=>'Tempatkan pesawat latihan','atc_training_aircraft_delete'=>'Hapus pesawat latihan','atc_training_callsign_prompt'=>'Callsign pesawat latihan:','atc_training_aircraft_prompt'=>'Jenis pesawat (ICAO):','atc_training_placement_prompt'=>'Jenis posisi: runway, taxiway, gate, atau air','atc_training_altitude_prompt'=>'Ketinggian dalam kaki:','atc_training_heading_prompt'=>'Arah (0–359°):','atc_training_aircraft_invalid'=>'Data pesawat latihan tidak valid.','atc_training_delete_confirm'=>'Hapus pesawat latihan %callsign%?',
+    'settings_personal_password_required'=>'Perubahan nama pengguna, nama, atau negara harus dikonfirmasi dengan kata sandi saat ini.',
+    'profile_home_airport'=>'Bandara asal',
+    'register_home_airport'=>'Cari bandara asal berdasarkan ICAO, identitas, atau nama','register_home_airport_help'=>'Cari berdasarkan ICAO, identitas lokal, atau nama bandara; ZZZZ juga diterima.','register_home_airport_invalid'=>'Pilih bandara yang tersedia atau masukkan ZZZZ.','settings_home_airport'=>'Bandara asal','settings_home_airport_help'=>'ICAO atau identitas bandara lokal; ZZZZ juga diterima.',
     'admin_filter_filtered_chats'=>'Obrolan terfilter','admin_filter_filtered_chats_only'=>'Tampilkan hanya obrolan terfilter',
     'admin_activity_sort'=>'Urutkan aktivitas staf','admin_activity_search_placeholder'=>'Cari pemain, staf, aktivitas, atau tanggal …','admin_activity_player'=>'Pemain','admin_activity_staff_member'=>'Anggota staf','admin_activity_type'=>'Jenis aktivitas','admin_activity_date'=>'Tanggal',
     'admin_online_search_placeholder'=>'Cari nama, callsign, peran, stasiun, atau peringkat …',
@@ -876,6 +884,7 @@ return [
     'statistics_period_30' => '30 hari terakhir',
     'statistics_period_90' => '90 hari terakhir',
     'statistics_period_365' => 'Tahun lalu',
+    'statistics_period_0' => 'Sepanjang waktu',
     'statistics_flights' => 'Penerbangan',
     'statistics_pilots' => 'Pilot',
     'statistics_distance' => 'Jarak',
@@ -1333,4 +1342,11 @@ return [
     'atc_traffic_through' => 'Penerbangan lintas',
     'atc_session_required' => 'Sesi ATC atau penonton yang aktif diperlukan.',
     'atc_control_session_required' => 'Tindakan ini memerlukan posisi pengontrol yang aktif.',
+    'atc_training_aircraft_menu' => 'Pesawat latihan',
+    'atc_context_measurement_menu' => 'Jarak / arah',
+    'atc_options_center_windows' => 'Pusatkan jendela aktif',
+    'atc_training_radios_edit' => 'Ubah radio',
+    'atc_training_radios_title' => 'Frekuensi COM1/COM2',
+    'atc_training_com1_frequency' => 'Frekuensi COM1',
+    'atc_training_com2_frequency' => 'Frekuensi COM2',
 ];

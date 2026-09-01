@@ -75,6 +75,13 @@
 
                             <?php echo h($countryName); ?><br>
 
+                            <?php echo h(t('profile_home_airport')); ?>:
+                            <?php if ($homeAirportCode !== 'ZZZZ'): ?>
+                                <a href="airport.php?icao=<?php echo rawurlencode($homeAirportCode); ?>"><?php echo h($homeAirportLabel); ?></a>
+                            <?php else: ?>
+                                <?php echo h($homeAirportLabel); ?>
+                            <?php endif; ?><br>
+
                             <img
                                 src="images/flags/<?php echo strtolower($divisionCode); ?>.png"
                                 class="profile-country-flag"

@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: private, max-age=20');
 require_once __DIR__ . '/../includes/session_bootstrap.php';
 startVfnWebSession();
 require_once __DIR__ . '/config.php';
@@ -29,6 +30,9 @@ try {
     );
     $userStmt->execute(['id' => (int)$_SESSION['web_user_id']]);
     $user = $userStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    // Die Suche darf keine parallel laufenden Karten-, Voice- oder
+    // Verkehrsabfragen durch die PHP-Session blockieren.
+    session_write_close();
     ensureDivisionManagementSchema($pdo);
     $trainer = (string)($_GET['trainer'] ?? '0') === '1';
     $spectator = !$trainer && (string)($_GET['spectator'] ?? '0') === '1';
@@ -36,7 +40,10 @@ try {
     $trainerRole = $pdo->prepare("SELECT 1 FROM division_staff WHERE user_id=:user_id AND is_active=1 LIMIT 1");
     $trainerRole->execute(['user_id'=>(int)$_SESSION['web_user_id']]);
     $isDivisionTrainer = (bool)$trainerRole->fetchColumn();
-    if ($trainer && (int)($user['op_permission'] ?? 0) < 1 && !$isDivisionTrainer) {
+    if ($trainer
+        && (int)($user['op_permission'] ?? 0) < 1
+        && (int)($user['rating_special'] ?? 0) < 1
+        && !$isDivisionTrainer) {
         http_response_code(403);
         throw new RuntimeException('atc_trainer_denied');
     }

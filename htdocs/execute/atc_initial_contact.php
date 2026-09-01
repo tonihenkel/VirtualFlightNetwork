@@ -84,7 +84,7 @@ try {
     $atc = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$atc) contactReply(false, 'atc_control_session_required', 403);
     $isTrainer = (int)($atc['is_trainer'] ?? 0) === 1;
-    $pdo->exec("DELETE aa FROM atc_assumed_aircraft aa LEFT JOIN atc_sessions a ON a.id=aa.atc_session_id WHERE a.id IS NULL OR a.is_active=0 OR a.last_seen_at<DATE_SUB(NOW(),INTERVAL 45 SECOND)");
+    $pdo->exec("DELETE aa FROM atc_assumed_aircraft aa LEFT JOIN atc_sessions a ON a.id=aa.atc_session_id WHERE a.id IS NULL OR a.is_active=0");
 
     $callsign = strtoupper(trim((string)($_POST['callsign'] ?? '')));
     $frequency = normalizeChatFrequency((string)($_POST['frequency'] ?? $atc['frequency'] ?? ''));
@@ -102,6 +102,29 @@ try {
     );
     $pilotStmt->execute(['callsign'=>$callsign]);
     $pilot = $pilotStmt->fetch(PDO::FETCH_ASSOC);
+    $isTrainingTarget = false;
+    if (!$pilot) {
+        $trainingStmt = $pdo->prepare(
+            "SELECT ta.id,ta.placement_type,creator.user_id,
+                    COALESCE(NULLIF(u.preferred_language,''),'en') AS plugin_language
+             FROM atc_training_aircraft ta
+             INNER JOIN atc_sessions creator ON creator.id=ta.trainer_session_id
+             INNER JOIN users u ON u.id=creator.user_id
+             WHERE UPPER(ta.callsign)=:callsign AND creator.is_active=1 AND creator.is_trainer=1
+               AND creator.last_seen_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE) LIMIT 1"
+        );
+        $trainingStmt->execute(['callsign'=>$callsign]);
+        $training = $trainingStmt->fetch(PDO::FETCH_ASSOC);
+        if ($training) {
+            $pilot = [
+                'user_id'=>(int)$training['user_id'],
+                'session_token'=>'training:'.(int)$training['id'],
+                'on_ground'=>(string)$training['placement_type'] === 'air' ? 0 : 1,
+                'plugin_language'=>(string)$training['plugin_language'],
+            ];
+            $isTrainingTarget = true;
+        }
+    }
     if (!$pilot) contactReply(false, 'pilot_not_online', 404);
 
     $atcCallsign = strtoupper((string)$atc['callsign']);

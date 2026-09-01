@@ -128,7 +128,7 @@ foreach ($divisions as $divisionOption) {
             <?php echo htmlspecialchars(t('register_title')); ?>
         </h2>
 
-        <form method="POST"
+        <form method="POST" id="registerForm"
               action="web_register.php">
 
             <input type="hidden" name="csrf"
@@ -148,6 +148,18 @@ foreach ($divisions as $divisionOption) {
                    name="real_name"
                    placeholder="<?php echo htmlspecialchars(t('register_realname')); ?>"
                    required>
+
+            <div class="airport-autocomplete">
+                <input type="text"
+                       id="registerHomeAirport"
+                       maxlength="60"
+                       autocomplete="off"
+                       placeholder="<?php echo htmlspecialchars(t('register_home_airport')); ?>"
+                       title="<?php echo htmlspecialchars(t('register_home_airport_help')); ?>"
+                       required>
+                <input type="hidden" id="registerHomeAirportCode" name="home_airport_icao">
+                <div id="registerHomeAirportResults" class="airport-autocomplete-results" hidden></div>
+            </div>
 
 
 
@@ -559,6 +571,22 @@ foreach ($divisions as $divisionOption) {
     flex-shrink: 0;
 }
 
+.airport-autocomplete { position: relative; width: 100%; }
+.airport-autocomplete-results {
+    position: absolute; left: 0; right: 0; top: calc(100% + 4px);
+    z-index: 1000000; max-height: 250px; overflow-y: auto;
+    border: 1px solid rgba(255,255,255,.16); border-radius: 10px;
+    background: rgba(15,20,30,.99); box-shadow: 0 14px 35px rgba(0,0,0,.45);
+}
+.airport-autocomplete-result {
+    display: block; width: 100%; padding: 11px 14px; border: 0;
+    border-bottom: 1px solid rgba(255,255,255,.08); background: transparent;
+    color: #fff; text-align: left; cursor: pointer;
+}
+.airport-autocomplete-result:hover { background: rgba(255,255,255,.09); }
+.airport-autocomplete-result strong { color: #58e0ff; }
+.airport-autocomplete-result small { display: block; margin-top: 3px; color: rgba(255,255,255,.62); }
+
 </style>
 
 <script>
@@ -701,5 +729,62 @@ document
                 });
         }
     );
+
+    (function initRegisterAirportSearch() {
+        const input = document.getElementById('registerHomeAirport');
+        const codeInput = document.getElementById('registerHomeAirportCode');
+        const results = document.getElementById('registerHomeAirportResults');
+        const form = document.getElementById('registerForm');
+        if (!input || !codeInput || !results || !form) return;
+        let timer = null;
+        let controller = null;
+        const escapeText = value => String(value || '').replace(/[&<>'"]/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[character]));
+        const closeResults = () => { results.hidden = true; results.innerHTML = ''; };
+
+        input.addEventListener('input', function() {
+            const query = input.value.trim();
+            codeInput.value = query.toUpperCase() === 'ZZZZ' ? 'ZZZZ' : '';
+            input.setCustomValidity('');
+            clearTimeout(timer);
+            if (controller) controller.abort();
+            if (query.toUpperCase() === 'ZZZZ' || query.length < 2) {
+                closeResults();
+                return;
+            }
+            timer = setTimeout(async function() {
+                controller = new AbortController();
+                try {
+                    const response = await fetch('execute/airport_lookup.php?q=' + encodeURIComponent(query), {signal: controller.signal});
+                    const data = await response.json();
+                    const airports = (Array.isArray(data.airports) ? data.airports : [])
+                        .filter(airport => /^[A-Z0-9][A-Z0-9-]{1,13}$/.test(String(airport.code || '').toUpperCase()));
+                    results.innerHTML = airports.map(airport =>
+                        '<button type="button" class="airport-autocomplete-result" data-code="' + escapeText(airport.code) + '" data-name="' + escapeText(airport.name) + '">' +
+                        '<strong>' + escapeText(airport.code) + '</strong> · ' + escapeText(airport.name) +
+                        '<small>' + escapeText(airport.municipality || '') + '</small></button>'
+                    ).join('');
+                    results.hidden = airports.length === 0;
+                } catch (error) {
+                    if (error.name !== 'AbortError') closeResults();
+                }
+            }, 250);
+        });
+        results.addEventListener('mousedown', function(event) {
+            const option = event.target.closest('[data-code]');
+            if (!option) return;
+            event.preventDefault();
+            input.value = option.dataset.code;
+            codeInput.value = option.dataset.code;
+            input.setCustomValidity('');
+            closeResults();
+        });
+        form.addEventListener('submit', function(event) {
+            if (codeInput.value) return;
+            event.preventDefault();
+            input.setCustomValidity(<?php echo json_encode(t('register_home_airport_invalid')); ?>);
+            input.reportValidity();
+        });
+        input.addEventListener('blur', () => setTimeout(closeResults, 120));
+    })();
 
 </script>

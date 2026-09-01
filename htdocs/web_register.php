@@ -104,6 +104,9 @@ if (
 $username = trim($_POST['username'] ?? '');
 $email = trim($_POST['email'] ?? '');
 $realName = trim($_POST['real_name'] ?? '');
+$homeAirportRaw = trim((string)($_POST['home_airport_icao'] ?? ''));
+$homeAirportParts = preg_split('/\s*·\s*/u', $homeAirportRaw, 2);
+$homeAirportIcao = strtoupper(trim((string)($homeAirportParts[0] ?? '')));
 $countryCode = strtoupper(trim($_POST['country_code'] ?? ''));
 $divisionCode = strtoupper(trim($_POST['division_code'] ?? ''));
 $password = $_POST['password'] ?? '';
@@ -113,10 +116,15 @@ if (
     $username === '' ||
     $email === '' ||
     $realName === '' ||
+    $homeAirportIcao === '' ||
     $password === '' ||
     $passwordRepeat === ''
 ) {
     redirectBack('error', 'register_fields_required');
+}
+
+if (!preg_match('/^[A-Z0-9][A-Z0-9-]{1,13}$/', $homeAirportIcao)) {
+    redirectBack('error', 'register_home_airport_invalid');
 }
 
 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -158,6 +166,28 @@ try {
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
         ]
     );
+
+    $homeAirportColumn = $pdo->query("SHOW COLUMNS FROM users LIKE 'home_airport_icao'");
+    if (!$homeAirportColumn->fetch(PDO::FETCH_ASSOC)) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN home_airport_icao VARCHAR(14) NOT NULL DEFAULT 'ZZZZ' AFTER country_code");
+    } else {
+        $column = $pdo->query("SHOW COLUMNS FROM users LIKE 'home_airport_icao'")->fetch(PDO::FETCH_ASSOC);
+        if ($column && strtolower((string)$column['Type']) !== 'varchar(14)') {
+            $pdo->exec("ALTER TABLE users MODIFY COLUMN home_airport_icao VARCHAR(14) NOT NULL DEFAULT 'ZZZZ'");
+        }
+    }
+
+    if ($homeAirportIcao !== 'ZZZZ') {
+        $airportStmt = $pdo->prepare(
+            "SELECT 1 FROM airports
+             WHERE UPPER(ident)=:ident OR UPPER(icao_code)=:icao OR UPPER(gps_code)=:gps
+             LIMIT 1"
+        );
+        $airportStmt->execute(['ident'=>$homeAirportIcao,'icao'=>$homeAirportIcao,'gps'=>$homeAirportIcao]);
+        if (!$airportStmt->fetchColumn()) {
+            redirectBack('error', 'register_home_airport_invalid');
+        }
+    }
 
     $clientIp = (string)($_SERVER['REMOTE_ADDR'] ?? '');
     $registerIdentifier = strtolower($email . '|' . $username);
@@ -213,6 +243,7 @@ try {
                 email,
                 real_name,
                 country_code,
+                home_airport_icao,
                 division_code,
                 password_hash,
                 email_verified,
@@ -233,6 +264,7 @@ try {
                 :email,
                 :real_name,
                 :country_code,
+                :home_airport_icao,
                 :division_code,
                 :password_hash,
                 0,
@@ -254,6 +286,7 @@ try {
         'email' => $email,
         'real_name' => $realName,
         'country_code' => $countryCode,
+        'home_airport_icao' => $homeAirportIcao,
         'division_code' => $divisionCode,
         'password_hash' => $passwordHash,
         'email_verify_token' => $verifyToken

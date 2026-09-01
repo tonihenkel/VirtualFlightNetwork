@@ -1,6 +1,14 @@
 <?php
 
 return [
+    'atc_training_callsign_exists'=>'이 호출부호는 다른 훈련 항공기가 사용 중입니다.','atc_training_control'=>'훈련 항공기 제어','atc_training_control_mode'=>'제어 모드','atc_training_control_manual'=>'수동','atc_training_control_automatic'=>'자동','atc_training_motion_state'=>'이동 상태','atc_training_motion_parked'=>'주기','atc_training_motion_pushback'=>'푸시백','atc_training_motion_taxi_out'=>'활주로로 지상활주','atc_training_motion_taxi_in'=>'게이트로 지상활주','atc_training_motion_takeoff'=>'이륙','atc_training_motion_climb'=>'상승','atc_training_motion_cruise'=>'순항','atc_training_motion_descent'=>'강하','atc_training_motion_landing'=>'착륙','atc_training_target_speed'=>'목표 속도 (kt)','atc_training_target_altitude'=>'목표 고도 (ft)','atc_training_vertical_speed'=>'수직 속도 (ft/min)','atc_training_control_apply'=>'제어 적용','atc_training_control_stop'=>'정지',
+    'atc_training_properties_edit'=>'속성 편집','atc_training_callsign_edit'=>'호출부호','atc_training_aircraft_edit'=>'항공기 유형','atc_training_position_type'=>'위치 유형','atc_training_heading_edit'=>'방위','atc_training_position_gate'=>'게이트','atc_training_position_taxiway'=>'유도로','atc_training_position_runway'=>'활주로','atc_training_position_air'=>'비행 중',
+    'atc_training_transponder'=>'트랜스폰더','atc_training_transponder_status'=>'상태','atc_training_transponder_standby'=>'대기','atc_training_transponder_on'=>'켜짐','atc_training_transponder_ident'=>'IDENT','atc_training_transponder_code'=>'트랜스폰더 코드','atc_training_transponder_code_prompt'=>'트랜스폰더 코드를 입력하세요(0~7의 숫자 4자리):',
+    'atc_training_assignment_reset'=>'할당 해제','atc_training_assignment_reset_confirm'=>'%callsign%의 할당을 해제할까요?',
+    'atc_training_aircraft_create'=>'훈련 항공기 배치','atc_training_aircraft_delete'=>'훈련 항공기 삭제','atc_training_callsign_prompt'=>'훈련 항공기 호출부호:','atc_training_aircraft_prompt'=>'항공기 유형(ICAO):','atc_training_placement_prompt'=>'위치 유형: runway, taxiway, gate 또는 air','atc_training_altitude_prompt'=>'고도(피트):','atc_training_heading_prompt'=>'방향(0–359°):','atc_training_aircraft_invalid'=>'훈련 항공기 데이터가 잘못되었습니다.','atc_training_delete_confirm'=>'훈련 항공기 %callsign%을 삭제할까요?',
+    'settings_personal_password_required'=>'사용자 이름, 이름 또는 국가 변경은 현재 비밀번호로 확인해야 합니다.',
+    'profile_home_airport'=>'홈 공항',
+    'register_home_airport'=>'ICAO, 식별자 또는 이름으로 홈 공항 검색','register_home_airport_help'=>'ICAO, 지역 식별자 또는 공항 이름으로 검색합니다. ZZZZ도 허용됩니다.','register_home_airport_invalid'=>'기존 공항을 선택하거나 ZZZZ를 입력하세요.','settings_home_airport'=>'홈 공항','settings_home_airport_help'=>'ICAO 또는 지역 공항 식별자이며 ZZZZ도 허용됩니다.',
     'admin_filter_filtered_chats'=>'필터링된 채팅','admin_filter_filtered_chats_only'=>'필터링된 채팅만 표시',
     'admin_activity_sort'=>'스태프 활동 정렬','admin_activity_search_placeholder'=>'플레이어, 스태프, 활동 또는 날짜 검색 …','admin_activity_player'=>'플레이어','admin_activity_staff_member'=>'스태프 멤버','admin_activity_type'=>'활동 유형','admin_activity_date'=>'날짜',
     'admin_online_search_placeholder'=>'이름, 호출부호, 역할, 관제소 또는 등급 검색 …',
@@ -876,6 +884,7 @@ return [
     'statistics_period_30' => '지난 30일',
     'statistics_period_90' => '지난 90일',
     'statistics_period_365' => '지난해',
+    'statistics_period_0' => '전체 기간',
     'statistics_flights' => '항공편',
     'statistics_pilots' => '조종사',
     'statistics_distance' => '거리',
@@ -1333,4 +1342,11 @@ return [
     'atc_clearance_delete_confirm' => '%callsign%의 모든 허가를 삭제할까요?',
     'atc_session_required' => '활성 ATC 또는 관전자 세션이 필요합니다.',
     'atc_control_session_required' => '이 작업에는 활성 관제사 포지션이 필요합니다.',
+    'atc_training_aircraft_menu' => '훈련 항공기',
+    'atc_context_measurement_menu' => '거리 / 방위',
+    'atc_options_center_windows' => '활성 창 가운데 정렬',
+    'atc_training_radios_edit' => '무전기 편집',
+    'atc_training_radios_title' => 'COM1/COM2 주파수',
+    'atc_training_com1_frequency' => 'COM1 주파수',
+    'atc_training_com2_frequency' => 'COM2 주파수',
 ];

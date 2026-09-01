@@ -1,6 +1,14 @@
 <?php
 
 return [
+    'atc_training_callsign_exists'=>'رمز النداء مستخدم بالفعل من طائرة تدريب أخرى.','atc_training_control'=>'عناصر تحكم طائرة التدريب','atc_training_control_mode'=>'وضع التحكم','atc_training_control_manual'=>'يدوي','atc_training_control_automatic'=>'تلقائي','atc_training_motion_state'=>'حالة الحركة','atc_training_motion_parked'=>'متوقفة','atc_training_motion_pushback'=>'الدفع للخلف','atc_training_motion_taxi_out'=>'التوجه إلى المدرج','atc_training_motion_taxi_in'=>'التوجه إلى البوابة','atc_training_motion_takeoff'=>'الإقلاع','atc_training_motion_climb'=>'الصعود','atc_training_motion_cruise'=>'التحليق','atc_training_motion_descent'=>'الهبوط التدريجي','atc_training_motion_landing'=>'الهبوط','atc_training_target_speed'=>'السرعة المستهدفة (عقدة)','atc_training_target_altitude'=>'الارتفاع المستهدف (قدم)','atc_training_vertical_speed'=>'السرعة الرأسية (قدم/دقيقة)','atc_training_control_apply'=>'تطبيق التحكم','atc_training_control_stop'=>'إيقاف',
+    'atc_training_properties_edit'=>'تعديل الخصائص','atc_training_callsign_edit'=>'نداء الطائرة','atc_training_aircraft_edit'=>'نوع الطائرة','atc_training_position_type'=>'نوع الموقع','atc_training_heading_edit'=>'الاتجاه','atc_training_position_gate'=>'بوابة','atc_training_position_taxiway'=>'ممر التاكسي','atc_training_position_runway'=>'مدرج','atc_training_position_air'=>'في الجو',
+    'atc_training_transponder'=>'جهاز الإرسال والاستقبال','atc_training_transponder_status'=>'الحالة','atc_training_transponder_standby'=>'وضع الاستعداد','atc_training_transponder_on'=>'تشغيل','atc_training_transponder_ident'=>'IDENT','atc_training_transponder_code'=>'رمز جهاز الإرسال والاستقبال','atc_training_transponder_code_prompt'=>'أدخل رمز جهاز الإرسال والاستقبال (أربعة أرقام من 0 إلى 7):',
+    'atc_training_assignment_reset'=>'إلغاء التعيين','atc_training_assignment_reset_confirm'=>'هل تريد إلغاء تعيين %callsign%؟',
+    'atc_training_aircraft_create'=>'وضع طائرة تدريب','atc_training_aircraft_delete'=>'حذف طائرة التدريب','atc_training_callsign_prompt'=>'نداء طائرة التدريب:','atc_training_aircraft_prompt'=>'نوع الطائرة (ICAO):','atc_training_placement_prompt'=>'نوع الموضع: runway أو taxiway أو gate أو air','atc_training_altitude_prompt'=>'الارتفاع بالقدم:','atc_training_heading_prompt'=>'الاتجاه (0–359°):','atc_training_aircraft_invalid'=>'بيانات طائرة التدريب غير صالحة.','atc_training_delete_confirm'=>'حذف طائرة التدريب %callsign%؟',
+    'settings_personal_password_required'=>'يجب تأكيد تغييرات اسم المستخدم أو الاسم أو البلد بكلمة المرور الحالية.',
+    'profile_home_airport'=>'المطار الأساسي',
+    'register_home_airport'=>'ابحث عن المطار بالرمز أو الاسم','register_home_airport_help'=>'ابحث برمز ICAO أو المعرّف المحلي أو اسم المطار؛ يُقبل ZZZZ أيضًا.','register_home_airport_invalid'=>'اختر مطارًا موجودًا أو أدخل ZZZZ.','settings_home_airport'=>'المطار الأساسي','settings_home_airport_help'=>'رمز ICAO أو معرّف المطار المحلي؛ يُقبل ZZZZ أيضًا.',
     'admin_filter_filtered_chats'=>'الدردشات المفلترة','admin_filter_filtered_chats_only'=>'عرض الدردشات المفلترة فقط',
     'admin_activity_sort'=>'ترتيب أنشطة الطاقم','admin_activity_search_placeholder'=>'ابحث عن لاعب أو عضو طاقم أو نشاط أو تاريخ …','admin_activity_player'=>'اللاعب','admin_activity_staff_member'=>'عضو الطاقم','admin_activity_type'=>'نوع النشاط','admin_activity_date'=>'التاريخ',
     'admin_online_search_placeholder'=>'ابحث بالاسم أو النداء أو الدور أو المحطة أو التصنيف …',
@@ -876,6 +884,7 @@ return [
     'statistics_period_30' => 'آخر 30 يومًا',
     'statistics_period_90' => 'آخر 90 يومًا',
     'statistics_period_365' => 'العام الماضي',
+    'statistics_period_0' => 'كل الوقت',
     'statistics_flights' => 'الرحلات الجوية',
     'statistics_pilots' => 'الطيارين',
     'statistics_distance' => 'مسافة',
@@ -1333,4 +1342,11 @@ return [
     'atc_clearance_delete_confirm' => 'هل تريد حذف جميع تصاريح %callsign%؟',
     'atc_session_required' => 'يلزم وجود جلسة مراقبة جوية أو مشاهدة نشطة.',
     'atc_control_session_required' => 'يتطلب هذا الإجراء موقع مراقب جوي نشطًا.',
+    'atc_training_aircraft_menu' => 'طائرة تدريب',
+    'atc_context_measurement_menu' => 'المسافة / الاتجاه',
+    'atc_options_center_windows' => 'توسيط النوافذ النشطة',
+    'atc_training_radios_edit' => 'تعديل أجهزة الراديو',
+    'atc_training_radios_title' => 'ترددات COM1 وCOM2',
+    'atc_training_com1_frequency' => 'تردد COM1',
+    'atc_training_com2_frequency' => 'تردد COM2',
 ];

@@ -29,6 +29,15 @@ function vfnStoreLanguageCookie(string $language): void
 
 function vfnEnsurePreferredLanguageColumn(PDO $pdo): void
 {
+    static $checked = false;
+    if ($checked) return;
+    $marker = rtrim(sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'vfn-language-schema-20260827.ready';
+    if (is_file($marker)) {
+        $checked = true;
+        return;
+    }
+    $checked = true;
+
     $column = $pdo->query(
         "SHOW COLUMNS FROM users LIKE 'preferred_language'"
     )->fetch(PDO::FETCH_ASSOC);
@@ -53,6 +62,7 @@ function vfnEnsurePreferredLanguageColumn(PDO $pdo): void
         && (int)$matches[1] < 10) {
         $pdo->exec("ALTER TABLE users MODIFY preferred_language VARCHAR(10) NULL DEFAULT NULL");
     }
+    @file_put_contents($marker, gmdate('c'));
 }
 
 function vfnLoadUserLanguage(PDO $pdo, int $userId): string

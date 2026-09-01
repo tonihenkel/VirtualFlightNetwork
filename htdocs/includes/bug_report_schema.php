@@ -6,6 +6,11 @@ function ensureBugReportSchema(PDO $pdo): void
     if ($ready) {
         return;
     }
+    $marker = rtrim(sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'vfn-bug-report-schema-20260827.ready';
+    if (is_file($marker)) {
+        $ready = true;
+        return;
+    }
 
     $pdo->exec("CREATE TABLE IF NOT EXISTS bug_reports (
         id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -76,6 +81,7 @@ function ensureBugReportSchema(PDO $pdo): void
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
     $ready = true;
+    @file_put_contents($marker, gmdate('c'));
 }
 
 function bugReportStatuses(): array

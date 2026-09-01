@@ -1,6 +1,14 @@
     <?php
 
 return [
+    'atc_training_callsign_exists'=>'The callsign is already used by another training aircraft.','atc_training_control'=>'Training controls','atc_training_control_mode'=>'Control mode','atc_training_control_manual'=>'Manual','atc_training_control_automatic'=>'Automatic','atc_training_motion_state'=>'Motion state','atc_training_motion_parked'=>'Parked','atc_training_motion_pushback'=>'Pushback','atc_training_motion_taxi_out'=>'Taxi to runway','atc_training_motion_taxi_in'=>'Taxi to gate','atc_training_motion_takeoff'=>'Takeoff','atc_training_motion_climb'=>'Climb','atc_training_motion_cruise'=>'Cruise','atc_training_motion_descent'=>'Descent','atc_training_motion_landing'=>'Landing','atc_training_target_speed'=>'Target speed (kt)','atc_training_target_altitude'=>'Target altitude (ft)','atc_training_vertical_speed'=>'Vertical speed (ft/min)','atc_training_control_apply'=>'Apply controls','atc_training_control_stop'=>'Stop',
+    'atc_training_properties_edit'=>'Edit properties','atc_training_callsign_edit'=>'Callsign','atc_training_aircraft_edit'=>'Aircraft type','atc_training_position_type'=>'Position type','atc_training_heading_edit'=>'Heading','atc_training_position_gate'=>'Gate','atc_training_position_taxiway'=>'Taxiway','atc_training_position_runway'=>'Runway','atc_training_position_air'=>'In the air',
+    'atc_training_transponder'=>'Transponder','atc_training_transponder_status'=>'Status','atc_training_transponder_standby'=>'Standby','atc_training_transponder_on'=>'On','atc_training_transponder_ident'=>'IDENT','atc_training_transponder_code'=>'Transponder code','atc_training_transponder_code_prompt'=>'Enter transponder code (four digits from 0 to 7):',
+    'atc_training_assignment_reset'=>'Release assignment','atc_training_assignment_reset_confirm'=>'Release the assignment of %callsign%?',
+    'atc_training_aircraft_create'=>'Place training aircraft','atc_training_aircraft_delete'=>'Delete training aircraft','atc_training_callsign_prompt'=>'Training aircraft callsign:','atc_training_aircraft_prompt'=>'Aircraft type (ICAO):','atc_training_placement_prompt'=>'Position type: runway, taxiway, gate, or air','atc_training_altitude_prompt'=>'Altitude in feet:','atc_training_heading_prompt'=>'Heading (0–359°):','atc_training_aircraft_invalid'=>'Invalid training aircraft data.','atc_training_delete_confirm'=>'Delete training aircraft %callsign%?',
+    'settings_personal_password_required'=>'Changes to your username, name, or country must be confirmed with your current password.',
+    'profile_home_airport'=>'Home airport',
+    'register_home_airport'=>'Search home airport (e.g. EDDP, DE-… or ZZZZ)','register_home_airport_help'=>'Search and select an ICAO or airport identifier; ZZZZ is also accepted.','register_home_airport_invalid'=>'Select an existing airport or enter ZZZZ.','settings_home_airport'=>'Home airport / airfield','settings_home_airport_help'=>'ICAO or airport identifier, for example EDDP or DE-…; ZZZZ is also accepted.',
     'admin_filter_filtered_chats'=>'Filtered chats','admin_filter_filtered_chats_only'=>'Show filtered chats only',
     'admin_activity_sort'=>'Sort staff activities','admin_activity_search_placeholder'=>'Search player, staff member, activity, or date …','admin_activity_player'=>'Player','admin_activity_staff_member'=>'Staff member','admin_activity_type'=>'Activity type','admin_activity_date'=>'Date',
     'admin_online_search_placeholder'=>'Search name, callsign, role, station, or rank …',
@@ -55,6 +63,7 @@ return [
     'atc_clearance_departure_runway' => 'Cleared departure runway',
     'atc_clearance_landing_runway' => 'Landing clearance / runway',
     'atc_clearance_gate' => 'Gate / stand',
+    'atc_clearance_taxi_route' => 'Taxi clearance',
     'atc_context_clearance_delete' => 'Delete clearances',
     'atc_clearance_delete_confirm' => 'Delete all clearances for %callsign%?',
     'invalid_departure_runway' => 'Invalid departure runway. Example: 08R or 26L.',
@@ -1638,6 +1647,7 @@ return [
     'statistics_period_30' => 'Last 30 days',
     'statistics_period_90' => 'Last 90 days',
     'statistics_period_365' => 'Last year',
+    'statistics_period_0' => 'All time',
     'statistics_flights' => 'Flights',
     'statistics_pilots' => 'Pilots',
     'statistics_distance' => 'Distance',
@@ -1980,4 +1990,11 @@ return [
     'atc_session_required' => 'An active ATC or spectator session is required.',
     'atc_position_busy' => 'This ATC position is already occupied or currently being prepared.',
     'atc_control_session_required' => 'This action requires an active controller position.',
+    'atc_training_aircraft_menu' => 'Training aircraft',
+    'atc_context_measurement_menu' => 'Distance / bearing',
+    'atc_options_center_windows' => 'Center active windows',
+    'atc_training_radios_edit' => 'Edit radios',
+    'atc_training_radios_title' => 'COM1/COM2 frequencies',
+    'atc_training_com1_frequency' => 'COM1 frequency',
+    'atc_training_com2_frequency' => 'COM2 frequency',
 ];

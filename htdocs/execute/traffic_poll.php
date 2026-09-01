@@ -157,6 +157,35 @@ try {
         $row['distance_nm'] = $distanceNm;
         $nearby[] = $row;
     }
+    $trainingStmt=$pdo->query(
+        "SELECT ta.* FROM atc_training_aircraft ta
+         INNER JOIN atc_sessions creator ON creator.id=ta.trainer_session_id
+         WHERE creator.is_active=1 AND creator.is_trainer=1
+           AND creator.last_seen_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE)"
+    );
+    foreach($trainingStmt->fetchAll(PDO::FETCH_ASSOC) as $training){
+        $distanceNm=trafficDistanceNm((float)$viewer['latitude'],(float)$viewer['longitude'],(float)$training['latitude'],(float)$training['longitude']);
+        if($distanceNm>VFN_TRAFFIC_MAX_DISTANCE_NM)continue;
+        // Height is authoritative for airborne training traffic. Older/manual
+        // control paths could leave placement_type at gate/runway while the
+        // aircraft had already climbed, which made the plugin clamp a 2000 ft
+        // target to the local terrain.
+        $onGround=(string)$training['placement_type']!=='air'
+            && (float)$training['altitude']<=5.0;
+        $trainingTransponderStatus=strtolower((string)($training['transponder_status']??'standby'));
+        $trainingTransponderMode=$trainingTransponderStatus==='ident'?4:($trainingTransponderStatus==='on'?2:1);
+        $nearby[]=[
+            'user_id'=>-(int)$training['id'],'callsign'=>(string)$training['callsign'],'aircraft_icao'=>(string)$training['aircraft_icao'],
+            'latitude'=>(float)$training['latitude'],'longitude'=>(float)$training['longitude'],'altitude'=>(int)$training['altitude'],
+            'heading'=>(int)$training['heading'],'pitch'=>0,'roll_angle'=>0,'airspeed'=>(int)$training['airspeed'],'vertical_speed'=>0,
+            'on_ground'=>$onGround?1:0,'gear_ratio'=>$onGround?1:0,'flap_ratio'=>0,'speedbrake_ratio'=>0,'thrust_ratio'=>0,
+            'engine_rpm'=>0,'yoke_pitch_ratio'=>0,'yoke_roll_ratio'=>0,'yoke_heading_ratio'=>0,'taxi_lights'=>0,
+            'landing_lights'=>0,'beacon_lights'=>1,'strobe_lights'=>0,'nav_lights'=>1,'departure_airport'=>(string)$training['departure_airport'],
+            'arrival_airport'=>(string)$training['arrival_airport'],'distance_nm'=>$distanceNm,'is_spectator'=>0,'op_permission'=>0,
+            'transponder'=>(string)($training['transponder_code']??'7000'),'transponder_mode'=>$trainingTransponderMode,'slat_ratio'=>0,'wing_sweep_ratio'=>0,'thrust_reverser_ratio'=>0,
+            'nose_wheel_angle'=>0,'tire_rotation_rad_sec'=>0,'position_sample_time'=>time(),
+        ];
+    }
 
     usort(
         $nearby,

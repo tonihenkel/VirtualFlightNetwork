@@ -2,6 +2,15 @@
 
 function ensureWebFeatureSchema(PDO $pdo): void
 {
+    static $checked = false;
+    if ($checked) return;
+    $marker = rtrim(sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'vfn-web-features-schema-20260827.ready';
+    if (is_file($marker)) {
+        $checked = true;
+        return;
+    }
+    $checked = true;
+
     require_once __DIR__ . '/language_preferences.php';
     vfnEnsurePreferredLanguageColumn($pdo);
 
@@ -76,4 +85,5 @@ function ensureWebFeatureSchema(PDO $pdo): void
             PRIMARY KEY (job_key)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
     );
+    @file_put_contents($marker, gmdate('c'));
 }

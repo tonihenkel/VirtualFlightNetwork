@@ -1,6 +1,14 @@
 <?php
 
 return [
+    'atc_training_callsign_exists'=>'Позывной уже используется другим учебным самолётом.','atc_training_control'=>'Управление учебным самолётом','atc_training_control_mode'=>'Режим управления','atc_training_control_manual'=>'Ручной','atc_training_control_automatic'=>'Автоматический','atc_training_motion_state'=>'Состояние движения','atc_training_motion_parked'=>'На стоянке','atc_training_motion_pushback'=>'Буксировка','atc_training_motion_taxi_out'=>'Руление к ВПП','atc_training_motion_taxi_in'=>'Руление к гейту','atc_training_motion_takeoff'=>'Взлёт','atc_training_motion_climb'=>'Набор высоты','atc_training_motion_cruise'=>'Крейсерский полёт','atc_training_motion_descent'=>'Снижение','atc_training_motion_landing'=>'Посадка','atc_training_target_speed'=>'Целевая скорость (уз)','atc_training_target_altitude'=>'Целевая высота (фт)','atc_training_vertical_speed'=>'Вертикальная скорость (фт/мин)','atc_training_control_apply'=>'Применить','atc_training_control_stop'=>'Остановить',
+    'atc_training_properties_edit'=>'Изменить свойства','atc_training_callsign_edit'=>'Позывной','atc_training_aircraft_edit'=>'Тип самолёта','atc_training_position_type'=>'Тип позиции','atc_training_heading_edit'=>'Курс','atc_training_position_gate'=>'Стоянка','atc_training_position_taxiway'=>'Рулёжная дорожка','atc_training_position_runway'=>'ВПП','atc_training_position_air'=>'В воздухе',
+    'atc_training_transponder'=>'Транспондер','atc_training_transponder_status'=>'Состояние','atc_training_transponder_standby'=>'Ожидание','atc_training_transponder_on'=>'Включён','atc_training_transponder_ident'=>'IDENT','atc_training_transponder_code'=>'Код транспондера','atc_training_transponder_code_prompt'=>'Введите код транспондера (четыре цифры от 0 до 7):',
+    'atc_training_assignment_reset'=>'Снять назначение','atc_training_assignment_reset_confirm'=>'Снять назначение с %callsign%?',
+    'atc_training_aircraft_create'=>'Разместить учебный самолёт','atc_training_aircraft_delete'=>'Удалить учебный самолёт','atc_training_callsign_prompt'=>'Позывной учебного самолёта:','atc_training_aircraft_prompt'=>'Тип самолёта (ИКАО):','atc_training_placement_prompt'=>'Тип позиции: runway, taxiway, gate или air','atc_training_altitude_prompt'=>'Высота в футах:','atc_training_heading_prompt'=>'Курс (0–359°):','atc_training_aircraft_invalid'=>'Неверные данные учебного самолёта.','atc_training_delete_confirm'=>'Удалить учебный самолёт %callsign%?',
+    'settings_personal_password_required'=>'Изменения имени пользователя, имени или страны необходимо подтвердить текущим паролем.',
+    'profile_home_airport'=>'Базовый аэропорт',
+    'register_home_airport'=>'Найти базовый аэропорт (напр. EDDP, DE-… или ZZZZ)','register_home_airport_help'=>'Найдите и выберите идентификатор ИКАО или аэродрома; ZZZZ допускается.','register_home_airport_invalid'=>'Выберите существующий аэропорт или введите ZZZZ.','settings_home_airport'=>'Базовый аэропорт / аэродром','settings_home_airport_help'=>'Идентификатор ИКАО или аэродрома, например EDDP или DE-…; ZZZZ допускается.',
     'admin_filter_filtered_chats'=>'Отфильтрованные чаты','admin_filter_filtered_chats_only'=>'Показывать только отфильтрованные чаты',
     'admin_activity_sort'=>'Сортировать действия персонала','admin_activity_search_placeholder'=>'Поиск игрока, сотрудника, действия или даты …','admin_activity_player'=>'Игрок','admin_activity_staff_member'=>'Сотрудник','admin_activity_type'=>'Тип действия','admin_activity_date'=>'Дата',
     'admin_online_search_placeholder'=>'Поиск по имени, позывному, роли, станции или рейтингу …',
@@ -876,6 +884,7 @@ return [
     'statistics_period_30' => 'Последние 30 дней',
     'statistics_period_90' => 'Последние 90 дней',
     'statistics_period_365' => 'В прошлом году',
+    'statistics_period_0' => 'За всё время',
     'statistics_flights' => 'Авиабилеты',
     'statistics_pilots' => 'Пилоты',
     'statistics_distance' => 'Расстояние',
@@ -1333,4 +1342,11 @@ return [
     'atc_clearance_delete_confirm' => 'Удалить все разрешения для %callsign%?',
     'atc_session_required' => 'Требуется активная сессия диспетчера или наблюдателя.',
     'atc_control_session_required' => 'Для этого действия требуется активная диспетчерская позиция.',
+    'atc_training_aircraft_menu' => 'Учебный самолёт',
+    'atc_context_measurement_menu' => 'Расстояние / пеленг',
+    'atc_options_center_windows' => 'Центрировать активные окна',
+    'atc_training_radios_edit' => 'Изменить радиостанции',
+    'atc_training_radios_title' => 'Частоты COM1/COM2',
+    'atc_training_com1_frequency' => 'Частота COM1',
+    'atc_training_com2_frequency' => 'Частота COM2',
 ];

@@ -3,6 +3,15 @@ declare(strict_types=1);
 
 function ensureCpdlcSchema(PDO $pdo): void
 {
+    static $checked = false;
+    if ($checked) return;
+    $marker = rtrim(sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'vfn-cpdlc-schema-20260827.ready';
+    if (is_file($marker)) {
+        $checked = true;
+        return;
+    }
+    $checked = true;
+
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS cpdlc_connections (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -90,6 +99,7 @@ function ensureCpdlcSchema(PDO $pdo): void
         KEY idx_acars_remote_created (remote_callsign, created_at),
         KEY idx_acars_type_state (message_type, state)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    @file_put_contents($marker, gmdate('c'));
 }
 
 function vfnCpdlcAddUniqueIndex(PDO $pdo, string $table, string $index, string $column): void

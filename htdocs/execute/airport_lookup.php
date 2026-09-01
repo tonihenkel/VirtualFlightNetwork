@@ -3,15 +3,16 @@ header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/config.php';
 
-$query = strtoupper(trim((string)($_GET['q'] ?? '')));
+$query = trim((string)($_GET['q'] ?? ''));
 if (
     mb_strlen($query) < 2
     || mb_strlen($query) > 60
-    || !preg_match('/^[A-Z0-9 .\-]+$/', $query)
+    || !preg_match('/^[\p{L}\p{N} .\-\'’]+$/u', $query)
 ) {
     echo json_encode(['success' => true, 'airports' => []]);
     exit;
 }
+$queryUpper = mb_strtoupper($query, 'UTF-8');
 
 try {
     $pdo = new PDO(
@@ -37,15 +38,19 @@ try {
                 WHEN ident = :exact_order
                   OR icao_code = :exact_order
                   OR gps_code = :exact_order THEN 0
-                ELSE 1
+                WHEN ident LIKE :prefix_order
+                  OR icao_code LIKE :prefix_order
+                  OR gps_code LIKE :prefix_order THEN 1
+                ELSE 2
             END,
             ident
          LIMIT 8"
     );
     $stmt->execute([
-        'exact' => $query,
-        'exact_order' => $query,
-        'prefix' => $query . '%',
+        'exact' => $queryUpper,
+        'exact_order' => $queryUpper,
+        'prefix' => $queryUpper . '%',
+        'prefix_order' => $queryUpper . '%',
         'contains' => '%' . $query . '%',
     ]);
 

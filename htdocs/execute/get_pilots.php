@@ -27,7 +27,10 @@ if (
     exit;
 }
 
-$activeSeconds = 10;
+// Keep the worldwide map stable during short position-upload outages. Fresh
+// coordinates are still returned immediately on every two-second map poll;
+// this grace period only prevents a target from disappearing between updates.
+$activeSeconds = 60;
 
 function getAirportByCode($pdo, $code)
 {
@@ -233,6 +236,45 @@ try {
     }
 
     $pilots = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $trainingStatement=$pdo->query(
+        "SELECT ta.*,creator.user_id AS trainer_user_id
+         FROM atc_training_aircraft ta
+         INNER JOIN atc_sessions creator ON creator.id=ta.trainer_session_id
+         WHERE creator.is_active=1 AND creator.is_trainer=1
+           AND creator.last_seen_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE)
+         ORDER BY ta.callsign"
+    );
+    foreach($trainingStatement->fetchAll(PDO::FETCH_ASSOC) as $training){
+        $onGround=(string)$training['placement_type']!=='air'
+            && (float)$training['altitude']<=5.0;
+        $trainingTransponderStatus=strtolower((string)($training['transponder_status']??'standby'));
+        $trainingTransponderMode=$trainingTransponderStatus==='ident'?4:($trainingTransponderStatus==='on'?2:1);
+        $pilots[]=[
+            'user_id'=>-(int)$training['id'],'session_token'=>'training:'.(int)$training['id'],
+            'username'=>'TRAINING','callsign'=>(string)$training['callsign'],
+            'aircraft_icao'=>(string)$training['aircraft_icao'],'aircraft_category'=>'',
+            'latitude'=>(float)$training['latitude'],'longitude'=>(float)$training['longitude'],
+            'altitude'=>(int)$training['altitude'],'heading'=>(int)$training['heading'],
+            'airspeed'=>(int)$training['airspeed'],'pitch'=>0,'roll_angle'=>0,'vertical_speed'=>0,
+            'on_ground'=>$onGround?1:0,'gear_ratio'=>$onGround?1:0,'flap_ratio'=>0,'slat_ratio'=>0,
+            'speedbrake_ratio'=>0,'wing_sweep_ratio'=>0,'thrust_ratio'=>0,'thrust_reverser_ratio'=>0,
+            'engine_rpm'=>0,'engine_count'=>2,'engine_thrust_ratios'=>'[]','engine_rpms'=>'[]',
+            'yoke_pitch_ratio'=>0,'yoke_roll_ratio'=>0,'yoke_heading_ratio'=>0,'nose_wheel_angle'=>0,
+            'tire_rotation_rad_sec'=>0,'taxi_lights'=>0,'landing_lights'=>0,'beacon_lights'=>1,
+            'strobe_lights'=>0,'nav_lights'=>1,'ai_controls_aircraft'=>0,'ai_destination_icao'=>'',
+            'com1'=>(string)($training['com1_frequency']??'122.800'),'com2'=>(string)($training['com2_frequency']??'122.800'),'com3'=>'','transponder'=>(string)($training['transponder_code']??'7000'),'transponder_mode'=>$trainingTransponderMode,
+            'last_update'=>date('Y-m-d H:i:s'),'country_code'=>'','division_code'=>'','division_name'=>'Training',
+            'is_invisible'=>0,'is_spectator'=>0,'op_permission'=>0,'rating_pilot'=>0,'rating_atc'=>0,
+            'rating_special'=>0,'flight_rules'=>(string)$training['flight_rules'],'flight_type'=>(string)$training['flight_type'],
+            'communication_mode'=>(string)$training['communication_mode'],'departure_time'=>'',
+            'departure_airport'=>(string)$training['departure_airport'],'arrival_airport'=>(string)$training['arrival_airport'],
+            'alternate1_airport'=>(string)$training['alternate1_airport'],'alternate2_airport'=>(string)$training['alternate2_airport'],
+            'route_text'=>(string)$training['route_text'],'cruising_level'=>(string)$training['cruising_level'],
+            'cruising_speed'=>(string)$training['cruising_speed'],'remarks'=>(string)$training['remarks'],
+            'active_flight_started_at'=>null,'active_flight_duration_seconds'=>0,'active_flight_distance_nm'=>0,
+            'is_training_aircraft'=>true,'training_aircraft_id'=>(int)$training['id'],
+        ];
+    }
 
     $visiblePilots = [];
 
@@ -265,6 +307,8 @@ try {
 
             $invisibleCount++;
         } else {
+            // The live map lists training targets as online traffic. Long-term
+            // pilot statistics are calculated elsewhere and remain unaffected.
             $regularPilotCount++;
         }
 
@@ -568,7 +612,8 @@ try {
          INNER JOIN users u ON u.id = a.user_id
          LEFT JOIN airports ap ON UPPER(ap.ident) = UPPER(a.station_code)
          WHERE a.is_active = 1 AND a.is_ready=1 AND (a.is_spectator = 0 OR a.is_trainer = 1)
-           AND a.last_seen_at >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
+           AND ((a.is_trainer=1 AND a.last_seen_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE))
+                OR (a.is_trainer=0 AND a.last_seen_at>=DATE_SUB(NOW(),INTERVAL 90 SECOND)))
          ORDER BY a.station_code, a.position_code, a.callsign"
     );
     $atcs = array_values(array_filter(
@@ -576,6 +621,13 @@ try {
         static function (array $atc) use ($viewerOpPermission, $viewerUserId): bool {
             if ((int)($atc['is_invisible'] ?? 0) !== 1) {
                 return true;
+            }
+
+            // An invisible trainer position must not be disclosed on the map.
+            // Its synthetic training aircraft is a separate pilot record and
+            // deliberately remains visible for training purposes.
+            if ((int)($atc['is_trainer'] ?? 0) === 1) {
+                return false;
             }
 
             // The owner always sees their own invisible ATC session. Other
@@ -636,21 +688,24 @@ try {
             "SELECT s.airport_icao, s.frequency, s.airport_name,
                     s.latitude, s.longitude, a.callsign AS controller_callsign,
                     a.station_code, a.position_code, a.frequency AS controller_frequency,
-                    a.radar_boundary_code, a.is_gca,
+                    a.radar_boundary_code, a.is_gca, a.is_trainer,
                     a.user_id, a.is_invisible, u.op_permission AS controller_op_permission,
                     COALESCE(NULLIF(TRIM(u.real_name), ''), u.username) AS controller_name
              FROM atc_session_atis_airports s
              INNER JOIN atc_sessions a ON a.id = s.session_id
              INNER JOIN users u ON u.id = a.user_id
              WHERE a.is_active = 1 AND a.is_ready=1 AND (a.is_spectator = 0 OR a.is_trainer=1)
-               AND a.last_seen_at >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
+               AND ((a.is_trainer=1 AND a.last_seen_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE))
+                    OR (a.is_trainer=0 AND a.last_seen_at>=DATE_SUB(NOW(),INTERVAL 90 SECOND)))
              ORDER BY s.airport_icao, a.callsign"
         );
         foreach ($atisStatement->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $atisControllerVisible = (int)($row['is_invisible'] ?? 0) !== 1
-                || ($viewerUserId > 0 && (int)($row['user_id'] ?? 0) === $viewerUserId)
-                || ($viewerOpPermission >= 1
-                    && $viewerOpPermission >= (int)($row['controller_op_permission'] ?? 0));
+                || ((int)($row['is_trainer'] ?? 0) !== 1 && (
+                    ($viewerUserId > 0 && (int)($row['user_id'] ?? 0) === $viewerUserId)
+                    || ($viewerOpPermission >= 1
+                        && $viewerOpPermission >= (int)($row['controller_op_permission'] ?? 0))
+                ));
             if (!$atisControllerVisible) {
                 continue;
             }

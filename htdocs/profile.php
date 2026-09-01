@@ -90,13 +90,19 @@ try {
     $unitColumns = [
         'altitude_unit' => "ENUM('ft','m') NOT NULL DEFAULT 'ft'",
         'distance_unit' => "ENUM('nm','km') NOT NULL DEFAULT 'nm'",
-        'speed_unit' => "ENUM('kt','kmh') NOT NULL DEFAULT 'kt'"
+        'speed_unit' => "ENUM('kt','kmh') NOT NULL DEFAULT 'kt'",
+        'home_airport_icao' => "VARCHAR(14) NOT NULL DEFAULT 'ZZZZ'"
     ];
     foreach ($unitColumns as $column => $definition) {
         $columnCheck = $pdo->query("SHOW COLUMNS FROM users LIKE " . $pdo->quote($column));
         if (!$columnCheck->fetch(PDO::FETCH_ASSOC)) {
             $pdo->exec("ALTER TABLE users ADD COLUMN `{$column}` {$definition}");
         }
+    }
+    $homeAirportColumn = $pdo->query("SHOW COLUMNS FROM users LIKE 'home_airport_icao'")
+        ->fetch(PDO::FETCH_ASSOC);
+    if ($homeAirportColumn && strtolower((string)$homeAirportColumn['Type']) !== 'varchar(14)') {
+        $pdo->exec("ALTER TABLE users MODIFY COLUMN home_airport_icao VARCHAR(14) NOT NULL DEFAULT 'ZZZZ'");
     }
 
     $stmt = $pdo->prepare(
@@ -106,6 +112,7 @@ try {
             email,
             real_name,
             country_code,
+            home_airport_icao,
             division_code,
             created_at,
             last_login,
@@ -195,6 +202,27 @@ $countryCode =
 $countryName =
     $countries[$countryCode]
     ?? htmlspecialchars(t('profile_unknown'));
+
+$homeAirportCode = strtoupper(trim((string)($profileUser['home_airport_icao'] ?? 'ZZZZ')));
+if ($homeAirportCode === '') {
+    $homeAirportCode = 'ZZZZ';
+}
+$homeAirportName = '';
+if ($homeAirportCode !== 'ZZZZ') {
+    $homeAirportStmt = $pdo->prepare(
+        "SELECT name FROM airports
+         WHERE UPPER(ident)=:ident OR UPPER(icao_code)=:icao OR UPPER(gps_code)=:gps
+         LIMIT 1"
+    );
+    $homeAirportStmt->execute([
+        'ident'=>$homeAirportCode,
+        'icao'=>$homeAirportCode,
+        'gps'=>$homeAirportCode
+    ]);
+    $homeAirportName = trim((string)($homeAirportStmt->fetchColumn() ?: ''));
+}
+$homeAirportLabel = $homeAirportCode
+    . ($homeAirportName !== '' ? ' · ' . $homeAirportName : '');
 
 $divisionCode =
     strtoupper(

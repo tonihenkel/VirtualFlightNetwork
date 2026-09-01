@@ -1,0 +1,4 @@
+[out:xml][timeout:120];
+way["aeroway"="taxiway"](48.330,11.720,48.380,11.840);
+(._;>;);
+out body;

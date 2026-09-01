@@ -44,7 +44,8 @@ try {
              INNER JOIN atc_sessions a ON a.id=s.session_id
              INNER JOIN users u ON u.id=a.user_id
              WHERE a.is_active=1 AND a.is_ready=1 AND (a.is_spectator=0 OR a.is_trainer=1)
-               AND a.last_seen_at>=DATE_SUB(NOW(),INTERVAL 30 SECOND)
+               AND ((a.is_trainer=1 AND a.last_seen_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE))
+                    OR (a.is_trainer=0 AND a.last_seen_at>=DATE_SUB(NOW(),INTERVAL 90 SECOND)))
              ORDER BY a.position_code='CTR' DESC,a.callsign"
         )->fetchAll(PDO::FETCH_ASSOC);
         foreach ($coverageRows as $coverage) {
@@ -82,7 +83,8 @@ try {
          LEFT JOIN airports ap ON ap.ident = a.station_code
          WHERE a.is_active = 1 AND a.is_ready=1 AND (a.is_spectator = 0 OR a.is_trainer = 1)
            AND a.is_invisible = 0
-           AND a.last_seen_at >= DATE_SUB(NOW(), INTERVAL 30 SECOND)
+           AND ((a.is_trainer=1 AND a.last_seen_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE))
+                OR (a.is_trainer=0 AND a.last_seen_at>=DATE_SUB(NOW(),INTERVAL 90 SECOND)))
          ORDER BY a.station_code, a.position_code, a.callsign"
     );
     $positions = $stmt->fetchAll(PDO::FETCH_ASSOC);

@@ -2,6 +2,26 @@
 
 function ensureAtcSchema(PDO $pdo): void
 {
+    static $schemaReady = false;
+    if ($schemaReady) {
+        return;
+    }
+
+    // Schema migrations are intentionally expensive.  They used to run on every
+    // polled ATC/API request and caused dozens of information_schema queries per
+    // response. A versioned marker makes the hot path filesystem-only while a
+    // version bump still executes new migrations exactly once.
+    // Bump whenever a schema migration is added. The previous marker may
+    // already exist on long-running installations and must not suppress the
+    // newly added training-aircraft control columns.
+    $schemaVersion = '20260828_2';
+    $schemaMarker = rtrim(sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR
+        . 'vfn-atc-schema-' . sha1(__FILE__ . '|' . $schemaVersion) . '.ready';
+    if (is_file($schemaMarker)) {
+        $schemaReady = true;
+        return;
+    }
+
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS atc_sessions (
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -84,11 +104,76 @@ function ensureAtcSchema(PDO $pdo): void
     );
 
     $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS atc_training_aircraft (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            trainer_session_id BIGINT UNSIGNED NOT NULL,
+            callsign VARCHAR(40) NOT NULL,
+            aircraft_icao VARCHAR(12) NOT NULL DEFAULT 'A320',
+            placement_type ENUM('runway','taxiway','gate','air') NOT NULL DEFAULT 'gate',
+            latitude DECIMAL(10,7) NOT NULL,
+            longitude DECIMAL(10,7) NOT NULL,
+            altitude INT NOT NULL DEFAULT 0,
+            heading SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+            target_heading SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+            airspeed SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+            control_mode ENUM('manual','automatic') NOT NULL DEFAULT 'manual',
+            motion_state VARCHAR(20) NOT NULL DEFAULT 'parked',
+            target_airspeed SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+            target_altitude INT NOT NULL DEFAULT 0,
+            vertical_speed_fpm SMALLINT UNSIGNED NOT NULL DEFAULT 1000,
+            last_motion_at DATETIME NULL,
+            transponder_code VARCHAR(4) NOT NULL DEFAULT '7000',
+            transponder_status ENUM('standby','on','ident') NOT NULL DEFAULT 'standby',
+            com1_frequency VARCHAR(7) NOT NULL DEFAULT '122.800',
+            com2_frequency VARCHAR(7) NOT NULL DEFAULT '122.800',
+            flight_rules CHAR(1) NOT NULL DEFAULT 'I',
+            flight_type VARCHAR(4) NOT NULL DEFAULT 'G',
+            communication_mode VARCHAR(20) NOT NULL DEFAULT 'VOICE',
+            departure_airport VARCHAR(14) NOT NULL DEFAULT 'ZZZZ',
+            arrival_airport VARCHAR(14) NOT NULL DEFAULT 'ZZZZ',
+            alternate1_airport VARCHAR(14) NOT NULL DEFAULT 'ZZZZ',
+            alternate2_airport VARCHAR(14) NOT NULL DEFAULT 'ZZZZ',
+            route_text TEXT NOT NULL,
+            cruising_level VARCHAR(20) NOT NULL DEFAULT '',
+            cruising_speed VARCHAR(20) NOT NULL DEFAULT '',
+            remarks TEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_atc_training_callsign (trainer_session_id,callsign),
+            KEY idx_atc_training_session (trainer_session_id),
+            CONSTRAINT fk_atc_training_session FOREIGN KEY (trainer_session_id)
+                REFERENCES atc_sessions(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+    );
+    $trainingColumns=[
+        'flight_rules'=>"CHAR(1) NOT NULL DEFAULT 'I'",'flight_type'=>"VARCHAR(4) NOT NULL DEFAULT 'G'",
+        'communication_mode'=>"VARCHAR(20) NOT NULL DEFAULT 'VOICE'",'departure_airport'=>"VARCHAR(14) NOT NULL DEFAULT 'ZZZZ'",
+        'arrival_airport'=>"VARCHAR(14) NOT NULL DEFAULT 'ZZZZ'",'alternate1_airport'=>"VARCHAR(14) NOT NULL DEFAULT 'ZZZZ'",
+        'alternate2_airport'=>"VARCHAR(14) NOT NULL DEFAULT 'ZZZZ'",'route_text'=>"TEXT NOT NULL",
+        'cruising_level'=>"VARCHAR(20) NOT NULL DEFAULT ''",'cruising_speed'=>"VARCHAR(20) NOT NULL DEFAULT ''",'remarks'=>"TEXT NOT NULL",
+        'transponder_code'=>"VARCHAR(4) NOT NULL DEFAULT '7000'",'transponder_status'=>"ENUM('standby','on','ident') NOT NULL DEFAULT 'standby'",
+        'com1_frequency'=>"VARCHAR(7) NOT NULL DEFAULT '122.800'",'com2_frequency'=>"VARCHAR(7) NOT NULL DEFAULT '122.800'",
+        'control_mode'=>"ENUM('manual','automatic') NOT NULL DEFAULT 'manual'",'motion_state'=>"VARCHAR(20) NOT NULL DEFAULT 'parked'",
+        'target_airspeed'=>"SMALLINT UNSIGNED NOT NULL DEFAULT 0",'target_altitude'=>"INT NOT NULL DEFAULT 0",
+        'target_heading'=>"SMALLINT UNSIGNED NOT NULL DEFAULT 0",
+        'vertical_speed_fpm'=>"SMALLINT UNSIGNED NOT NULL DEFAULT 1000",'last_motion_at'=>"DATETIME NULL"
+    ];
+    foreach($trainingColumns as $column=>$definition){
+        $exists=$pdo->query("SHOW COLUMNS FROM atc_training_aircraft LIKE ".$pdo->quote($column))->fetch(PDO::FETCH_ASSOC);
+        if(!$exists){
+            $pdo->exec("ALTER TABLE atc_training_aircraft ADD COLUMN `$column` $definition");
+            if($column==='target_heading')$pdo->exec("UPDATE atc_training_aircraft SET target_heading=heading");
+        }
+    }
+
+    $pdo->exec(
         "CREATE TABLE IF NOT EXISTS atc_aircraft_clearances (
             pilot_session_token VARCHAR(128) NOT NULL,
             pilot_callsign VARCHAR(40) NOT NULL,
             clearance_type VARCHAR(12) NOT NULL DEFAULT 'DIRECT',
             clearance_value VARCHAR(80) NOT NULL DEFAULT '',
+            cleared_taxi_route VARCHAR(500) NOT NULL DEFAULT '',
             cleared_landing_runway VARCHAR(24) NOT NULL DEFAULT '',
             cleared_gate VARCHAR(40) NOT NULL DEFAULT '',
             cleared_altitude VARCHAR(20) NOT NULL DEFAULT '',
@@ -160,6 +245,7 @@ function ensureAtcSchema(PDO $pdo): void
         'cleared_departure_runway' => "VARCHAR(10) NOT NULL DEFAULT ''",
         'cleared_landing_runway' => "VARCHAR(24) NOT NULL DEFAULT ''",
         'cleared_gate' => "VARCHAR(40) NOT NULL DEFAULT ''",
+        'cleared_taxi_route' => "VARCHAR(500) NOT NULL DEFAULT ''",
         'cleared_sid' => "VARCHAR(80) NOT NULL DEFAULT ''",
         'cleared_direct' => "VARCHAR(80) NOT NULL DEFAULT ''",
         'cleared_star' => "VARCHAR(80) NOT NULL DEFAULT ''",
@@ -172,7 +258,7 @@ function ensureAtcSchema(PDO $pdo): void
         )->fetchColumn();
         if ($exists === 0) {
             $pdo->exec("ALTER TABLE atc_aircraft_clearances ADD COLUMN {$column} {$definition} AFTER clearance_value");
-            if (in_array($column, ['cleared_departure_runway', 'cleared_landing_runway', 'cleared_gate'], true)) {
+            if (in_array($column, ['cleared_departure_runway', 'cleared_landing_runway', 'cleared_gate', 'cleared_taxi_route'], true)) {
                 continue;
             }
             $legacyType = $column === 'cleared_sid'
@@ -283,6 +369,9 @@ function ensureAtcSchema(PDO $pdo): void
             "ALTER TABLE atc_sessions ADD COLUMN is_gca TINYINT(1) NOT NULL DEFAULT 0 AFTER position_code"
         );
     }
+
+    $schemaReady = true;
+    @file_put_contents($schemaMarker, gmdate('c'));
 }
 
 function archiveAtcSessions(PDO $pdo, string $condition='1=1', array $params=[]): void

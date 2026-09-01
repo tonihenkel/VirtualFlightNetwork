@@ -1,6 +1,14 @@
 <?php
 
 return [
+    'atc_training_callsign_exists'=>'このコールサインは別の訓練機で使用されています。','atc_training_control'=>'訓練機コントロール','atc_training_control_mode'=>'制御モード','atc_training_control_manual'=>'手動','atc_training_control_automatic'=>'自動','atc_training_motion_state'=>'移動状態','atc_training_motion_parked'=>'駐機','atc_training_motion_pushback'=>'プッシュバック','atc_training_motion_taxi_out'=>'滑走路へタキシー','atc_training_motion_taxi_in'=>'ゲートへタキシー','atc_training_motion_takeoff'=>'離陸','atc_training_motion_climb'=>'上昇','atc_training_motion_cruise'=>'巡航','atc_training_motion_descent'=>'降下','atc_training_motion_landing'=>'着陸','atc_training_target_speed'=>'目標速度 (kt)','atc_training_target_altitude'=>'目標高度 (ft)','atc_training_vertical_speed'=>'垂直速度 (ft/min)','atc_training_control_apply'=>'適用','atc_training_control_stop'=>'停止',
+    'atc_training_properties_edit'=>'プロパティを編集','atc_training_callsign_edit'=>'コールサイン','atc_training_aircraft_edit'=>'航空機タイプ','atc_training_position_type'=>'位置タイプ','atc_training_heading_edit'=>'方位','atc_training_position_gate'=>'ゲート','atc_training_position_taxiway'=>'誘導路','atc_training_position_runway'=>'滑走路','atc_training_position_air'=>'飛行中',
+    'atc_training_transponder'=>'トランスポンダー','atc_training_transponder_status'=>'状態','atc_training_transponder_standby'=>'スタンバイ','atc_training_transponder_on'=>'オン','atc_training_transponder_ident'=>'IDENT','atc_training_transponder_code'=>'トランスポンダーコード','atc_training_transponder_code_prompt'=>'トランスポンダーコードを入力してください（0～7の4桁）:',
+    'atc_training_assignment_reset'=>'割り当てを解除','atc_training_assignment_reset_confirm'=>'%callsign% の割り当てを解除しますか？',
+    'atc_training_aircraft_create'=>'訓練機を配置','atc_training_aircraft_delete'=>'訓練機を削除','atc_training_callsign_prompt'=>'訓練機のコールサイン:','atc_training_aircraft_prompt'=>'機種（ICAO）:','atc_training_placement_prompt'=>'配置タイプ: runway、taxiway、gate、air','atc_training_altitude_prompt'=>'高度（フィート）:','atc_training_heading_prompt'=>'方位（0–359°）:','atc_training_aircraft_invalid'=>'訓練機のデータが無効です。','atc_training_delete_confirm'=>'訓練機 %callsign% を削除しますか？',
+    'settings_personal_password_required'=>'ユーザー名、氏名、国の変更には現在のパスワードによる確認が必要です。',
+    'profile_home_airport'=>'ホーム空港',
+    'register_home_airport'=>'ICAO・識別子・名前でホーム空港を検索','register_home_airport_help'=>'ICAO、ローカル識別子、空港名で検索できます。ZZZZも使用できます。','register_home_airport_invalid'=>'既存の空港を選択するかZZZZを入力してください。','settings_home_airport'=>'ホーム空港','settings_home_airport_help'=>'ICAOまたはローカル空港識別子。ZZZZも使用できます。',
     'admin_filter_filtered_chats'=>'フィルター済みチャット','admin_filter_filtered_chats_only'=>'フィルター済みチャットのみ表示',
     'admin_activity_sort'=>'スタッフ活動を並べ替え','admin_activity_search_placeholder'=>'プレイヤー、スタッフ、活動、日付を検索 …','admin_activity_player'=>'プレイヤー','admin_activity_staff_member'=>'スタッフメンバー','admin_activity_type'=>'活動タイプ','admin_activity_date'=>'日付',
     'admin_online_search_placeholder'=>'名前、コールサイン、役割、局、レーティングを検索 …',
@@ -876,6 +884,7 @@ return [
     'statistics_period_30' => '過去 30 日間',
     'statistics_period_90' => '過去 90 日間',
     'statistics_period_365' => '去年',
+    'statistics_period_0' => '全期間',
     'statistics_flights' => 'フライト',
     'statistics_pilots' => 'パイロット',
     'statistics_distance' => '距離',
@@ -1333,4 +1342,11 @@ return [
     'atc_clearance_delete_confirm' => '%callsign% のすべての許可を削除しますか？',
     'atc_session_required' => '有効なATCまたは観戦セッションが必要です。',
     'atc_control_session_required' => 'この操作には有効な管制官ポジションが必要です。',
+    'atc_training_aircraft_menu' => '訓練機',
+    'atc_context_measurement_menu' => '距離 / 方位',
+    'atc_options_center_windows' => 'アクティブウィンドウを中央に配置',
+    'atc_training_radios_edit' => '無線機を編集',
+    'atc_training_radios_title' => 'COM1/COM2周波数',
+    'atc_training_com1_frequency' => 'COM1周波数',
+    'atc_training_com2_frequency' => 'COM2周波数',
 ];

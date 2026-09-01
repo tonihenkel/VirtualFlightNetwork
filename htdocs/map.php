@@ -802,9 +802,6 @@ if ($statusMessage !== '') {
             </label>
         <?php endif; ?>
         <input id="pilotSearch" type="search" placeholder="<?php echo htmlspecialchars(t('map_search_pilot')); ?>">
-        <?php if (!empty($_SESSION['web_user_id'])): ?>
-            <label class="map-nearby-filter"><input id="nearbyPilotsOnly" type="checkbox"> <?php echo htmlspecialchars(t('map_nearby_30nm')); ?></label>
-        <?php endif; ?>
         <div class="map-search-filters">
             <select id="mapSearchType" aria-label="<?php echo htmlspecialchars(t('map_search_type')); ?>">
                 <option value="all"><?php echo htmlspecialchars(t('map_search_type_all')); ?></option>
@@ -2010,7 +2007,7 @@ if ($statusMessage !== '') {
         Object.keys(grouped).forEach(key => {
             const items = grouped[key];
             const symbols = [];
-            items.filter(item => Number(item.is_trainer || 0) !== 1).forEach(item => {
+            items.forEach(item => {
                 const symbol = String(item.position_code || '').toLowerCase();
                 if (!symbols.includes(symbol)) symbols.push(symbol);
             });
@@ -2055,8 +2052,7 @@ if ($statusMessage !== '') {
     async function renderAtcTraconPositions(positions)
     {
         const approachPositions = positions.filter(position =>
-            Number(position.is_trainer || 0) !== 1
-            && ['APP','DEP'].includes(String(position.position_code || '').toUpperCase()));
+            ['APP','DEP'].includes(String(position.position_code || '').toUpperCase()));
         if (!approachPositions.length) {
             Object.keys(atcTraconLayers).forEach(key => {
                 map.removeLayer(atcTraconLayers[key]);
@@ -2136,7 +2132,6 @@ if ($statusMessage !== '') {
     {
         const grouped = {};
         positions.forEach(position => {
-            if (Number(position.is_trainer || 0) === 1) return;
             const key = String(position.station_code || '').toUpperCase();
             if (!grouped[key]) grouped[key] = [];
             grouped[key].push(position);
@@ -2218,14 +2213,43 @@ if ($statusMessage !== '') {
         });
     }
 
+    let pilotsApiRequest = null;
+    let pilotsApiData = null;
+    let pilotsApiLoadedAt = 0;
+
+    async function fetchPilotsApiData()
+    {
+        const now = Date.now();
+        if (pilotsApiData && now - pilotsApiLoadedAt < 1800) {
+            return pilotsApiData;
+        }
+        if (pilotsApiRequest) {
+            return pilotsApiRequest;
+        }
+        pilotsApiRequest = fetch(
+            '/execute/get_pilots.php?time=' + now
+            + '&protection=<?php echo rawurlencode((string)$getPilotsProtection); ?>',
+            {cache: 'no-store'}
+        ).then(async response => {
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.message || 'API unavailable');
+            }
+            pilotsApiData = data;
+            pilotsApiLoadedAt = Date.now();
+            return data;
+        }).finally(() => {
+            pilotsApiRequest = null;
+        });
+        return pilotsApiRequest;
+    }
+
     async function loadAtcPositions()
     {
         if (atcPositionLoadInProgress) return;
         atcPositionLoadInProgress = true;
         try {
-            const response = await fetch('/execute/get_pilots.php?time=' + Date.now() + '&protection=<?php echo rawurlencode((string)$getPilotsProtection); ?>');
-            const data = await response.json();
-            if (!response.ok || !data.success) throw new Error(data.message || 'ATC unavailable');
+            const data = await fetchPilotsApiData();
             const positions = Array.isArray(data.atcs?.items) ? data.atcs.items : [];
             activeAtcCount = Number(data.atcs?.count ?? positions.length ?? 0);
             latestAtcPositions = positions;
@@ -3157,19 +3181,8 @@ if ($statusMessage !== '') {
         const ownPilot = latestPilots.find(pilot =>
             Number(pilot.user_id) === WEB_USER_ID
         );
-        const nearbyOnly = Boolean(
-            document.getElementById('nearbyPilotsOnly')?.checked
-        );
         const pilots = latestPilots.filter(function(pilot) {
             if (searchType !== 'all' && searchType !== 'pilot') return false;
-            if (
-                nearbyOnly
-                && (
-                    !ownPilot
-                    || Number(pilot.user_id) === WEB_USER_ID
-                    || pilotDistanceNm(ownPilot, pilot) > 30
-                )
-            ) return false;
             const flightplan = getFlightplan(pilot);
             const values = [
                 pilot.callsign, pilot.username, pilot.aircraft_icao,
@@ -3263,6 +3276,7 @@ if ($statusMessage !== '') {
                 ? ' · ' + pilotDistanceNm(ownPilot, pilot).toFixed(1) + ' NM'
                 : '';
             const spectator = pilot.is_spectator ? ' · SPECTATOR' : '';
+            const training = pilot.is_training_aircraft ? ' · TRAINING' : '';
             return '<button type="button" class="pilot-directory-item' + active
                 + '" data-pilot-user-id="' + Number(pilot.user_id) + '">'
                 + '<div class="pilot-directory-callsign">' + escapeHtml(pilot.callsign)
@@ -3270,7 +3284,7 @@ if ($statusMessage !== '') {
                 + '<div class="pilot-directory-meta">' + escapeHtml(pilot.aircraft_icao || '----')
                 + ' · ' + escapeHtml(getAirportCode(flightplan.departure_airport))
                 + ' → ' + escapeHtml(getAirportCode(flightplan.arrival_airport))
-                + escapeHtml(distance + spectator) + '</div>'
+                + escapeHtml(distance + spectator + training) + '</div>'
                 + '</button>';
         }).join('');
     }
@@ -3409,18 +3423,6 @@ if ($statusMessage !== '') {
         );
         renderPilotDirectory();
     });
-    const nearbyPilotsOnly = document.getElementById('nearbyPilotsOnly');
-    if (nearbyPilotsOnly) {
-        nearbyPilotsOnly.checked =
-            localStorage.getItem('vfn_map_nearby_only') === '1';
-        nearbyPilotsOnly.addEventListener('change', function() {
-            localStorage.setItem(
-                'vfn_map_nearby_only',
-                this.checked ? '1' : '0'
-            );
-            renderPilotDirectory();
-        });
-    }
     if (hideInvisiblePilots) {
         hideInvisiblePilots.checked =
             localStorage.getItem('vfn_map_hide_invisible') === '1';
@@ -4862,11 +4864,13 @@ if ($statusMessage !== '') {
                 pilot.username || '----';
         }
 
-        if (pilot.user_id)
+        if (Number(pilot.user_id) > 0)
         {
             usernameElement.href =
                 'profile.php?id='
                 + pilot.user_id;
+        } else {
+            usernameElement.removeAttribute('href');
         }
 
         document.getElementById('panelAircraft').innerText =
@@ -5010,15 +5014,7 @@ if ($statusMessage !== '') {
 
         try
         {
-            const response =
-                await fetch(
-                    '/execute/get_pilots.php?time='
-                    + Date.now()
-                    + '&protection=<?php echo rawurlencode((string)$getPilotsProtection); ?>'
-                );
-
-            const data =
-                await response.json();
+            const data = await fetchPilotsApiData();
 
             if (!data.success)
             {

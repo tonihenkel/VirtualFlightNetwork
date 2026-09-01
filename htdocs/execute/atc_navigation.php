@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 header('Content-Type: application/json; charset=utf-8');
-header('Cache-Control: no-store');
+header('Cache-Control: private, max-age=300');
 require_once __DIR__ . '/../includes/session_bootstrap.php';
 startVfnWebSession();
 require_once __DIR__ . '/config.php';
@@ -163,7 +163,7 @@ try {
     } else {
         $airport = $pdo->prepare(
             "SELECT latitude_deg,longitude_deg FROM airports
-             WHERE UPPER(ident)=:code OR UPPER(icao_code)=:code OR UPPER(gps_code)=:code LIMIT 1"
+             WHERE ident=:code OR icao_code=:code OR gps_code=:code LIMIT 1"
         );
         $airport->execute(['code' => normalizeAtcStationCode((string)$session['station_code'])]);
         $row = $airport->fetch(PDO::FETCH_ASSOC);

@@ -1,6 +1,14 @@
 <?php
 
 return [
+    'atc_training_callsign_exists'=>'कॉलसाइन पहले से किसी अन्य प्रशिक्षण विमान द्वारा उपयोग में है।','atc_training_control'=>'प्रशिक्षण विमान नियंत्रण','atc_training_control_mode'=>'नियंत्रण मोड','atc_training_control_manual'=>'मैनुअल','atc_training_control_automatic'=>'स्वचालित','atc_training_motion_state'=>'गतिविधि स्थिति','atc_training_motion_parked'=>'पार्क','atc_training_motion_pushback'=>'पुशबैक','atc_training_motion_taxi_out'=>'रनवे तक टैक्सी','atc_training_motion_taxi_in'=>'गेट तक टैक्सी','atc_training_motion_takeoff'=>'टेकऑफ़','atc_training_motion_climb'=>'चढ़ाई','atc_training_motion_cruise'=>'क्रूज़','atc_training_motion_descent'=>'अवरोह','atc_training_motion_landing'=>'लैंडिंग','atc_training_target_speed'=>'लक्ष्य गति (kt)','atc_training_target_altitude'=>'लक्ष्य ऊँचाई (ft)','atc_training_vertical_speed'=>'ऊर्ध्व गति (ft/min)','atc_training_control_apply'=>'नियंत्रण लागू करें','atc_training_control_stop'=>'रोकें',
+    'atc_training_properties_edit'=>'गुण संपादित करें','atc_training_callsign_edit'=>'कॉलसाइन','atc_training_aircraft_edit'=>'विमान प्रकार','atc_training_position_type'=>'स्थिति प्रकार','atc_training_heading_edit'=>'दिशा','atc_training_position_gate'=>'गेट','atc_training_position_taxiway'=>'टैक्सीवे','atc_training_position_runway'=>'रनवे','atc_training_position_air'=>'हवा में',
+    'atc_training_transponder'=>'ट्रांसपोंडर','atc_training_transponder_status'=>'स्थिति','atc_training_transponder_standby'=>'स्टैंडबाय','atc_training_transponder_on'=>'चालू','atc_training_transponder_ident'=>'IDENT','atc_training_transponder_code'=>'ट्रांसपोंडर कोड','atc_training_transponder_code_prompt'=>'ट्रांसपोंडर कोड दर्ज करें (0 से 7 तक चार अंक):',
+    'atc_training_assignment_reset'=>'असाइनमेंट हटाएँ','atc_training_assignment_reset_confirm'=>'%callsign% का असाइनमेंट हटाएँ?',
+    'atc_training_aircraft_create'=>'प्रशिक्षण विमान रखें','atc_training_aircraft_delete'=>'प्रशिक्षण विमान हटाएँ','atc_training_callsign_prompt'=>'प्रशिक्षण विमान का कॉलसाइन:','atc_training_aircraft_prompt'=>'विमान प्रकार (ICAO):','atc_training_placement_prompt'=>'स्थिति प्रकार: runway, taxiway, gate या air','atc_training_altitude_prompt'=>'फीट में ऊँचाई:','atc_training_heading_prompt'=>'दिशा (0–359°):','atc_training_aircraft_invalid'=>'प्रशिक्षण विमान का डेटा अमान्य है।','atc_training_delete_confirm'=>'प्रशिक्षण विमान %callsign% हटाएँ?',
+    'settings_personal_password_required'=>'उपयोगकर्ता नाम, नाम या देश में बदलाव की पुष्टि वर्तमान पासवर्ड से करनी होगी।',
+    'profile_home_airport'=>'गृह हवाई अड्डा',
+    'register_home_airport'=>'ICAO, पहचान या नाम से गृह हवाई अड्डा खोजें','register_home_airport_help'=>'ICAO, स्थानीय पहचान या हवाई अड्डे के नाम से खोजें; ZZZZ भी स्वीकार है।','register_home_airport_invalid'=>'मौजूदा हवाई अड्डा चुनें या ZZZZ दर्ज करें।','settings_home_airport'=>'गृह हवाई अड्डा','settings_home_airport_help'=>'ICAO या स्थानीय हवाई अड्डा पहचान; ZZZZ भी स्वीकार है।',
     'admin_filter_filtered_chats'=>'फ़िल्टर की गई चैट','admin_filter_filtered_chats_only'=>'केवल फ़िल्टर की गई चैट दिखाएँ',
     'admin_activity_sort'=>'स्टाफ गतिविधियाँ क्रमबद्ध करें','admin_activity_search_placeholder'=>'खिलाड़ी, स्टाफ, गतिविधि या तारीख खोजें …','admin_activity_player'=>'खिलाड़ी','admin_activity_staff_member'=>'स्टाफ सदस्य','admin_activity_type'=>'गतिविधि प्रकार','admin_activity_date'=>'तारीख',
     'admin_online_search_placeholder'=>'नाम, कॉलसाइन, भूमिका, स्टेशन या रेटिंग खोजें …',
@@ -876,6 +884,7 @@ return [
     'statistics_period_30' => 'पिछले 30 दिन',
     'statistics_period_90' => 'पिछले 90 दिन',
     'statistics_period_365' => 'पिछले साल',
+    'statistics_period_0' => 'संपूर्ण अवधि',
     'statistics_flights' => 'उड़ानें',
     'statistics_pilots' => 'पायलट',
     'statistics_distance' => 'दूरी',
@@ -1333,4 +1342,11 @@ return [
     'atc_clearance_delete_confirm' => '%callsign% की सभी क्लीयरेंस हटाएँ?',
     'atc_session_required' => 'एक सक्रिय ATC या दर्शक सत्र आवश्यक है।',
     'atc_control_session_required' => 'इस कार्रवाई के लिए सक्रिय नियंत्रक स्थिति आवश्यक है।',
+    'atc_training_aircraft_menu' => 'प्रशिक्षण विमान',
+    'atc_context_measurement_menu' => 'दूरी / दिशा',
+    'atc_options_center_windows' => 'सक्रिय विंडो को केंद्र में लाएँ',
+    'atc_training_radios_edit' => 'रेडियो संपादित करें',
+    'atc_training_radios_title' => 'COM1/COM2 आवृत्तियाँ',
+    'atc_training_com1_frequency' => 'COM1 आवृत्ति',
+    'atc_training_com2_frequency' => 'COM2 आवृत्ति',
 ];

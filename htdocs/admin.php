@@ -755,7 +755,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             <?php if ($adminOpPermission >= 4): ?>
                 <a class="admin-button" href="admin_history.php"><?php echo htmlspecialchars(t('admin_private_history')); ?></a>
             <?php endif; ?>
-            <a class="admin-button" href="flightplans.php"><?php echo htmlspecialchars(t('nav_flightplans')); ?></a>
+            <a class="admin-button" href="admin_flightplans.php"><?php echo htmlspecialchars(t('nav_flightplans')); ?></a>
             <a class="admin-button" href="moderation.php"><?php echo htmlspecialchars(t('moderation_center_title')); ?></a>
             <a class="admin-button" href="bug_reports.php"><?php echo htmlspecialchars(t('bug_staff_queue')); ?><?php if (($pendingBugReportCount ?? 0) > 0): ?> (<?php echo (int)$pendingBugReportCount; ?>)<?php endif; ?></a>
             <?php if ($adminOpPermission >= 1): ?><a class="admin-button" href="admin_gca.php"><?php echo htmlspecialchars(t('gca_admin_title')); ?></a><?php endif; ?>
@@ -1151,6 +1151,14 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                                 <option value="offline"><?php echo htmlspecialchars(t('admin_players_offline')); ?></option>
                             </select>
                         </label>
+                        <label class="filter-field">
+                            <?php echo htmlspecialchars($currentLanguage === 'de' ? 'Bannstatus' : 'Ban status'); ?>
+                            <select class="admin-input" id="playerBanFilter">
+                                <option value=""><?php echo htmlspecialchars(t('admin_filter_all')); ?></option>
+                                <option value="banned"><?php echo htmlspecialchars($currentLanguage === 'de' ? 'Gebannt' : 'Banned'); ?></option>
+                                <option value="not_banned"><?php echo htmlspecialchars($currentLanguage === 'de' ? 'Nicht gebannt' : 'Not banned'); ?></option>
+                            </select>
+                        </label>
                         <label class="filter-field"><?php echo htmlspecialchars(t('statistics_sort_by')); ?><select class="admin-input" id="playerSort"><option value="name"><?php echo htmlspecialchars(t('admin_players_name')); ?></option><option value="pilot">Pilot</option><option value="atc">ATC</option><option value="special">Special</option><option value="op">OP</option></select></label>
                     </div>
 
@@ -1377,6 +1385,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         'manage' => t('admin_manage'),
         'playerActive' => t('admin_players_active'),
         'playerInactive' => t('admin_players_inactive'),
+        'playerBanned' => $currentLanguage === 'de' ? 'Gebannt' : 'Banned',
         'playerOnline' => t('admin_players_online'),
         'playerOffline' => t('admin_players_offline'),
         'transferNone' => t('admin_transfer_none'),
@@ -1987,6 +1996,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
             rank: document.getElementById('playerRankFilter').value.trim(),
             status: document.getElementById('playerStatusFilter').value,
             online: document.getElementById('playerOnlineFilter').value,
+            ban: document.getElementById('playerBanFilter').value,
             sort: document.getElementById('playerSort').value,
             direction: playerSortDirection
         };
@@ -2028,7 +2038,9 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                         .filter(Boolean)
                         .join('<br>');
                 const statusLabel =
-                    player.active
+                    player.banned
+                        ? ADMIN_I18N.playerBanned
+                        : player.active
                         ? ADMIN_I18N.playerActive
                         : ADMIN_I18N.playerInactive;
                 const onlineLabel =
@@ -2044,7 +2056,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
                     '<td>' + divisionFlagHtml(player.division) + escapeHtml(division) + '</td>' +
                     '<td>' + ranks.split('<br>').map(escapeHtml).join('<br>') + '</td>' +
                     '<td>' + escapeHtml(player.op_permission) + '</td>' +
-                    '<td><span class="player-status ' + (player.active ? 'active' : '') + '">' +
+                    '<td><span class="player-status ' + (player.active && !player.banned ? 'active' : '') + '">' +
                     escapeHtml(statusLabel) + '</span></td>' +
                     '<td><span class="player-status ' + (player.online ? 'active' : '') + '">' +
                     escapeHtml(onlineLabel) + '</span></td>' +
@@ -2814,6 +2826,7 @@ if (!$loginRequired && !$accessDenied && $pdo instanceof PDO && $adminUser) {
         'playerRankFilter',
         'playerStatusFilter',
         'playerOnlineFilter',
+        'playerBanFilter',
         'playerSort'
     ].forEach(function(id) {
         const element = document.getElementById(id);

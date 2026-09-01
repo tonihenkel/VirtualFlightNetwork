@@ -1,6 +1,14 @@
 <?php
 
 return [
+    'atc_training_callsign_exists'=>'কলসাইনটি অন্য একটি প্রশিক্ষণ বিমান ব্যবহার করছে।','atc_training_control'=>'প্রশিক্ষণ বিমান নিয়ন্ত্রণ','atc_training_control_mode'=>'নিয়ন্ত্রণ মোড','atc_training_control_manual'=>'ম্যানুয়াল','atc_training_control_automatic'=>'স্বয়ংক্রিয়','atc_training_motion_state'=>'চলাচলের অবস্থা','atc_training_motion_parked'=>'পার্ক করা','atc_training_motion_pushback'=>'পুশব্যাক','atc_training_motion_taxi_out'=>'রানওয়েতে ট্যাক্সি','atc_training_motion_taxi_in'=>'গেটে ট্যাক্সি','atc_training_motion_takeoff'=>'উড্ডয়ন','atc_training_motion_climb'=>'আরোহণ','atc_training_motion_cruise'=>'ক্রুজ','atc_training_motion_descent'=>'অবতরণ','atc_training_motion_landing'=>'ল্যান্ডিং','atc_training_target_speed'=>'লক্ষ্য গতি (kt)','atc_training_target_altitude'=>'লক্ষ্য উচ্চতা (ft)','atc_training_vertical_speed'=>'উল্লম্ব গতি (ft/min)','atc_training_control_apply'=>'নিয়ন্ত্রণ প্রয়োগ','atc_training_control_stop'=>'থামান',
+    'atc_training_properties_edit'=>'বৈশিষ্ট্য সম্পাদনা','atc_training_callsign_edit'=>'কলসাইন','atc_training_aircraft_edit'=>'বিমানের ধরন','atc_training_position_type'=>'অবস্থানের ধরন','atc_training_heading_edit'=>'দিক','atc_training_position_gate'=>'গেট','atc_training_position_taxiway'=>'ট্যাক্সিওয়ে','atc_training_position_runway'=>'রানওয়ে','atc_training_position_air'=>'আকাশে',
+    'atc_training_transponder'=>'ট্রান্সপন্ডার','atc_training_transponder_status'=>'অবস্থা','atc_training_transponder_standby'=>'স্ট্যান্ডবাই','atc_training_transponder_on'=>'চালু','atc_training_transponder_ident'=>'IDENT','atc_training_transponder_code'=>'ট্রান্সপন্ডার কোড','atc_training_transponder_code_prompt'=>'ট্রান্সপন্ডার কোড লিখুন (০ থেকে ৭ পর্যন্ত চারটি সংখ্যা):',
+    'atc_training_assignment_reset'=>'অ্যাসাইনমেন্ট মুক্ত করুন','atc_training_assignment_reset_confirm'=>'%callsign%-এর অ্যাসাইনমেন্ট মুক্ত করবেন?',
+    'atc_training_aircraft_create'=>'প্রশিক্ষণ বিমান স্থাপন','atc_training_aircraft_delete'=>'প্রশিক্ষণ বিমান মুছুন','atc_training_callsign_prompt'=>'প্রশিক্ষণ বিমানের কলসাইন:','atc_training_aircraft_prompt'=>'বিমানের ধরন (ICAO):','atc_training_placement_prompt'=>'অবস্থানের ধরন: runway, taxiway, gate বা air','atc_training_altitude_prompt'=>'ফুটে উচ্চতা:','atc_training_heading_prompt'=>'দিক (0–359°):','atc_training_aircraft_invalid'=>'প্রশিক্ষণ বিমানের তথ্য অবৈধ।','atc_training_delete_confirm'=>'প্রশিক্ষণ বিমান %callsign% মুছবেন?',
+    'settings_personal_password_required'=>'ব্যবহারকারীর নাম, নাম বা দেশ পরিবর্তন বর্তমান পাসওয়ার্ড দিয়ে নিশ্চিত করতে হবে।',
+    'profile_home_airport'=>'হোম বিমানবন্দর',
+    'register_home_airport'=>'ICAO, পরিচিতি বা নাম দিয়ে হোম বিমানবন্দর খুঁজুন','register_home_airport_help'=>'ICAO, স্থানীয় পরিচিতি বা বিমানবন্দরের নাম দিয়ে খুঁজুন; ZZZZ-ও গ্রহণযোগ্য।','register_home_airport_invalid'=>'বিদ্যমান বিমানবন্দর নির্বাচন করুন অথবা ZZZZ লিখুন।','settings_home_airport'=>'হোম বিমানবন্দর','settings_home_airport_help'=>'ICAO বা স্থানীয় বিমানবন্দর পরিচিতি; ZZZZ-ও গ্রহণযোগ্য।',
     'admin_filter_filtered_chats'=>'ফিল্টার করা চ্যাট','admin_filter_filtered_chats_only'=>'শুধু ফিল্টার করা চ্যাট দেখান',
     'admin_activity_sort'=>'স্টাফ কার্যকলাপ সাজান','admin_activity_search_placeholder'=>'খেলোয়াড়, স্টাফ, কার্যকলাপ বা তারিখ খুঁজুন …','admin_activity_player'=>'খেলোয়াড়','admin_activity_staff_member'=>'স্টাফ সদস্য','admin_activity_type'=>'কার্যকলাপের ধরন','admin_activity_date'=>'তারিখ',
     'admin_online_search_placeholder'=>'নাম, কলসাইন, ভূমিকা, স্টেশন বা রেটিং খুঁজুন …',
@@ -876,6 +884,7 @@ return [
     'statistics_period_30' => 'গত ৩০ দিন',
     'statistics_period_90' => 'গত ৯০ দিন',
     'statistics_period_365' => 'গত বছর',
+    'statistics_period_0' => 'সর্বকাল',
     'statistics_flights' => 'ফ্লাইট',
     'statistics_pilots' => 'পাইলট',
     'statistics_distance' => 'দূরত্ব',
@@ -1333,4 +1342,11 @@ return [
     'atc_clearance_delete_confirm' => '%callsign%-এর সব অনুমতি মুছবেন?',
     'atc_session_required' => 'একটি সক্রিয় ATC বা দর্শক সেশন প্রয়োজন।',
     'atc_control_session_required' => 'এই কাজের জন্য একটি সক্রিয় কন্ট্রোলার পজিশন প্রয়োজন।',
+    'atc_training_aircraft_menu' => 'প্রশিক্ষণ বিমান',
+    'atc_context_measurement_menu' => 'দূরত্ব / দিকনির্দেশ',
+    'atc_options_center_windows' => 'সক্রিয় উইন্ডোগুলো কেন্দ্রে আনুন',
+    'atc_training_radios_edit' => 'রেডিও সম্পাদনা',
+    'atc_training_radios_title' => 'COM1/COM2 ফ্রিকোয়েন্সি',
+    'atc_training_com1_frequency' => 'COM1 ফ্রিকোয়েন্সি',
+    'atc_training_com2_frequency' => 'COM2 ফ্রিকোয়েন্সি',
 ];

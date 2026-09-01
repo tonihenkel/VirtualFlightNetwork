@@ -522,7 +522,7 @@ size_t AIUpdateTCASTargets ()
     
     // Feed the dataRefs to X-Plane for TCAS target tracking
 #define SET_DR(ty, dr) XPLMSetData##ty(drTcas##dr, v##dr.data(), 1, (int)v##dr.size())
-#define SET_DR_ONLY_USED(ty, dr) if (slot>0) XPLMSetData##ty(drTcas##dr, v##dr.data(), 1, (int)slot)
+#define SET_DR_ONLY_USED(ty, dr) if (slot>1) XPLMSetData##ty(drTcas##dr, v##dr.data(), 1, (int)slot - 1)
     SET_DR(vi, ModeS);
     SET_DR(vi, ModeC);
     SET_DR(vi, SsrMode);

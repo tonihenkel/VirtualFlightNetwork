@@ -2,6 +2,15 @@
 
 function ensureCompendiumSchema(PDO $pdo): void
 {
+    static $ready = false;
+    if ($ready) {
+        return;
+    }
+    $marker = rtrim(sys_get_temp_dir(), "\\/") . DIRECTORY_SEPARATOR . 'vfn-compendium-schema-20260827.ready';
+    if (is_file($marker)) {
+        $ready = true;
+        return;
+    }
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS compendium_articles (
             id INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -58,6 +67,8 @@ function ensureCompendiumSchema(PDO $pdo): void
             KEY idx_compendium_revision (article_id, created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
+    $ready = true;
+    @file_put_contents($marker, gmdate('c'));
 }
 
 function compendiumNormalizeTerm(string $value): string
